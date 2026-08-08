@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.expo/
+.firebase/
+firebase-debug.log*
+*-debug.log
+*.local
+.env
+.env.*
+!.env.example
+GoogleService-Info.plist
+google-services.json
+service-account*.json
+apps/mobile/ios/
+apps/mobile/android/
+.DS_Store

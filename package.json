@@ -1,0 +1,36 @@
+{
+  "name": "resolingo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "apps/*",
+    "functions",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @resolingo/shared && npm run build -w @resolingo/functions",
+    "typecheck": "npm run typecheck -w @resolingo/shared && npm run typecheck -w @resolingo/functions && npm run typecheck -w @resolingo/mobile",
+    "test": "npm run test -w @resolingo/shared && npm run test -w @resolingo/functions",
+    "test:rules": "firebase emulators:exec --project resolingo-test --only firestore,storage \"npm run test:rules:direct\"",
+    "test:rules:direct": "npm run test -w @resolingo/rules-tests",
+    "lint": "npm run lint -w @resolingo/mobile",
+    "check": "npm run typecheck && npm test && npm run build",
+    "emulators": "firebase emulators:start",
+    "deploy:dev": "firebase use resolingo-dev && firebase deploy",
+    "deploy:prod": "firebase use resolingo-prod && firebase deploy"
+  },
+  "devDependencies": {
+    "firebase-tools": "^14.17.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native-screens": "4.26.2"
+  }
+}

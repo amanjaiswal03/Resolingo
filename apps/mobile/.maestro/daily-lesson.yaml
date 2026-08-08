@@ -1,0 +1,16 @@
+appId: com.resolingo.app.dev
+---
+- launchApp
+- assertVisible: "What will you practice?"
+- tapOn: "Start a conversation lesson"
+- assertVisible: "Preparing your lesson"
+- assertVisible: "You can leave this screen"
+# The provider fixture used by E2E must complete the task before this timeout.
+- extendedWaitUntil:
+    visible: "NOW PLAYING"
+    timeout: 120000
+- assertVisible: "Pause"
+- stopApp
+- launchApp
+- tapOn: "History"
+- assertVisible: "Conversation"

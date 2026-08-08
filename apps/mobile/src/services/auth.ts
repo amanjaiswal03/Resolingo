@@ -1,0 +1,34 @@
+import { Platform } from "react-native";
+import * as AppleAuthentication from "expo-apple-authentication";
+import * as Crypto from "expo-crypto";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import { GoogleAuthProvider, OAuthProvider, signInWithCredential, signOut } from "@react-native-firebase/auth";
+import { firebaseAuth } from "./firebase";
+
+GoogleSignin.configure({ webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID });
+
+export async function signInWithGoogle(): Promise<void> {
+  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  const result = await GoogleSignin.signIn();
+  const data = (result as { data?: { idToken?: string | null }; idToken?: string | null });
+  const idToken = data.data?.idToken ?? data.idToken;
+  if (!idToken) throw new Error("Google did not return an ID token.");
+  await signInWithCredential(firebaseAuth, GoogleAuthProvider.credential(idToken));
+}
+
+export async function signInWithApple(): Promise<void> {
+  if (Platform.OS !== "ios") throw new Error("Apple sign-in is only available on iOS.");
+  const rawNonce = Crypto.randomUUID();
+  const nonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, rawNonce);
+  const result = await AppleAuthentication.signInAsync({
+    requestedScopes: [AppleAuthentication.AppleAuthenticationScope.FULL_NAME, AppleAuthentication.AppleAuthenticationScope.EMAIL],
+    nonce,
+  });
+  if (!result.identityToken) throw new Error("Apple did not return an identity token.");
+  const provider = new OAuthProvider("apple.com");
+  await signInWithCredential(firebaseAuth, provider.credential({ idToken: result.identityToken, rawNonce }));
+}
+
+export async function logOut(): Promise<void> {
+  await Promise.allSettled([GoogleSignin.signOut(), signOut(firebaseAuth)]);
+}

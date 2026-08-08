@@ -1,0 +1,54 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function owns(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read: if owns(userId);
+      allow create, delete: if false;
+      allow update: if owns(userId)
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['nickname', 'nativeLanguage', 'targetLanguage', 'level', 'updatedAt'])
+        && request.resource.data.nickname is string
+        && request.resource.data.nickname.size() > 0
+        && request.resource.data.nickname.size() <= 40
+        && request.resource.data.nativeLanguage != request.resource.data.targetLanguage
+        && request.resource.data.level in ['A1', 'A2', 'B1', 'B2', 'C1'];
+
+      match /lessons/{lessonId} {
+        allow read: if owns(userId);
+        allow create, delete: if false;
+        allow update: if owns(userId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['completed', 'updatedAt'])
+          && request.resource.data.completed == true;
+      }
+
+      match /dailyUsage/{date} {
+        allow read: if owns(userId);
+        allow write: if false;
+      }
+
+      match /devices/{deviceId} {
+        allow read: if owns(userId);
+        allow write: if false;
+      }
+
+      match /recentTopics/{topicId} {
+        allow read: if owns(userId);
+        allow write: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

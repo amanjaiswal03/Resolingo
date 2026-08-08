@@ -1,0 +1,15 @@
+appId: com.resolingo.app.dev
+---
+- launchApp:
+    clearState: true
+- assertVisible: "Learn the language you’ll actually use."
+- assertVisible: "Continue with Google"
+# Authentication uses a real native provider sheet. Complete it with the CI device's
+# dedicated test account, then resume these assertions.
+- tapOn: "Continue with Google"
+- assertVisible: "Make it yours"
+- tapOn:
+    id: "nickname-input"
+- inputText: "Maestro"
+- tapOn: "Start learning"
+- assertVisible: "What will you practice?"
