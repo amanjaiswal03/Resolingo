@@ -1,6 +1,8 @@
 # Cloud and store setup
 
-Use two completely separate environments. Replace the example IDs below with globally unique IDs selected by the owner.
+For a brand-new Google account, start with [New project setup](NEW_PROJECT_SETUP.md). This file is the longer store, Apple, and monitoring reference. Project ids are not in source control. Export `FIREBASE_PROJECT_ID` and pass it to every Firebase CLI command.
+
+Use two completely separate environments when you add production. The owner picks both ids.
 
 ## 1. GitHub
 
@@ -13,7 +15,7 @@ In repository settings, protect `main`: require a pull request and approval, req
 
 ## 2. Firebase and Google Cloud
 
-Create **Resolingo Dev** and **Resolingo Prod**, attach the intended billing account, upgrade Firebase to Blaze, and select:
+Create two projects, for example Resolingo Dev and Resolingo Prod. You choose the ids. Attach the billing account, upgrade Firebase to Blaze, and select:
 
 - Firestore multi-region: `eur3`;
 - default Storage bucket: an EU location;
@@ -51,9 +53,9 @@ Register App Attest with DeviceCheck fallback on iOS and Play Integrity on Andro
 Set secrets independently in each Firebase project:
 
 ```bash
-firebase functions:secrets:set OPENAI_API_KEY
-firebase functions:secrets:set SAFETY_IDENTIFIER_SECRET
-firebase functions:secrets:set EXPO_ACCESS_TOKEN
+firebase functions:secrets:set OPENAI_API_KEY --project "$FIREBASE_PROJECT_ID"
+firebase functions:secrets:set SAFETY_IDENTIFIER_SECRET --project "$FIREBASE_PROJECT_ID"
+firebase functions:secrets:set EXPO_ACCESS_TOKEN --project "$FIREBASE_PROJECT_ID"
 ```
 
 Generate `SAFETY_IDENTIFIER_SECRET` from a cryptographically secure 32-byte value. Never put these values in EAS mobile variables. Do not create downloadable Google service-account keys.
@@ -63,9 +65,9 @@ Use a dedicated Functions runtime service account. Grant only the precise roles 
 Deploy in this order:
 
 ```bash
-firebase use dev
-firebase deploy --only firestore:rules,firestore:indexes,storage
-firebase deploy --only functions
+export FIREBASE_PROJECT_ID=your-new-project-id
+npm run deploy:rules
+npm run deploy:functions
 ```
 
 Cloud Tasks queues used by Firebase task functions are provisioned during deployment. Confirm the generated queue and target both use `europe-west1`, the runtime invoker is correct, max concurrent dispatches is 8, and retries match the source.
@@ -116,9 +118,9 @@ Use EAS-managed distribution credentials unless the organization has an existing
 
 Create a dedicated OpenAI API project with restricted membership, project budget, rate limits, and a key used only by Functions. Keep `OPENAI_LESSON_MODEL` at `gpt-5.6-luna` initially; pin a dated snapshot only after multilingual evaluation. Provider logging and app logs must exclude lesson text and personal data.
 
-Enable Google Cloud Text-to-Speech and verify both configured voices for each of the 32 languages. Run real A1 and B2 conversation/grammar smoke tests before enabling a language in production. Voice mappings live in `packages/shared/src/languages.ts` and backend selection remains deployable without a mobile store release.
+Enable Google Cloud Text-to-Speech. The default tier is WaveNet, then Standard (`TTS_VOICE_TIER` in `functions/.env`). Do not set `chirp3` or `neural2` until a budget review says so. Voice mappings live in `packages/shared/src/languages.ts` and backend selection remains deployable without a mobile store release.
 
-With Application Default Credentials pointed at the target project, run `npm run validate:voices -w @resolingo/functions` to fail if any registry locale has fewer than two live Google voices.
+With Application Default Credentials pointed at the target project, run `TTS_VOICE_TIER=wavenet npm run validate:voices -w @resolingo/functions` to fail if any registry locale has fewer than two voices in that tier after the Standard fallback.
 
 ## 7. Final environment validation
 

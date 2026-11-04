@@ -11,7 +11,7 @@ export {
   setTelemetryConsent,
   updateReminder,
 } from "./callables.js";
-export { cleanupAbandonedJobs, dispatchReminders, processPushReceipts } from "./schedules.js";
+export { cleanupAbandonedJobs, dispatchReminders, processPushReceipts, recoverUnenqueuedLessons } from "./schedules.js";
 export { createUserProfile } from "./accounts.js";
 
 export const generateLessonTask = onTaskDispatched({

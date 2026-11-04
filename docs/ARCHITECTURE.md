@@ -11,7 +11,7 @@ flowchart LR
   C -->|"enqueue in europe-west1"| Q["Cloud Tasks"]
   Q --> W["Generation worker"]
   W -->|"strict structured response"| O["OpenAI Responses API"]
-  W -->|"segment synthesis"| T["Google Cloud TTS"]
+  W -->|"segment synthesis, WaveNet by default"| T["Google Cloud TTS"]
   W --> S["Cloud Storage audio"]
   W --> F
   W --> P["Expo Push Service"]
@@ -23,7 +23,7 @@ flowchart LR
 
 `queued → generating_content → synthesizing_audio → ready`
 
-Any terminal provider or validation problem produces `failed`, a user-safe failure code, releases the reservation, and clears the active job. Transient task failures retry at the queue level. The transcript is committed before TTS begins; the complete manifest is published only after every segment exists.
+The lesson is `queued` with `enqueuePending` until Cloud Tasks accepts the job. If acceptance never lands, the next lesson request and a one-minute sweep release `activeLessonId` after two minutes. An enqueue error rolls the quota reservation back in the same transaction. Any terminal provider or validation problem produces `failed`, a user-safe failure code, releases the reservation, and clears the active job. Transient task failures retry at the queue level. The transcript is committed before TTS begins; the complete manifest is published only after every segment exists. Speech defaults to Google WaveNet, then Standard. Set `TTS_VOICE_TIER` to `neural2` or `chirp3` only after a budget review. The daily cap stays three ready lessons.
 
 ## Trust boundary
 

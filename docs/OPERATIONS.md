@@ -2,19 +2,21 @@
 
 ## Deploy order
 
-1. Select `dev` and deploy Firestore indexes/rules plus Storage rules.
+Deploy with `FIREBASE_PROJECT_ID` set. The steps for a new account are the checklist in [New project setup](NEW_PROJECT_SETUP.md).
+
+1. Deploy Firestore indexes/rules plus Storage rules.
 2. Set Functions secrets and deploy Functions.
 3. Run provider smoke tests, then build the development client.
-4. Enforce App Check only after debug/preview/prod traffic appears valid.
-5. Repeat against `prod`; production configuration must never point at development resources.
+4. App Check is already enforced in code. Register a debug token before the first device test, and watch metrics before a production rollout.
+5. Repeat against the production project id. Production configuration must never point at development resources.
 
 ```bash
-firebase use dev
-firebase deploy --only firestore:rules,firestore:indexes,storage
-firebase functions:secrets:set OPENAI_API_KEY
-firebase functions:secrets:set SAFETY_IDENTIFIER_SECRET
-firebase functions:secrets:set EXPO_ACCESS_TOKEN
-firebase deploy --only functions
+export FIREBASE_PROJECT_ID=your-new-project-id
+firebase functions:secrets:set OPENAI_API_KEY --project "$FIREBASE_PROJECT_ID"
+firebase functions:secrets:set SAFETY_IDENTIFIER_SECRET --project "$FIREBASE_PROJECT_ID"
+firebase functions:secrets:set EXPO_ACCESS_TOKEN --project "$FIREBASE_PROJECT_ID"
+npm run deploy:rules
+npm run deploy:functions
 ```
 
 ## Monitoring

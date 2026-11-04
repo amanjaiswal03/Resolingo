@@ -1,6 +1,7 @@
 # Release checklist
 
-- [ ] Dev and prod are distinct billed Firebase/GCP projects in `eur3` / `europe-west1` with EU Storage.
+- [ ] The Firebase/GCP project id is supplied at deploy time (`FIREBASE_PROJECT_ID`) and matches the native plist/json. Firestore is `eur3`, functions are `europe-west1`, Storage is in the EU.
+- [ ] Billing alerts exist at 50%, 80%, and 100%. `TTS_VOICE_TIER` is `wavenet` unless a budget review chose another tier.
 - [ ] Rules and indexes are deployed and emulator ownership/race tests pass.
 - [ ] Runtime IAM is least-privileged; no service-account JSON key exists.
 - [ ] OpenAI/TTS A1 and B2 smoke tests pass for both lesson types across all enabled languages.
