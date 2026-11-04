@@ -1,11 +1,9 @@
 # New Google Cloud project
 
-Use this checklist for a brand-new account. The repo does not contain a project id. Unit tests and `npm run test:rules` use the local emulator and do not need this project.
-
-Set the id once and reuse it in every command below:
+Production project id is `resolingo`, project number `168640425089`. `.firebaserc` aliases it as `prod`. Commands below target that project. Set `FIREBASE_PROJECT_ID` to a different id when you want another environment. Unit tests and `npm run test:rules` use the local emulator project `demo-resolingo` and do not touch production.
 
 ```bash
-export FIREBASE_PROJECT_ID=your-new-project-id
+export FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-resolingo}"
 export REGION=europe-west1
 ```
 
@@ -13,7 +11,7 @@ export REGION=europe-west1
 
 ## 1. Project and billing
 
-- [ ] Create the project in the [Firebase console](https://console.firebase.google.com/) or with `gcloud projects create`. Firebase and Google Cloud must be the same project.
+- [ ] Confirm project `resolingo` (`168640425089`) is the Firebase project you will deploy. Console: https://console.cloud.google.com/home/dashboard?project=resolingo
 - [ ] Upgrade Firebase to the Blaze plan and attach a billing account. Functions, Cloud Tasks, and Text-to-Speech will not run without it.
 - [ ] Create a budget for this project only: Billing → Budgets & alerts. Set a monthly amount you can afford to lose. Alert at 50%, 80%, and 100%. Email the owner.
 - [ ] Choose locations at creation time. They cannot be moved later.
@@ -61,7 +59,7 @@ Bundle ids come from `apps/mobile/app.config.ts`.
 - [ ] Register the iOS and Android apps you will ship first. Development builds are enough to start.
 - [ ] Download `GoogleService-Info.plist` and `google-services.json`. Do not commit them.
 - [ ] Add the Android SHA-1 and SHA-256 (debug, upload, and Play signing) to the Android app.
-- [ ] Enable Google and Apple sign-in under Authentication. Apple needs the Services ID and the Firebase callback `https://$FIREBASE_PROJECT_ID.firebaseapp.com/__/auth/handler`.
+- [ ] Enable Google and Apple sign-in under Authentication. Apple needs the Services ID and the Firebase callback `https://resolingo.firebaseapp.com/__/auth/handler` (or `https://$FIREBASE_PROJECT_ID.firebaseapp.com/__/auth/handler` for another project).
 - [ ] Copy the Web client id into `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`.
 
 ## 4. App Check

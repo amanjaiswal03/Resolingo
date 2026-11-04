@@ -17,9 +17,9 @@
     "lint": "npm run lint -w @resolingo/mobile",
     "check": "npm run typecheck && npm test && npm run build",
     "emulators": "firebase emulators:start --project demo-resolingo",
-    "deploy": "firebase deploy --project \"${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID}\"",
-    "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage --project \"${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID}\"",
-    "deploy:functions": "firebase deploy --only functions --project \"${FIREBASE_PROJECT_ID:?Set FIREBASE_PROJECT_ID}\""
+    "deploy": "firebase deploy --project \"${FIREBASE_PROJECT_ID:-prod}\"",
+    "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage --project \"${FIREBASE_PROJECT_ID:-prod}\"",
+    "deploy:functions": "firebase deploy --only functions --project \"${FIREBASE_PROJECT_ID:-prod}\""
   },
   "devDependencies": {
     "firebase-tools": "^14.17.0",

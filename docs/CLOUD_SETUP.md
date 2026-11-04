@@ -1,8 +1,8 @@
 # Cloud and store setup
 
-For a brand-new Google account, start with [New project setup](NEW_PROJECT_SETUP.md). This file is the longer store, Apple, and monitoring reference. Project ids are not in source control. Export `FIREBASE_PROJECT_ID` and pass it to every Firebase CLI command.
+For a brand-new Google account, start with [New project setup](NEW_PROJECT_SETUP.md). This file is the longer store, Apple, and monitoring reference.
 
-Use two completely separate environments when you add production. The owner picks both ids.
+Production is project `resolingo` (number `168640425089`), aliased as `prod` in `.firebaserc`. `npm run deploy` uses that alias. Export `FIREBASE_PROJECT_ID` to target a different project. Add a second alias in `.firebaserc` when you create a separate development project.
 
 ## 1. GitHub
 
@@ -65,7 +65,7 @@ Use a dedicated Functions runtime service account. Grant only the precise roles 
 Deploy in this order:
 
 ```bash
-export FIREBASE_PROJECT_ID=your-new-project-id
+export FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-resolingo}"
 npm run deploy:rules
 npm run deploy:functions
 ```

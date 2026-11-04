@@ -1,6 +1,6 @@
 # Release checklist
 
-- [ ] The Firebase/GCP project id is supplied at deploy time (`FIREBASE_PROJECT_ID`) and matches the native plist/json. Firestore is `eur3`, functions are `europe-west1`, Storage is in the EU.
+- [ ] Production deploys target `resolingo` (number `168640425089`, `.firebaserc` alias `prod`) unless `FIREBASE_PROJECT_ID` overrides it. The native plist and `google-services.json` match that id. Firestore is `eur3`, functions are `europe-west1`, Storage is in the EU.
 - [ ] Billing alerts exist at 50%, 80%, and 100%. `TTS_VOICE_TIER` is `wavenet` unless a budget review chose another tier.
 - [ ] Rules and indexes are deployed and emulator ownership/race tests pass.
 - [ ] Runtime IAM is least-privileged; no service-account JSON key exists.

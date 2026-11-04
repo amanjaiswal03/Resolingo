@@ -2,16 +2,16 @@
 
 ## Deploy order
 
-Deploy with `FIREBASE_PROJECT_ID` set. The steps for a new account are the checklist in [New project setup](NEW_PROJECT_SETUP.md).
+Production is `.firebaserc` alias `prod` (`resolingo`, number `168640425089`). `npm run deploy` uses it. Set `FIREBASE_PROJECT_ID` to deploy somewhere else. The setup checklist is [New project setup](NEW_PROJECT_SETUP.md).
 
 1. Deploy Firestore indexes/rules plus Storage rules.
 2. Set Functions secrets and deploy Functions.
 3. Run provider smoke tests, then build the development client.
 4. App Check is already enforced in code. Register a debug token before the first device test, and watch metrics before a production rollout.
-5. Repeat against the production project id. Production configuration must never point at development resources.
+5. Production deploys use project `resolingo`. A development project must never reuse that id.
 
 ```bash
-export FIREBASE_PROJECT_ID=your-new-project-id
+export FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-resolingo}"
 firebase functions:secrets:set OPENAI_API_KEY --project "$FIREBASE_PROJECT_ID"
 firebase functions:secrets:set SAFETY_IDENTIFIER_SECRET --project "$FIREBASE_PROJECT_ID"
 firebase functions:secrets:set EXPO_ACCESS_TOKEN --project "$FIREBASE_PROJECT_ID"

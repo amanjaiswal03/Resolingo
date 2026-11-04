@@ -52,7 +52,7 @@ Expo Go is intentionally unsupported because Auth providers, App Check, Crashlyt
 
 ## Configuration
 
-Project ids are not stored in this repo. Set `FIREBASE_PROJECT_ID` for CLI deploys and put that project's native config files in EAS.
+Production Firebase project id is `resolingo` (number `168640425089`), aliased as `prod` in `.firebaserc`. `npm run deploy` uses that alias. Set `FIREBASE_PROJECT_ID` to target a different project. Local emulators stay on `demo-resolingo`.
 
 1. Follow [New project setup](docs/NEW_PROJECT_SETUP.md) for a fresh Google account.
 2. Use [Cloud setup](docs/CLOUD_SETUP.md) for store, Apple, and monitoring detail.

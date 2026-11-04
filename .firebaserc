@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "demo-resolingo"
+    "default": "demo-resolingo",
+    "prod": "resolingo"
   }
 }
