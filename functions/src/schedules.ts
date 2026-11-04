@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { logger } from "firebase-functions";
+import { STALE_UNENQUEUED_AFTER_MS } from "@resolingo/shared";
 import { EXPO_ACCESS_TOKEN, REGION } from "./config.js";
 import { bucket, db } from "./firebase.js";
 import { Expo } from "expo-server-sdk";
 import { sendUserPush } from "./push.js";
-import { releaseReservation } from "./jobs.js";
+import { abandonUnenqueuedLesson, failLessonAndRelease } from "./jobs.js";
 import { localDate, nextReminderAt } from "./time.js";
 
 export const dispatchReminders = onSchedule({
@@ -76,6 +77,26 @@ export const processPushReceipts = onSchedule({
   }));
 });
 
+export const recoverUnenqueuedLessons = onSchedule({
+  region: REGION,
+  schedule: "every 1 minutes",
+  timeZone: "UTC",
+}, async () => {
+  const cutoff = Timestamp.fromMillis(Date.now() - STALE_UNENQUEUED_AFTER_MS);
+  const stale = await db.collectionGroup("lessons")
+    .where("enqueuePending", "==", true)
+    .where("updatedAt", "<", cutoff)
+    .limit(200)
+    .get();
+  await Promise.all(stale.docs.map(async (lesson) => {
+    const uid = lesson.ref.parent.parent?.id;
+    const quotaDate = lesson.data().quotaDate;
+    if (!uid || typeof quotaDate !== "string") return;
+    await abandonUnenqueuedLesson(uid, lesson.id, quotaDate, "enqueue_timeout");
+  }));
+  if (!stale.empty) logger.info("unenqueued_lessons_recovered", { count: stale.size });
+});
+
 export const cleanupAbandonedJobs = onSchedule({
   region: REGION,
   schedule: "every day 03:00",
@@ -90,14 +111,8 @@ export const cleanupAbandonedJobs = onSchedule({
   await Promise.all(abandoned.docs.map(async (lesson) => {
     const uid = lesson.ref.parent.parent?.id;
     if (!uid) return;
-    await lesson.ref.update({
-      status: "failed",
-      failureCode: "generation_timeout",
-      progress: 0,
-      failedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-    await releaseReservation(uid, lesson.id, lesson.data().quotaDate as string);
+    const quotaDate = lesson.data().quotaDate;
+    await failLessonAndRelease(uid, lesson.id, typeof quotaDate === "string" ? quotaDate : "", "generation_timeout");
   }));
 
   const cutoff = Timestamp.fromMillis(Date.now() - 7 * 24 * 60 * 60 * 1000);

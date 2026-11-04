@@ -1,6 +1,6 @@
 {
   "projects": {
-    "dev": "resolingo-dev",
-    "prod": "resolingo-prod"
+    "default": "demo-resolingo",
+    "prod": "resolingo"
   }
 }

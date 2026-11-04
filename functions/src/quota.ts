@@ -1,3 +1,8 @@
+export function withoutReservation(reservations: unknown, lessonId: string | undefined): string[] {
+  if (!Array.isArray(reservations)) return [];
+  return reservations.filter((id): id is string => typeof id === "string" && id !== lessonId);
+}
+
 export function quotaUsed(readyCount: number, reservations: readonly string[]): number {
   return Math.max(0, readyCount) + new Set(reservations).size;
 }

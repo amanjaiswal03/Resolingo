@@ -1,29 +1,24 @@
 import textToSpeech, { protos } from "@google-cloud/text-to-speech";
 import { type LanguageId, type LessonSegment, languageById } from "@resolingo/shared";
+import { TTS_VOICE_TIER } from "./config.js";
 import { bucket } from "./firebase.js";
+import { selectVoices, voiceTierFromEnv } from "./voices.js";
 
 const client = new textToSpeech.TextToSpeechClient();
 const voiceCache = new Map<string, string[]>();
 
 async function voicesFor(language: LanguageId): Promise<string[]> {
-  const cached = voiceCache.get(language);
+  const tier = voiceTierFromEnv(TTS_VOICE_TIER.value());
+  const cacheKey = `${tier}:${language}`;
+  const cached = voiceCache.get(cacheKey);
   if (cached) return cached;
   const config = languageById[language];
   const [response] = await client.listVoices({ languageCode: config.googleTtsLanguageCode });
-  const voices = (response.voices ?? [])
-    .map((voice) => voice.name)
-    .filter((name): name is string => Boolean(name))
-    .sort((left, right) => scoreVoice(right) - scoreVoice(left));
-  if (!voices.length) throw new Error(`TTS_VOICE_UNAVAILABLE:${language}`);
-  voiceCache.set(language, voices);
-  return voices;
-}
-
-function scoreVoice(name: string): number {
-  if (name.includes("Chirp3")) return 4;
-  if (name.includes("Neural2")) return 3;
-  if (name.includes("Wavenet")) return 2;
-  return 1;
+  const names = (response.voices ?? []).flatMap((voice) => voice.name ? [voice.name] : []);
+  const selected = selectVoices(names, tier).voices;
+  if (!selected.length) throw new Error(`TTS_VOICE_UNAVAILABLE:${language}`);
+  voiceCache.set(cacheKey, selected);
+  return selected;
 }
 
 function speakingRate(level: string): number {
