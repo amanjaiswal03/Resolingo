@@ -12,6 +12,7 @@ Production is `.firebaserc` alias `prod` (`resolingo`, number `168640425089`). `
 
 ```bash
 export FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-resolingo}"
+# EXPO_ACCESS_TOKEN is already set for project resolingo. Run this only to rotate it.
 firebase functions:secrets:set EXPO_ACCESS_TOKEN --project "$FIREBASE_PROJECT_ID"
 npm run deploy:rules
 npm run deploy:functions

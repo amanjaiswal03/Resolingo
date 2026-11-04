@@ -1,4 +1,4 @@
-appId: com.resolingo.app.dev
+appId: com.resolingo.app
 ---
 - launchApp
 - assertVisible: "What will you practice?"

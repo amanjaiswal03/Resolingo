@@ -14,9 +14,9 @@ export REGION=europe-west1
 - [ ] Confirm project `resolingo` (`168640425089`) is the Firebase project you will deploy. Console: https://console.cloud.google.com/home/dashboard?project=resolingo
 - [ ] Upgrade Firebase to the Blaze plan and attach a billing account. Functions, Cloud Tasks, and Text-to-Speech will not run without it.
 - [ ] Create a budget for this project only: Billing → Budgets & alerts. Set a monthly amount you can afford to lose. Alert at 50%, 80%, and 100%. Email the owner.
-- [ ] Choose locations at creation time. They cannot be moved later.
-  - [ ] Firestore: `eur3`
-  - [ ] Default Storage bucket: an EU location
+- [ ] Locations already chosen for `resolingo`. They cannot be moved later.
+  - [x] Firestore: `europe-west1`
+  - [x] Storage bucket: `gs://resolingo.firebasestorage.app` (`europe-west1`)
   - [ ] Functions, Tasks, Scheduler, Artifact Registry: `europe-west1`
 
 ## 2. APIs
@@ -60,15 +60,15 @@ Replace the member if Functions runs as a different service account. List price 
 
 ## 3. Firebase apps and native config
 
-Bundle ids come from `apps/mobile/app.config.ts`.
+Both registered Firebase apps use bundle id `com.resolingo.app`. `APP_IDENTIFIER` overrides that in `apps/mobile/app.config.ts`. `APP_VARIANT` only changes the display name.
 
-| Variant | iOS bundle id | Android package |
+| Platform | Bundle id | Firebase app id |
 |---|---|---|
-| Development (`APP_VARIANT` unset or `development`) | `com.resolingo.app.dev` | `com.resolingo.app.dev` |
-| Production (`APP_VARIANT=production`) | `com.resolingo.app` | `com.resolingo.app` |
+| Android | `com.resolingo.app` | `1:168640425089:android:d2148d985606955459b180` |
+| iOS | `com.resolingo.app` | `1:168640425089:ios:3fa21043c368503659b180` |
 
-- [ ] Register the iOS and Android apps you will ship first. Development builds are enough to start.
-- [ ] Download `GoogleService-Info.plist` and `google-services.json`. Do not commit them.
+- [x] Android and iOS apps are registered in project `resolingo`.
+- [ ] Download `GoogleService-Info.plist` and `google-services.json` for those apps. Do not commit them.
 - [ ] Add the Android SHA-1 and SHA-256 (debug, upload, and Play signing) to the Android app.
 - [ ] Enable Google and Apple sign-in under Authentication. Apple needs the Services ID and the Firebase callback `https://resolingo.firebaseapp.com/__/auth/handler` (or `https://$FIREBASE_PROJECT_ID.firebaseapp.com/__/auth/handler` for another project).
 - [ ] Copy the Web client id into `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`.
@@ -85,10 +85,13 @@ Callable functions already set `enforceAppCheck: true`. A build with no token ca
 
 These are Secret Manager values, not EAS variables and not `functions/.env`.
 
+`EXPO_ACCESS_TOKEN` is already in Secret Manager for project `resolingo`. Rotate it with:
+
 ```bash
 firebase functions:secrets:set EXPO_ACCESS_TOKEN --project "$FIREBASE_PROJECT_ID"
 ```
 
+- [x] `EXPO_ACCESS_TOKEN` exists. Do not create a second copy.
 - [ ] Gemini does not use a secret. `OPENAI_API_KEY` and `SAFETY_IDENTIFIER_SECRET` are not part of this app.
 - [ ] Use a dedicated Functions runtime service account if you prefer. Grant Firestore, the app Storage bucket, Text-to-Speech, Cloud Tasks enqueue, Secret Manager access, log writing, and `roles/aiplatform.user`. Do not grant Owner or Editor.
 
@@ -107,13 +110,21 @@ npm run deploy:functions
 
 ## 7. EAS
 
+The Expo project already exists. `apps/mobile/app.config.ts` defaults to it. `EXPO_OWNER` and `EXPO_PUBLIC_EAS_PROJECT_ID` override those defaults.
+
+| Field | Value |
+|---|---|
+| Owner | `amanjaiswal03` |
+| Slug | `resolingo` |
+| Project id | `89e3143e-acd3-47b4-95ff-3c131a3f2535` |
+
 ```bash
 npx eas-cli login
-npx eas-cli init
+npx eas-cli project:info
 ```
 
-- [ ] Put the EAS project UUID in `EXPO_PUBLIC_EAS_PROJECT_ID` (`apps/mobile/app.config.ts` reads it).
-- [ ] Create the `development` environment. Set every key in `.env.example`. `EXPO_PUBLIC_FIREBASE_PROJECT_ID` must equal `FIREBASE_PROJECT_ID`.
+- [x] EAS project `89e3143e-acd3-47b4-95ff-3c131a3f2535` is the default in `app.config.ts`.
+- [ ] Create the `development` environment if it does not exist yet. Public values are in `.env.example`. `EXPO_PUBLIC_FIREBASE_PROJECT_ID` must stay `resolingo` for this backend.
 - [ ] Upload file variables `GOOGLE_SERVICES_INFO_PLIST` and `GOOGLE_SERVICES_JSON`. The app reads the project from those files.
 - [ ] Build a development client: `npx eas-cli build --profile development --platform ios` and the Android equivalent, from `apps/mobile`.
 - [ ] Add an APNs key for iOS. For Android, upload an FCM v1 credential to Expo. Push sending uses Expo, and the sender is still a Cloud Function in this project.

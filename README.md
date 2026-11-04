@@ -52,13 +52,13 @@ Expo Go is intentionally unsupported because Auth providers, App Check, Crashlyt
 
 ## Configuration
 
-Production Firebase project id is `resolingo` (number `168640425089`), aliased as `prod` in `.firebaserc`. `npm run deploy` uses that alias. Set `FIREBASE_PROJECT_ID` to target a different project. Local emulators stay on `demo-resolingo`.
+Production Firebase project id is `resolingo` (number `168640425089`), aliased as `prod` in `.firebaserc`. `npm run deploy` uses that alias. Set `FIREBASE_PROJECT_ID` to target a different project. Local emulators stay on `demo-resolingo`. The Expo project is owner `amanjaiswal03`, slug `resolingo`, id `89e3143e-acd3-47b4-95ff-3c131a3f2535`. `EXPO_OWNER` and `EXPO_PUBLIC_EAS_PROJECT_ID` override those defaults.
 
 1. Follow [New project setup](docs/NEW_PROJECT_SETUP.md) for a fresh Google account.
 2. Use [Cloud setup](docs/CLOUD_SETUP.md) for store, Apple, and monitoring detail.
 3. Add EAS environment variables from `.env.example`.
 4. Upload `GoogleService-Info.plist` and `google-services.json` as EAS file environment variables; never commit them.
-5. Store backend secrets with `firebase functions:secrets:set`.
+5. `EXPO_ACCESS_TOKEN` is already in Secret Manager for project `resolingo`. Set it again only to rotate it.
 6. Deploy rules and indexes before distributing clients.
 
 See [Architecture](docs/ARCHITECTURE.md), [operations](docs/OPERATIONS.md), [legacy audit](docs/LEGACY_AUDIT.md), and the [release checklist](docs/RELEASE_CHECKLIST.md).

@@ -1,14 +1,24 @@
 import type { ConfigContext, ExpoConfig } from "expo/config";
 
+const DEFAULT_EAS_OWNER = "amanjaiswal03";
+const DEFAULT_EAS_PROJECT_ID = "89e3143e-acd3-47b4-95ff-3c131a3f2535";
+const DEFAULT_APP_IDENTIFIER = "com.resolingo.app";
+
+const orDefault = (value: string | undefined, fallback: string): string => {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : fallback;
+};
+
 export default ({ config }: ConfigContext): ExpoConfig => {
   const isDev = process.env.APP_VARIANT !== "production";
-  const identifier = isDev ? "com.resolingo.app.dev" : "com.resolingo.app";
+  const identifier = orDefault(process.env.APP_IDENTIFIER, DEFAULT_APP_IDENTIFIER);
   const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
   const googleInfoPlist = process.env.GOOGLE_SERVICES_INFO_PLIST;
 
   return {
     ...config,
     name: isDev ? "Resolingo Dev" : "Resolingo",
+    owner: orDefault(process.env.EXPO_OWNER, DEFAULT_EAS_OWNER),
     slug: "resolingo",
     scheme: "resolingo",
     platforms: ["ios", "android"],
@@ -45,7 +55,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     ],
     experiments: { typedRoutes: true },
     extra: {
-      eas: { projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "REPLACE_WITH_EAS_PROJECT_ID" },
+      eas: { projectId: orDefault(process.env.EXPO_PUBLIC_EAS_PROJECT_ID, DEFAULT_EAS_PROJECT_ID) },
     },
   };
 };
