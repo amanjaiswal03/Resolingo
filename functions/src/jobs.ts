@@ -10,7 +10,7 @@ import {
 import { logger } from "firebase-functions";
 import { DAILY_LIMIT, MAX_TASK_ATTEMPTS, REGION } from "./config.js";
 import { adminFunctions, db } from "./firebase.js";
-import { generateLessonContent } from "./openai.js";
+import { generateLessonContent } from "./gemini.js";
 import { sendUserPush } from "./push.js";
 import { withoutReservation } from "./quota.js";
 import { synthesizeSegment } from "./tts.js";
@@ -124,7 +124,6 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
 
   try {
     const content = await generateLessonContent({
-      uid: payload.uid,
       type,
       nativeLanguage,
       targetLanguage,
@@ -231,6 +230,7 @@ function providerFailureCode(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("TTS_VOICE_TIER_INVALID")) return "voice_tier_invalid";
   if (message.includes("TTS_VOICE_UNAVAILABLE")) return "voice_unavailable";
+  if (message.includes("MODEL_OUTPUT_BLOCKED")) return "lesson_blocked";
   if (message.includes("MODEL_OUTPUT")) return "lesson_validation_failed";
   return "provider_failure";
 }

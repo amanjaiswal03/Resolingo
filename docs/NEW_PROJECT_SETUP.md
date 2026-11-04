@@ -41,11 +41,22 @@ gcloud services enable \
   monitoring.googleapis.com \
   firebase.googleapis.com \
   fcm.googleapis.com \
+  aiplatform.googleapis.com \
   --project "$FIREBASE_PROJECT_ID"
 ```
 
 - [ ] In APIs & Services → Cloud Text-to-Speech API → Quotas, confirm WaveNet and Standard character quotas. The free tier is 4 million characters per month for those voices. Leave Chirp 3 HD unused.
-- [ ] Keep `TTS_VOICE_TIER=wavenet` (the default). Copy `functions/.env.example` to `functions/.env` only if you need to change the tier or the OpenAI model. Do not put API keys in that file.
+- [ ] Keep `TTS_VOICE_TIER=wavenet` (the default). Copy `functions/.env.example` to `functions/.env` only to change `TTS_VOICE_TIER`, `GEMINI_LESSON_MODEL`, or `GEMINI_LOCATION`. Do not put API keys in that file.
+- [ ] Lesson text uses Vertex AI, not an API key. Default model is `gemini-3.5-flash-lite` (GA, 21 Jul 2026). It is not available in `europe-west1`. The default location is the EU multi-region `eu` (`https://aiplatform.eu.rep.googleapis.com`), which keeps processing in the EU. `global` also works and can be set with `GEMINI_LOCATION`.
+- [ ] Grant the Functions runtime service account `roles/aiplatform.user`. For this project's default compute account:
+
+```bash
+gcloud projects add-iam-policy-binding "$FIREBASE_PROJECT_ID" \
+  --member="serviceAccount:168640425089-compute@developer.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+```
+
+Replace the member if Functions runs as a different service account. List price checked 4 Nov 2026: $0.30 per million input tokens and $2.50 per million output tokens, including thinking tokens. At three short lessons a day that is well under a dollar per active user per month. WaveNet Text-to-Speech is still the larger Google bill.
 
 ## 3. Firebase apps and native config
 
@@ -75,13 +86,11 @@ Callable functions already set `enforceAppCheck: true`. A build with no token ca
 These are Secret Manager values, not EAS variables and not `functions/.env`.
 
 ```bash
-firebase functions:secrets:set OPENAI_API_KEY --project "$FIREBASE_PROJECT_ID"
-firebase functions:secrets:set SAFETY_IDENTIFIER_SECRET --project "$FIREBASE_PROJECT_ID"
 firebase functions:secrets:set EXPO_ACCESS_TOKEN --project "$FIREBASE_PROJECT_ID"
 ```
 
-- [ ] `SAFETY_IDENTIFIER_SECRET` is 32 random bytes. Generate it locally. Do not reuse an OpenAI key.
-- [ ] Use a dedicated Functions runtime service account. Grant Firestore, the app Storage bucket, Text-to-Speech, Cloud Tasks enqueue, Secret Manager access, and log writing. Do not grant Owner or Editor.
+- [ ] Gemini does not use a secret. `OPENAI_API_KEY` and `SAFETY_IDENTIFIER_SECRET` are not part of this app.
+- [ ] Use a dedicated Functions runtime service account if you prefer. Grant Firestore, the app Storage bucket, Text-to-Speech, Cloud Tasks enqueue, Secret Manager access, log writing, and `roles/aiplatform.user`. Do not grant Owner or Editor.
 
 ## 6. Deploy
 

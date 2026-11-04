@@ -12,8 +12,6 @@ Production is `.firebaserc` alias `prod` (`resolingo`, number `168640425089`). `
 
 ```bash
 export FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-resolingo}"
-firebase functions:secrets:set OPENAI_API_KEY --project "$FIREBASE_PROJECT_ID"
-firebase functions:secrets:set SAFETY_IDENTIFIER_SECRET --project "$FIREBASE_PROJECT_ID"
 firebase functions:secrets:set EXPO_ACCESS_TOKEN --project "$FIREBASE_PROJECT_ID"
 npm run deploy:rules
 npm run deploy:functions
@@ -21,14 +19,14 @@ npm run deploy:functions
 
 ## Monitoring
 
-Create Cloud Monitoring policies for task queue age/backlog, generation failures, OpenAI/TTS error ratios, p95 generation latency over two minutes, scheduler failures, push receipt failures, and unusual lesson volume per UID hash. Configure billing alerts at 50%, 80%, and 100% of the owner-approved monthly budget.
+Create Cloud Monitoring policies for task queue age/backlog, generation failures, Gemini/TTS error ratios, p95 generation latency over two minutes, scheduler failures, push receipt failures, and unusual lesson volume per UID hash. Configure billing alerts at 50%, 80%, and 100% of the owner-approved monthly budget. Gemini list price is $0.30 per million input tokens and $2.50 per million output tokens for `gemini-3.5-flash-lite`; WaveNet Text-to-Speech is still the main Google cost at the three-lesson cap.
 
 Application logs must contain request IDs, stage, timing, model/voice IDs, and safe error codes—never lesson text, access tokens, email, nickname, or raw UID. Retain audit logs for IAM and Secret Manager access.
 
 ## Failure behavior
 
 - Malformed/refused model output: one repair request, then terminal failure and quota release.
-- Transient OpenAI/TTS/Storage failure: task retry with bounded exponential backoff.
+- Transient Gemini/TTS/Storage failure: task retry with bounded exponential backoff.
 - Partial audio: deterministic paths make retries idempotent; cleanup removes abandoned failed objects.
 - Invalid Expo push token: remove after receipt reports `DeviceNotRegistered`.
 - Account deletion: do not report success until Storage, Firestore, and Auth deletion finish.

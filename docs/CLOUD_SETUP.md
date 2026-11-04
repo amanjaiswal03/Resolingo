@@ -53,12 +53,10 @@ Register App Attest with DeviceCheck fallback on iOS and Play Integrity on Andro
 Set secrets independently in each Firebase project:
 
 ```bash
-firebase functions:secrets:set OPENAI_API_KEY --project "$FIREBASE_PROJECT_ID"
-firebase functions:secrets:set SAFETY_IDENTIFIER_SECRET --project "$FIREBASE_PROJECT_ID"
 firebase functions:secrets:set EXPO_ACCESS_TOKEN --project "$FIREBASE_PROJECT_ID"
 ```
 
-Generate `SAFETY_IDENTIFIER_SECRET` from a cryptographically secure 32-byte value. Never put these values in EAS mobile variables. Do not create downloadable Google service-account keys.
+Lesson text uses the Functions service account against Vertex AI. There is no Gemini API key. Never put secrets in EAS mobile variables. Do not create downloadable Google service-account keys. Grant that runtime account `roles/aiplatform.user`.
 
 Use a dedicated Functions runtime service account. Grant only the precise roles needed for Firestore document access, Storage objects under the app bucket, Text-to-Speech use, Cloud Tasks enqueue, Secret Manager secret access, and log writing. Grant deploy identities separately; do not give the runtime Owner/Editor.
 
@@ -114,9 +112,9 @@ In Play Console create Resolingo for `com.resolingo.app`, enable Play App Signin
 
 Use EAS-managed distribution credentials unless the organization has an existing controlled credential process. Limit store API keys to the minimum role and store them in EAS, not GitHub source.
 
-## 6. OpenAI and Google TTS
+## 6. Gemini and Google TTS
 
-Create a dedicated OpenAI API project with restricted membership, project budget, rate limits, and a key used only by Functions. Keep `OPENAI_LESSON_MODEL` at `gpt-5.6-luna` initially; pin a dated snapshot only after multilingual evaluation. Provider logging and app logs must exclude lesson text and personal data.
+Enable `aiplatform.googleapis.com`. The lesson model defaults to `gemini-3.5-flash-lite` in Vertex location `eu` (the model is not in `europe-west1`). Change `GEMINI_LESSON_MODEL` or `GEMINI_LOCATION` in `functions/.env` without a store release. Provider logging and app logs must exclude lesson text and personal data. At the published list price of $0.30 / $2.50 per million input / output tokens, text is a small share of the bill next to WaveNet TTS.
 
 Enable Google Cloud Text-to-Speech. The default tier is WaveNet, then Standard (`TTS_VOICE_TIER` in `functions/.env`). Do not set `chirp3` or `neural2` until a budget review says so. Voice mappings live in `packages/shared/src/languages.ts` and backend selection remains deployable without a mobile store release.
 

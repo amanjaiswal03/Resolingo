@@ -10,7 +10,7 @@ Resolingo is a focused daily language-learning app for iOS and Android. A learne
 - Daily home, asynchronous generation status, history, transcript-aware background audio player, settings, and deletion.
 - Owner-scoped Firestore and Storage rules with emulator tests.
 - Firebase Functions callables protected by Auth and App Check, a region-pinned Cloud Tasks worker, quota/idempotency transactions, reminders, cleanup, and recursive deletion.
-- A single strict OpenAI Responses request per lesson, Zod validation, privacy-preserving safety identifier, Google Cloud TTS (WaveNet, then Standard), deterministic Storage paths, and Expo push delivery.
+- A single structured Vertex AI Gemini request per lesson, one repair attempt, Zod validation, Google Cloud TTS (WaveNet, then Standard), deterministic Storage paths, and Expo push delivery.
 - A canonical 32-language BCP-47 registry in `packages/shared`.
 
 ## Repository
