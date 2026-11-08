@@ -41,16 +41,30 @@ const input = {
 };
 
 describe("Gemini lesson generation", () => {
-  it("asks Vertex for structured JSON with medium safety filters", () => {
+  it("asks Vertex for JSON mode with medium safety filters and no response schema", () => {
     const config = lessonGenerationConfig();
     expect(config.responseMimeType).toBe("application/json");
+    expect(config.responseJsonSchema).toBeUndefined();
+    expect(config.responseSchema).toBeUndefined();
+    expect(config.thinkingConfig).toBeUndefined();
     expect(config.safetySettings).toEqual([
       HarmCategory.HARM_CATEGORY_HARASSMENT,
       HarmCategory.HARM_CATEGORY_HATE_SPEECH,
       HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
       HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
     ].map((category) => ({ category, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE })));
-    expect(JSON.stringify(config.responseJsonSchema)).toContain("de-DE");
+  });
+
+  it("unwraps a JSON string and fills a missing topic and summary from the title", async () => {
+    const body = lesson("Market morning");
+    delete (body as { topic?: string }).topic;
+    delete (body as { summary?: string }).summary;
+    body.title = "Market morning";
+    const model = client([{ text: JSON.stringify(JSON.stringify(body)) }]);
+    const result = await generateLessonContent(input, model);
+    expect(result.title).toBe("Market morning");
+    expect(result.topic).toBe("Market morning");
+    expect(result.summary).toBe("Market morning");
   });
 
   it("returns the first schema-valid lesson and does not send the user id", async () => {
