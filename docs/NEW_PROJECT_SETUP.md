@@ -68,10 +68,11 @@ Both registered Firebase apps use bundle id `com.resolingo.app`. `APP_IDENTIFIER
 | iOS | `com.resolingo.app` | `1:168640425089:ios:3fa21043c368503659b180` |
 
 - [x] Android and iOS apps are registered in project `resolingo`.
-- [ ] Download `GoogleService-Info.plist` and `google-services.json` for those apps. Do not commit them.
-- [ ] Add the Android SHA-1 and SHA-256 (debug, upload, and Play signing) to the Android app.
-- [ ] Enable Google and Apple sign-in under Authentication. Apple needs the Services ID and the Firebase callback `https://resolingo.firebaseapp.com/__/auth/handler` (or `https://$FIREBASE_PROJECT_ID.firebaseapp.com/__/auth/handler` for another project).
-- [ ] Copy the Web client id into `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`.
+- [x] `GoogleService-Info.plist` and `google-services.json` exist for those apps. Do not commit them. EAS still needs them as file variables.
+- [ ] Add the Android SHA-1 and SHA-256 (debug, upload, and Play signing) to the Android app. None are registered yet, and the Android `google-services.json` has no OAuth client until a fingerprint exists.
+- [x] Google sign-in is enabled. The web client id is `168640425089-9rt7kh4f1sil6p7cphd8jojvhr8da0p3.apps.googleusercontent.com`.
+- [ ] Enable Apple sign-in. It is not configured. Apple needs the Services ID and the Firebase callback `https://resolingo.firebaseapp.com/__/auth/handler`.
+- [x] The web client id is in `.env.example` and in every `apps/mobile/eas.json` build profile.
 
 ## 4. App Check
 
@@ -104,8 +105,8 @@ npm run deploy:rules
 npm run deploy:functions
 ```
 
-- [ ] Rules, indexes, and Storage deploy before functions.
-- [ ] In Cloud Tasks, confirm the queue is in `europe-west1`, max concurrent dispatches is 8, and the target function is `generateLessonTask`.
+- [x] Rules, indexes, and Storage are deployed. The four lesson and reminder indexes are `READY`.
+- [x] Cloud Tasks queue `generateLessonTask` is `RUNNING` in `europe-west1`, with max concurrent dispatches 8.
 - [ ] Run `TTS_VOICE_TIER=wavenet npm run validate:voices -w @resolingo/functions` with Application Default Credentials pointed at this project. It fails if a language has fewer than two WaveNet voices and no Standard pair.
 
 ## 7. EAS
