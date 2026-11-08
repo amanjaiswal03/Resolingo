@@ -208,6 +208,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       providerStatus: typeof error === "object" && error !== null && "status" in error
         ? Number((error as { status?: unknown }).status)
         : undefined,
+      errorMessage: error instanceof Error ? error.message.slice(0, 500) : undefined,
     });
     if (!isPermanentProviderError(error) && retryCount + 1 < MAX_TASK_ATTEMPTS) {
       await lessonRef.update({ status: "queued", progress: 5, enqueuePending: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() });
