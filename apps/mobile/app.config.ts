@@ -43,6 +43,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       permissions: ["POST_NOTIFICATIONS"],
     },
     plugins: [
+      "expo-dev-client",
       "expo-router",
       ["expo-splash-screen", { image: "./assets/resolingo-icon.png", imageWidth: 180, resizeMode: "contain", backgroundColor: "#08152F", dark: { backgroundColor: "#08152F" } }],
       ["expo-audio", { enableBackgroundPlayback: true, recordAudioAndroid: false, microphonePermission: false }],
@@ -50,6 +51,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-apple-authentication",
       "expo-secure-store",
       "@react-native-firebase/app",
+      "@react-native-firebase/crashlytics",
       "@react-native-google-signin/google-signin",
       ["expo-build-properties", { ios: { useFrameworks: "static" } }],
     ],
