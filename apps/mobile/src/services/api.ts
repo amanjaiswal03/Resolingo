@@ -1,8 +1,9 @@
 import { httpsCallable } from "@react-native-firebase/functions";
 import type { LessonType, UserProfile } from "@resolingo/shared";
-import { functions } from "./firebase";
+import { functions, initializeFirebaseSecurity } from "./firebase";
 
 async function call<Request, Response>(name: string, data: Request): Promise<Response> {
+  await initializeFirebaseSecurity();
   const callable = httpsCallable<Request, Response>(functions, name);
   const result = await callable(data);
   return result.data;

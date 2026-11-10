@@ -11,11 +11,17 @@ export const firestore = getFirestore(firebaseApp);
 export const functions = getFunctions(firebaseApp, "europe-west1");
 export const storage = getStorage(firebaseApp);
 
-let initialized = false;
+let securityInit: Promise<void> | undefined;
 
-export async function initializeFirebaseSecurity(): Promise<void> {
-  if (initialized) return;
-  initialized = true;
+export function initializeFirebaseSecurity(): Promise<void> {
+  securityInit ??= startFirebaseSecurity().catch((error: unknown) => {
+    securityInit = undefined;
+    throw error;
+  });
+  return securityInit;
+}
+
+async function startFirebaseSecurity(): Promise<void> {
   if (process.env.EXPO_PUBLIC_USE_EMULATORS === "true") {
     connectAuthEmulator(firebaseAuth, "http://127.0.0.1:9099", { disableWarnings: true });
     connectFirestoreEmulator(firestore, "127.0.0.1", 8080);
