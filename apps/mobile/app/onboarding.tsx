@@ -45,7 +45,9 @@ export default function OnboardingScreen() {
       if (telemetryConsent) await track("onboarding_completed");
       router.replace("/(tabs)");
     } catch (error) {
-      Alert.alert("Couldn’t save", error instanceof Error ? error.message : "Please try again.");
+      const message = error instanceof Error ? error.message : "Please try again.";
+      const code = __DEV__ && error && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : "";
+      Alert.alert("Couldn’t save", code ? `${code}: ${message}` : message);
     } finally { setSaving(false); }
   };
 

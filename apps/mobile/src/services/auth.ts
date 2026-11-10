@@ -5,7 +5,11 @@ import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { AppleAuthProvider, GoogleAuthProvider, signInWithCredential, signOut } from "@react-native-firebase/auth";
 import { firebaseAuth } from "./firebase";
 
-GoogleSignin.configure({ webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID });
+const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim();
+GoogleSignin.configure({
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  ...(iosClientId ? { iosClientId } : {}),
+});
 
 export async function signInWithGoogle(): Promise<void> {
   await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });

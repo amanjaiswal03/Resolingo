@@ -22,11 +22,16 @@ export async function initializeFirebaseSecurity(): Promise<void> {
     connectFunctionsEmulator(functions, "127.0.0.1", 5001);
     connectStorageEmulator(storage, "127.0.0.1", 9199);
   }
+  const debugToken = __DEV__ ? process.env.EXPO_PUBLIC_APP_CHECK_DEBUG_TOKEN?.trim() : "";
   await initializeAppCheck(firebaseApp, {
     provider: {
       providerOptions: {
-        android: { provider: __DEV__ ? "debug" : "playIntegrity" },
-        apple: { provider: __DEV__ ? "debug" : "appAttestWithDeviceCheckFallback" },
+        android: debugToken
+          ? { provider: "debug", debugToken }
+          : { provider: __DEV__ ? "debug" : "playIntegrity" },
+        apple: debugToken
+          ? { provider: "debug", debugToken }
+          : { provider: __DEV__ ? "debug" : "appAttestWithDeviceCheckFallback" },
       },
     },
     isTokenAutoRefreshEnabled: true,

@@ -9,6 +9,8 @@ firebase-debug.log*
 .env
 .env.*
 !.env.example
+# Local Expo overrides, including apps/mobile/.env.local. Never commit an App Check debug token.
+.env*.local
 GoogleService-Info.plist
 google-services.json
 service-account*.json
