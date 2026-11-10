@@ -51,6 +51,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       "expo-apple-authentication",
       "expo-secure-store",
       "@react-native-firebase/app",
+      // After the app plugin so this iOS mod runs first and installs RNFBAppCheckModule before FirebaseApp.configure().
+      "@react-native-firebase/app-check",
       "@react-native-firebase/crashlytics",
       "@react-native-google-signin/google-signin",
       ["expo-build-properties", { ios: { useFrameworks: "static" } }],
