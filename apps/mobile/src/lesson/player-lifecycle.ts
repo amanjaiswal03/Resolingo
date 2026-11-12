@@ -18,6 +18,22 @@ export type OwnedAudioPlayer = {
   release: () => void;
 };
 
+export type OwnedPlaylist = {
+  pause: () => void;
+  destroy: () => void;
+};
+
+/** Pause, then destroy a playlist we created ourselves. One failure must not skip the other. */
+export function stopOwnedPlaylist(playlist: OwnedPlaylist): void {
+  for (const step of [() => playlist.pause(), () => playlist.destroy()]) {
+    try {
+      step();
+    } catch {
+      // The native queue may already be gone. Keep tearing down.
+    }
+  }
+}
+
 export function stopOwnedPlayer(player: OwnedAudioPlayer, removeListeners?: () => void): void {
   const steps = [
     removeListeners,

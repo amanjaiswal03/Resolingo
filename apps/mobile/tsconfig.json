@@ -5,7 +5,9 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
   "exclude": [
@@ -15,7 +17,12 @@
     "jest.config.js",
     "android",
     "ios",
-    // vitest/config pulls Vite types into the app program and breaks exactOptionalPropertyTypes checks.
     "vitest.config.ts"
+  ],
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    ".expo/types/**/*.ts",
+    "expo-env.d.ts"
   ]
 }

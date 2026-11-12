@@ -15,16 +15,16 @@ function Navigation() {
   const { loading, user, profile } = useSession();
   useEffect(() => {
     if (loading) return;
-    const root = segments[0];
+    const route = segments.join("/");
     if (!user) {
-      if (root !== "(auth)") router.replace("/(auth)/sign-in");
+      if (!route.includes("sign-in")) router.replace("/(auth)/sign-in");
       return;
     }
     if (!profile?.onboardingComplete) {
-      if (root !== "onboarding") router.replace("/onboarding");
+      if (!route.includes("onboarding")) router.replace("/onboarding");
       return;
     }
-    if (root === "(auth)" || root === "index" || root === undefined) router.replace("/(tabs)");
+    if (route.length === 0 || route.includes("sign-in")) router.replace("/(tabs)");
   }, [loading, user, profile?.onboardingComplete, segments, router]);
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {

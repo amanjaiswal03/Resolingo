@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stopOwnedPlayer, type OwnedAudioPlayer } from "./player-lifecycle";
+import { stopOwnedPlayer, stopOwnedPlaylist, type OwnedAudioPlayer } from "./player-lifecycle";
 
 function recordingPlayer(failAt?: "pause" | "clear" | "release"): { player: OwnedAudioPlayer; calls: string[] } {
   const calls: string[] = [];
@@ -36,5 +36,16 @@ describe("stopOwnedPlayer", () => {
     const cleared = recordingPlayer("clear");
     stopOwnedPlayer(cleared.player);
     expect(cleared.calls).toEqual(["pause", "clear", "release"]);
+  });
+});
+
+describe("stopOwnedPlaylist", () => {
+  it("pauses and destroys even when pause throws", () => {
+    const calls: string[] = [];
+    stopOwnedPlaylist({
+      pause: () => { calls.push("pause"); throw new Error("pause failed"); },
+      destroy: () => { calls.push("destroy"); },
+    });
+    expect(calls).toEqual(["pause", "destroy"]);
   });
 });

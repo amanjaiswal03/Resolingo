@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { createAudioPlayer, setAudioModeAsync, useAudioPlayerStatus } from "expo-audio";
-import { lessonDisplayText, type Lesson } from "@resolingo/shared";
-import { armAdvance, playbackPlan, resumeAction } from "@/lesson/autoplay";
+import { createAudioPlaylist, setAudioModeAsync, useAudioPlaylistStatus } from "expo-audio";
+import { lessonDisplayText, type Lesson, type LessonSegment } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
-import { stopOwnedPlayer } from "@/lesson/player-lifecycle";
+import { stopOwnedPlaylist } from "@/lesson/player-lifecycle";
+import { elapsedMs, lessonTimeline, seekInTimeline } from "@/lesson/timeline";
 import { Button } from "./Button";
 import { Body, Heading } from "./Typography";
 import { useTheme } from "@/theme/tokens";
@@ -18,96 +18,54 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
   onSegmentChange?: (segmentId: string) => void;
 }) {
   const theme = useTheme();
-  const playable = useMemo(() => lesson.segments.filter((segment) => segment.audioUrl), [lesson.segments]);
-  const [index, setIndex] = useState(0);
+  const playable = useMemo(() => lesson.segments.filter((segment): segment is LessonSegment & { audioUrl: string } => Boolean(segment.audioUrl)), [lesson.segments]);
   const [speedIndex, setSpeedIndex] = useState(1);
+  const [measuredMs, setMeasuredMs] = useState<Record<number, number>>({});
   const started = useRef(false);
+  const completed = useRef(false);
   const alive = useRef(true);
-  const autoplay = useRef(true);
-  const clipFinished = useRef(false);
-  const playedThisClip = useRef(false);
-  const cancelAdvance = useRef<(() => void) | null>(null);
-  // Owned outside useAudioPlayer so we can pause and detach listeners before
-  // release(). That hook releases in its own effect, which runs before any
-  // cleanup declared after it and crashes iOS on the way back to home.
-  const [player] = useState(() => createAudioPlayer(null, { updateInterval: 250, preferredForwardBufferDuration: 10 }));
-  const status = useAudioPlayerStatus(player);
-  const current = playable[index];
   const generation = useRef(0);
-  const indexRef = useRef(index);
-  const playableRef = useRef(playable);
+  const onStartRef = useRef(onStart);
+  onStartRef.current = onStart;
+  // Owned outside useAudioPlaylist so we can pause before destroy(). That hook
+  // releases in its own effect, which runs before later cleanups and crashes
+  // iOS on the way back to home.
+  const [playlist] = useState(() => createAudioPlaylist({
+    sources: playable.map((segment) => ({ uri: segment.audioUrl, name: lesson.title })),
+    updateInterval: 250,
+    loop: "none",
+  }));
+  const status = useAudioPlaylistStatus(playlist);
+  const timeline = useMemo(() => lessonTimeline(playable.map((segment, index) => {
+    const durationMs = measuredMs[index] ?? segment.durationMs;
+    return durationMs ? { durationMs } : {};
+  })), [measuredMs, playable]);
+  const current = playable[status.currentIndex] ?? playable[0];
 
-  const stopAdvance = () => {
-    cancelAdvance.current?.();
-    cancelAdvance.current = null;
-  };
-
-  useEffect(() => () => {
-    alive.current = false;
-    stopAdvance();
-  }, []);
+  useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => { void setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: "doNotMix" }); }, []);
   useEffect(() => {
-    indexRef.current = index;
-    playableRef.current = playable;
-  }, [index, playable]);
+    if (!alive.current || playable.length === 0) return;
+    playlist.playbackRate = 1;
+    playlist.play();
+    if (!started.current) {
+      started.current = true;
+      onStartRef.current?.();
+    }
+  }, [playlist, playable.length]);
   useEffect(() => {
     if (current) onSegmentChange?.(current.id);
   }, [current, onSegmentChange]);
   useEffect(() => {
-    if (!current?.audioUrl || !alive.current) return;
-    clipFinished.current = false;
-    playedThisClip.current = false;
-    stopAdvance();
-    player.replace({ uri: current.audioUrl, name: lesson.title });
-    player.setPlaybackRate(speeds[speedIndex]!);
-    player.setActiveForLockScreen(true, { title: lesson.title, artist: "Resolingo", albumTitle: lesson.type === "grammar" ? "Grammar lesson" : "Conversation lesson" });
-    player.play();
-    if (!started.current) {
-      started.current = true;
-      onStart?.();
-    }
-  // Changing speed is handled imperatively so it does not restart the segment.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.audioUrl, lesson.title, lesson.type, onStart, player]);
+    if (!status.isLoaded || status.duration <= 0) return;
+    const durationMs = Math.round(status.duration * 1_000);
+    setMeasuredMs((currentMs) => currentMs[status.currentIndex] === durationMs ? currentMs : { ...currentMs, [status.currentIndex]: durationMs });
+  }, [status.currentIndex, status.duration, status.isLoaded]);
   useEffect(() => {
-    if (!alive.current) return;
-    if (status.playing) playedThisClip.current = true;
-    const atEnd = status.didJustFinish || (status.isLoaded && status.duration > 0 && status.currentTime > 0 && status.currentTime >= status.duration - 0.2);
-    const finished = playedThisClip.current && !status.playing && atEnd;
-    if (!finished || clipFinished.current) return;
-    clipFinished.current = true;
-    const currentIndex = indexRef.current;
-    const clips = playableRef.current;
-    const plan = playbackPlan({
-      autoplay: autoplay.current,
-      index: currentIndex,
-      count: clips.length,
-      kind: clips[currentIndex]?.kind ?? "narration",
-    });
-    if (plan.action === "ignore") return;
-    if (plan.action === "complete") {
-      try { player.clearLockScreenControls(); } catch { /* player already stopped */ }
-      onComplete();
-      return;
-    }
-    const token = clips[currentIndex]?.audioUrl;
-    stopAdvance();
-    cancelAdvance.current = armAdvance(plan.delayMs, () => {
-      cancelAdvance.current = null;
-      if (!alive.current || !autoplay.current) return;
-      if (playableRef.current[indexRef.current]?.audioUrl !== token) return;
-      if (plan.action === "hold") return;
-      setIndex((value) => value + 1);
-    }, (fn, ms) => {
-      const timer = setTimeout(fn, ms);
-      return () => clearTimeout(timer);
-    });
-  }, [current?.audioUrl, onComplete, player, status.currentTime, status.didJustFinish, status.duration, status.isLoaded, status.playing]);
-  // Last effect on purpose: React cleans effects up in declaration order, so
-  // status and segment listeners are removed before this schedules release.
-  // The microtask skips release when the effect runs again immediately
-  // (Fast Refresh or Strict Mode) and still stops playback on a real unmount.
+    if (!alive.current || !status.didJustFinish || status.currentIndex < playable.length - 1 || completed.current) return;
+    completed.current = true;
+    onComplete();
+  }, [onComplete, playable.length, status.currentIndex, status.didJustFinish]);
   useEffect(() => {
     const currentGeneration = ++generation.current;
     return () => {
@@ -115,46 +73,40 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
         // Reading the ref here is intentional: it changes when the effect re-runs.
         // eslint-disable-next-line react-hooks/exhaustive-deps
         if (generation.current !== currentGeneration) return;
-        stopOwnedPlayer(player);
+        stopOwnedPlaylist(playlist);
       });
     };
-  }, [player]);
+  }, [playlist]);
 
   const changeSpeed = () => {
     const next = (speedIndex + 1) % speeds.length;
     setSpeedIndex(next);
-    player.setPlaybackRate(speeds[next]!);
+    playlist.playbackRate = speeds[next]!;
   };
-  const pausePlayback = () => {
-    autoplay.current = false;
-    stopAdvance();
-    player.pause();
-  };
-  const resumePlayback = () => {
-    autoplay.current = true;
-    const action = resumeAction({ clipFinished: clipFinished.current, index, count: playable.length });
-    if (action === "play") {
-      player.play();
+  const seekBy = (deltaSec: number) => {
+    const index = status.currentIndex;
+    const clipDuration = status.duration > 0 ? status.duration : (timeline.durationsMs[index] ?? 0) / 1_000;
+    const nextTime = status.currentTime + deltaSec;
+    if (nextTime >= 0 && nextTime <= clipDuration) {
+      void playlist.seekTo(nextTime);
       return;
     }
-    if (action === "complete") {
-      onComplete();
-      return;
-    }
-    setIndex((value) => Math.min(playable.length - 1, value + 1));
+    const target = seekInTimeline(timeline, elapsedMs(timeline, index, status.currentTime) + deltaSec * 1_000);
+    if (target.index !== index) playlist.skipTo(target.index);
+    if (target.offsetSec > 0.05) void playlist.seekTo(target.offsetSec);
   };
-  const progress = status.duration > 0 ? Math.min(1, status.currentTime / status.duration) : 0;
+  const elapsed = elapsedMs(timeline, status.currentIndex, status.currentTime);
+  const progress = timeline.totalMs > 0 ? Math.min(1, elapsed / timeline.totalMs) : 0;
   const transcript = current ? lessonDisplayText(current.text) : "";
   return (
     <View style={[styles.player, { backgroundColor: theme.navy }]}>
-      <View style={styles.now}><Body style={styles.kicker}>NOW PLAYING · {index + 1}/{playable.length}</Body><Heading style={styles.title}>{current?.speaker === "teacher" ? "Resolingo teacher" : current?.speaker === "speakerA" ? "Speaker A" : "Speaker B"}</Heading><Body style={styles.transcript}>{transcript}</Body>{current?.translation ? <Body style={styles.translation}>{current.translation}</Body> : null}</View>
+      <View style={styles.now}><Body style={styles.kicker}>NOW PLAYING</Body><Heading style={styles.title}>{current?.speaker === "teacher" ? "Resolingo teacher" : current?.speaker === "speakerA" ? "Speaker A" : "Speaker B"}</Heading><Body style={styles.transcript}>{transcript}</Body>{current?.translation ? <Body style={styles.translation}>{current.translation}</Body> : null}</View>
       <View style={[styles.track, { backgroundColor: "#314262" }]}><View style={[styles.fill, { backgroundColor: theme.coral, width: percentWidth(progress * 100) }]} /></View>
       <View style={styles.controls}>
         <Button label={`${speeds[speedIndex]}×`} variant="ghost" onPress={changeSpeed} />
-        <Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => void player.seekTo(Math.max(0, status.currentTime - 10))} style={styles.circle}><Body style={styles.controlText}>−10</Body></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause" : "Play"} onPress={() => status.playing ? pausePlayback() : resumePlayback()} style={[styles.play, { backgroundColor: theme.coral }]}><Body style={styles.playText}>{status.playing ? "Ⅱ" : "▶"}</Body></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Forward ten seconds" onPress={() => void player.seekTo(Math.min(status.duration, status.currentTime + 10))} style={styles.circle}><Body style={styles.controlText}>+10</Body></Pressable>
-        <Button label="Next" variant="ghost" disabled={index >= playable.length - 1} onPress={() => { stopAdvance(); autoplay.current = true; setIndex((value) => Math.min(playable.length - 1, value + 1)); }} />
+        <Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.circle}><Body style={styles.controlText}>−10</Body></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause" : "Play"} onPress={() => status.playing ? playlist.pause() : playlist.play()} style={[styles.play, { backgroundColor: theme.coral }]}><Body style={styles.playText}>{status.playing ? "Ⅱ" : "▶"}</Body></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Forward ten seconds" onPress={() => seekBy(10)} style={styles.circle}><Body style={styles.controlText}>+10</Body></Pressable>
       </View>
     </View>
   );
