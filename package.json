@@ -11,7 +11,7 @@
   "scripts": {
     "build": "npm run build -w @resolingo/shared && npm run build -w @resolingo/functions",
     "typecheck": "npm run typecheck -w @resolingo/shared && npm run typecheck -w @resolingo/functions && npm run typecheck -w @resolingo/mobile",
-    "test": "npm run test -w @resolingo/shared && npm run test -w @resolingo/functions",
+    "test": "npm run test -w @resolingo/shared && npm run test -w @resolingo/functions && npm run test -w @resolingo/mobile",
     "test:rules": "firebase emulators:exec --project resolingo-test --only firestore,storage \"npm run test:rules:direct\"",
     "test:rules:direct": "npm run test -w @resolingo/rules-tests",
     "lint": "npm run lint -w @resolingo/mobile",

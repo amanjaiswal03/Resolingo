@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { useAudioPlayer, useAudioPlayerStatus, setAudioModeAsync } from "expo-audio";
+import { createAudioPlayer, setAudioModeAsync, useAudioPlayerStatus } from "expo-audio";
 import type { Lesson } from "@resolingo/shared";
+import { percentWidth } from "@/lesson/navigation";
+import { stopOwnedPlayer } from "@/lesson/player-lifecycle";
 import { Button } from "./Button";
 import { Body, Heading } from "./Typography";
 import { useTheme } from "@/theme/tokens";
@@ -19,16 +21,22 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
   const [index, setIndex] = useState(0);
   const [speedIndex, setSpeedIndex] = useState(1);
   const started = useRef(false);
-  const player = useAudioPlayer(null, { updateInterval: 250, preferredForwardBufferDuration: 10 });
+  const alive = useRef(true);
+  // Owned outside useAudioPlayer so we can pause and detach listeners before
+  // release(). That hook releases in its own effect, which runs before any
+  // cleanup declared after it and crashes iOS on the way back to home.
+  const [player] = useState(() => createAudioPlayer(null, { updateInterval: 250, preferredForwardBufferDuration: 10 }));
   const status = useAudioPlayerStatus(player);
   const current = playable[index];
+  const generation = useRef(0);
 
+  useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => { void setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: "doNotMix" }); }, []);
   useEffect(() => {
     if (current) onSegmentChange?.(current.id);
   }, [current, onSegmentChange]);
   useEffect(() => {
-    if (!current?.audioUrl) return;
+    if (!current?.audioUrl || !alive.current) return;
     player.replace({ uri: current.audioUrl, name: lesson.title });
     player.setPlaybackRate(speeds[speedIndex]!);
     player.setActiveForLockScreen(true, { title: lesson.title, artist: "Resolingo", albumTitle: lesson.type === "grammar" ? "Grammar lesson" : "Conversation lesson" });
@@ -42,23 +50,43 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
   }, [current?.audioUrl, lesson.title, lesson.type, onStart, player]);
   useEffect(() => {
     const subscription = player.addListener("playbackStatusUpdate", (nextStatus) => {
-      if (!nextStatus.didJustFinish) return;
+      if (!alive.current || !nextStatus.didJustFinish) return;
       if (index < playable.length - 1) setIndex((value) => value + 1);
-      else { player.setActiveForLockScreen(false); onComplete(); }
+      else {
+        try { player.clearLockScreenControls(); } catch { /* player already stopped */ }
+        onComplete();
+      }
     });
-    return () => subscription.remove();
+    return () => {
+      try { subscription.remove(); } catch { /* released during unmount */ }
+    };
   }, [index, onComplete, playable.length, player]);
-  useEffect(() => () => { player.setActiveForLockScreen(false); }, [player]);
+  // Last effect on purpose: React cleans effects up in declaration order, so
+  // status and segment listeners are removed before this schedules release.
+  // The microtask skips release when the effect runs again immediately
+  // (Fast Refresh or Strict Mode) and still stops playback on a real unmount.
+  useEffect(() => {
+    const currentGeneration = ++generation.current;
+    return () => {
+      queueMicrotask(() => {
+        // Reading the ref here is intentional: it changes when the effect re-runs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        if (generation.current !== currentGeneration) return;
+        stopOwnedPlayer(player);
+      });
+    };
+  }, [player]);
 
   const changeSpeed = () => {
     const next = (speedIndex + 1) % speeds.length;
-    setSpeedIndex(next); player.setPlaybackRate(speeds[next]!);
+    setSpeedIndex(next);
+    player.setPlaybackRate(speeds[next]!);
   };
   const progress = status.duration > 0 ? Math.min(1, status.currentTime / status.duration) : 0;
   return (
     <View style={[styles.player, { backgroundColor: theme.navy }]}>
       <View style={styles.now}><Body style={styles.kicker}>NOW PLAYING · {index + 1}/{playable.length}</Body><Heading style={styles.title}>{current?.speaker === "teacher" ? "Resolingo teacher" : current?.speaker === "speakerA" ? "Speaker A" : "Speaker B"}</Heading><Body style={styles.transcript}>{current?.text}</Body>{current?.translation ? <Body style={styles.translation}>{current.translation}</Body> : null}</View>
-      <View style={[styles.track, { backgroundColor: "#314262" }]}><View style={[styles.fill, { backgroundColor: theme.coral, width: `${progress * 100}%` }]} /></View>
+      <View style={[styles.track, { backgroundColor: "#314262" }]}><View style={[styles.fill, { backgroundColor: theme.coral, width: percentWidth(progress * 100) }]} /></View>
       <View style={styles.controls}>
         <Button label={`${speeds[speedIndex]}×`} variant="ghost" onPress={changeSpeed} />
         <Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => void player.seekTo(Math.max(0, status.currentTime - 10))} style={styles.circle}><Body style={styles.controlText}>−10</Body></Pressable>
