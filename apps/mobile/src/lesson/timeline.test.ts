@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { elapsedMs, formatClock, lessonTimeline, seekInTimeline } from "./timeline";
+import { elapsedMs, formatClock, lessonTimeline, playbackClips, seekInTimeline } from "./timeline";
 
 describe("lesson timeline", () => {
   const timeline = lessonTimeline([
@@ -28,6 +28,17 @@ describe("lesson timeline", () => {
     expect(formatClock(0)).toBe("0:00");
     expect(formatClock(1_250)).toBe("0:01");
     expect(formatClock(75_000)).toBe("1:15");
+  });
+
+  it("plays a dialogue scene once when its lines share one audio file", () => {
+    const clips = playbackClips([
+      { id: "seg_01", kind: "narration", speaker: "teacher", delivery: "warm", language: "en-US", text: "Welcome.", audioPath: "welcome.wav", audioUrl: "https://example.com/welcome.wav", durationMs: 1_000 },
+      { id: "seg_02", kind: "dialogue", speaker: "speakerA", delivery: "warm", language: "de-DE", text: "Hallo.", audioPath: "scene.wav", audioUrl: "https://example.com/scene.wav", durationMs: 3_000 },
+      { id: "seg_03", kind: "dialogue", speaker: "speakerB", delivery: "warm", language: "de-DE", text: "Hi.", audioPath: "scene.wav", audioUrl: "https://example.com/scene.wav" },
+    ]);
+    expect(clips.map((clip) => clip.id)).toEqual(["seg_01", "seg_02"]);
+    expect(clips[1]?.segmentIds).toEqual(["seg_02", "seg_03"]);
+    expect(lessonTimeline(clips).totalMs).toBe(4_000);
   });
 
   it("counts time from the start of the lesson, not the start of the phrase", () => {

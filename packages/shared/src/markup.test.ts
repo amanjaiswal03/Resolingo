@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lessonDisplayText, markupIssues, speechSpans } from "./markup.js";
+import { lessonDisplayText, markupIssues, repairMarkup, speechSpans } from "./markup.js";
 
 describe("pronunciation markup", () => {
   it("shows the line without tags", () => {
@@ -32,5 +32,13 @@ describe("pronunciation markup", () => {
     expect(markupIssues("[[lang:xx-YY]]hi[[/lang]]")).toContain("unknown:xx-YY");
     expect(markupIssues("[[lang:de-DE]]hi")).toContain("unclosed");
     expect(markupIssues("hi[[/lang]]")).toContain("unexpected-close");
+  });
+
+  it("closes an unfinished language span and drops tags that cannot be spoken", () => {
+    expect(repairMarkup("Say [[lang:de-DE]]Guten Tag")).toBe("Say [[lang:de-DE]]Guten Tag[[/lang]]");
+    expect(markupIssues(repairMarkup("Say [[lang:de-DE]]Guten Tag"))).toEqual([]);
+    expect(repairMarkup("[[lang:xx-YY]]hi[[/lang]]")).toBe("hi");
+    expect(repairMarkup("hi[[/lang]]")).toBe("hi");
+    expect(speechSpans(repairMarkup("Say [[lang:de-DE]]Guten Tag"), "en-US")[1]).toEqual({ language: "de-DE", text: "Guten Tag" });
   });
 });

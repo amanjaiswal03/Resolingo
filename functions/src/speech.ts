@@ -2,29 +2,40 @@ import { createHash } from "node:crypto";
 import { Modality, type GenerateContentConfig } from "@google/genai";
 import {
   languageById,
+  speechSpans,
   type Delivery,
   type LanguageId,
+  type LessonSegment,
+  type SpeakerNames,
+  DEFAULT_SPEAKER_NAMES,
 } from "@resolingo/shared";
 import { DEFAULT_GEMINI_TTS_MODEL } from "./config.js";
 
 export const GEMINI_TTS_SAMPLE_RATE = 24_000;
 
-/** Prebuilt Gemini 3.1 Flash TTS voices. Kore tutors; Puck and Leda are the two dialogue roles. */
+/**
+ * Fixed Gemini 3.1 Flash TTS voices. The role id picks the voice; the character
+ * name is only the label Gemini matches in the transcript.
+ * Achernar is the soft female narrator. Kore is firm, which is the voice that
+ * sounded robotic on the teacher lines. Puck is the male dialogue voice.
+ * Sulafat is a warm female voice, distinct from Achernar, so the second
+ * character does not sound like the teacher.
+ */
 export const roleVoices = {
-  teacher: "Kore",
+  teacher: "Achernar",
   speakerA: "Puck",
-  speakerB: "Leda",
+  speakerB: "Sulafat",
 } as const;
 
 export type LessonSpeaker = keyof typeof roleVoices;
 
-const deliveryDirection: Record<Delivery, string> = {
-  warm: "You are a warm tutor. Sound encouraging and kind.",
-  praise: "Give bright, excited praise, as if the learner just did something well.",
-  gentle: "Offer a gentle correction. Stay soft and patient, never sharp.",
-  curious: "Ask this as a curious question, with genuine rising interest.",
-  clear: "Say this more slowly and clearly for a new word. Leave a short natural pause between phrases.",
-  playful: "Sound playful and friendly, with light amusement.",
+const deliveryStyle: Record<Delivery, string> = {
+  warm: "soft, calm, and soothing",
+  praise: "soft, warm, and brightly pleased",
+  gentle: "soft, patient, and gentle",
+  curious: "soft, calm, and curious",
+  clear: "soft, slow, and clear, leaving a short natural pause between phrases",
+  playful: "soft, warm, and lightly playful",
 };
 
 const performanceTag: Record<Delivery, string> = {
@@ -42,10 +53,10 @@ export function paceForLevel(level: string): "slow" | "moderate" | "natural" {
   return "natural";
 }
 
-const paceDirection = {
-  slow: "Speak a little more slowly than conversation, with clear vowels.",
-  moderate: "Speak at a relaxed conversational pace.",
-  natural: "Speak at a natural conversational pace.",
+const pacePhrase = {
+  slow: "a little more slowly than conversation, with clear vowels",
+  moderate: "at a relaxed conversational pace",
+  natural: "at a natural conversational pace",
 } as const;
 
 export function cloudLanguageCode(language: LanguageId): string {
@@ -57,48 +68,74 @@ export function geminiLanguageCode(language: LanguageId): string {
   return cloudLanguageCode(language).toLowerCase();
 }
 
-export function speechContents(input: {
-  speaker: LessonSpeaker;
+function spokenLine(text: string, name: string): string {
+  return text.trim().replace(new RegExp(`^${name}\\s*:\\s*`, "i"), "").trim();
+}
+
+/**
+ * Vertex single-speaker TTS speaks the text after one colon. A long roleplay
+ * paragraph before that colon comes back with no audio part, which is what
+ * sent the teacher welcome, explanation, and recap to Cloud TTS.
+ */
+export function teacherSpeechContents(input: {
   text: string;
   delivery: Delivery;
   level: string;
   language: LanguageId;
 }): string {
-  const pace = paceForLevel(input.level);
   const languageName = languageById[input.language].label;
-  const direction = `${deliveryDirection[input.delivery]} ${paceDirection[pace]} Pronounce this as a native speaker of ${languageName}. Do not imitate a foreign accent. Perform the expression. Do not read bracketed stage directions aloud.`;
-  const spoken = `${performanceTag[input.delivery]}${input.text}`;
-  if (input.speaker === "teacher") return `${direction}: ${spoken}`;
-  const alias = input.speaker === "speakerA" ? "SpeakerA" : "SpeakerB";
-  return `${direction} Only ${alias} speaks.\n${alias}: ${spoken}`;
+  const spoken = `${performanceTag[input.delivery]}${input.text.trim()}`;
+  return `Say the following in a ${deliveryStyle[input.delivery]} voice, ${pacePhrase[paceForLevel(input.level)]}, at a moderate, steady speaking volume, as a native speaker of ${languageName}: ${spoken}`;
 }
 
-export function geminiSpeechConfig(input: {
-  speaker: LessonSpeaker;
+export type SceneTurn = {
+  speaker: "speakerA" | "speakerB";
+  text: string;
+  delivery: Delivery;
+};
+
+export function sceneSpeechContents(input: {
+  turns: SceneTurn[];
+  names: SpeakerNames;
+  level: string;
   language: LanguageId;
-}): GenerateContentConfig {
-  const languageCode = geminiLanguageCode(input.language);
-  if (input.speaker === "teacher") {
-    return {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        languageCode,
-        voiceConfig: { prebuiltVoiceConfig: { voiceName: roleVoices.teacher } },
-      },
-    };
-  }
+}): string {
+  const languageName = languageById[input.language].label;
+  const only = new Set(input.turns.map((turn) => turn.speaker));
+  const who = only.size === 1 ? `, where only ${input.names[input.turns[0]!.speaker]} speaks` : "";
+  const lines = input.turns.map((turn) => {
+    const name = input.names[turn.speaker];
+    return `${name}: ${performanceTag[turn.delivery]}${spokenLine(turn.text, name)}`;
+  }).join("\n");
+  return `TTS the following conversation between ${input.names.speakerA} and ${input.names.speakerB}${who} in a natural voice, ${pacePhrase[paceForLevel(input.level)]}, at a moderate, steady speaking volume, as native speakers of ${languageName}:\n${lines}`;
+}
+
+export function teacherSpeechConfig(language: LanguageId): GenerateContentConfig {
   return {
     responseModalities: [Modality.AUDIO],
     speechConfig: {
-      languageCode,
+      languageCode: geminiLanguageCode(language),
+      voiceConfig: { prebuiltVoiceConfig: { voiceName: roleVoices.teacher } },
+    },
+  };
+}
+
+export function sceneSpeechConfig(input: {
+  language: LanguageId;
+  names: SpeakerNames;
+}): GenerateContentConfig {
+  return {
+    responseModalities: [Modality.AUDIO],
+    speechConfig: {
+      languageCode: geminiLanguageCode(input.language),
       multiSpeakerVoiceConfig: {
         speakerVoiceConfigs: [
           {
-            speaker: "SpeakerA",
+            speaker: input.names.speakerA,
             voiceConfig: { prebuiltVoiceConfig: { voiceName: roleVoices.speakerA } },
           },
           {
-            speaker: "SpeakerB",
+            speaker: input.names.speakerB,
             voiceConfig: { prebuiltVoiceConfig: { voiceName: roleVoices.speakerB } },
           },
         ],
@@ -123,6 +160,19 @@ export function geminiCachePath(input: {
     : `${roleVoices.speakerA}+${roleVoices.speakerB}`;
   return cacheObjectPath(
     ["gemini", input.model, voice, geminiLanguageCode(input.language), input.contents].join("\n"),
+    "wav",
+  );
+}
+
+export function sceneCachePath(input: {
+  model: string;
+  contents: string;
+  names: SpeakerNames;
+  language: LanguageId;
+}): string {
+  const voice = `${input.names.speakerA}=${roleVoices.speakerA}+${input.names.speakerB}=${roleVoices.speakerB}`;
+  return cacheObjectPath(
+    ["gemini-scene", input.model, voice, geminiLanguageCode(input.language), input.contents].join("\n"),
     "wav",
   );
 }
@@ -177,6 +227,19 @@ export function pcmPayload(bytes: Buffer): Buffer {
 }
 
 /** Structured fallback record. The spoken line itself is not included. */
+function stringField(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function numberField(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Fallback diagnostics. The spoken line is not included. The error text is
+ * `errorMessage` rather than `message`, because Cloud Logging uses `message`
+ * as the log entry text and drops it from the payload.
+ */
 export function geminiFallbackFields(input: {
   segmentId: string;
   kind: string;
@@ -184,15 +247,23 @@ export function geminiFallbackFields(input: {
   language: string;
   delivery: string;
   error: unknown;
-}): { segmentId: string; segmentKind: string; speaker: string; language: string; delivery: string; message: string } {
-  const raw = input.error instanceof Error ? input.error.message : String(input.error);
+}): { segmentId: string; segmentKind: string; speaker: string; language: string; delivery: string; errorMessage: string; errorCode: string; httpStatus: string } {
+  const record = input.error && typeof input.error === "object" ? input.error as Record<string, unknown> : {};
+  const nested = record.error && typeof record.error === "object" ? record.error as Record<string, unknown> : {};
+  const raw = input.error instanceof Error
+    ? input.error.message
+    : stringField(record.message) ?? stringField(nested.message) ?? "GEMINI_TTS_FAILED";
+  const status = numberField(record.status) ?? numberField(nested.code) ?? numberField(nested.status);
+  const code = stringField(record.code) ?? stringField(nested.status) ?? stringField(nested.code) ?? (status ? String(status) : "unknown");
   return {
     segmentId: input.segmentId,
     segmentKind: input.kind,
     speaker: input.speaker,
     language: input.language,
     delivery: input.delivery,
-    message: raw.replace(/\s+/g, " ").slice(0, 400),
+    errorMessage: raw.replace(/\s+/g, " ").slice(0, 240),
+    errorCode: code.slice(0, 80),
+    httpStatus: status ? String(status) : "unknown",
   };
 }
 
@@ -263,7 +334,8 @@ export async function renderLessonAudio(input: {
   } catch (error) {
     input.onGeminiError?.(error);
     const fallback = await input.cloud();
-    return { cachePath: fallback.cachePath, durationMs: fallback.durationMs, extension: "mp3", engine: "cloud-tts" };
+    const extension = fallback.cachePath.endsWith(".wav") ? "wav" : "mp3";
+    return { cachePath: fallback.cachePath, durationMs: fallback.durationMs, extension, engine: "cloud-tts" };
   }
 }
 
@@ -274,13 +346,101 @@ export function geminiSpeechRequest(input: {
   text: string;
   delivery: Delivery;
   level: string;
+  names?: SpeakerNames;
 }): { model: string; contents: string; config: GenerateContentConfig; cachePath: string } {
   const model = input.model?.trim() || DEFAULT_GEMINI_TTS_MODEL;
-  const contents = speechContents(input);
+  if (input.speaker === "teacher") {
+    const contents = teacherSpeechContents(input);
+    return {
+      model,
+      contents,
+      config: teacherSpeechConfig(input.language),
+      cachePath: geminiCachePath({ model, contents, speaker: "teacher", language: input.language }),
+    };
+  }
+  return sceneSpeechRequest({
+    model,
+    turns: [{ speaker: input.speaker, text: input.text, delivery: input.delivery }],
+    names: input.names ?? DEFAULT_SPEAKER_NAMES,
+    level: input.level,
+    language: input.language,
+  });
+}
+
+export function sceneSpeechRequest(input: {
+  model?: string;
+  turns: SceneTurn[];
+  names: SpeakerNames;
+  level: string;
+  language: LanguageId;
+}): { model: string; contents: string; config: GenerateContentConfig; cachePath: string } {
+  const model = input.model?.trim() || DEFAULT_GEMINI_TTS_MODEL;
+  const contents = sceneSpeechContents(input);
   return {
     model,
     contents,
-    config: geminiSpeechConfig(input),
-    cachePath: geminiCachePath({ model, contents, speaker: input.speaker, language: input.language }),
+    config: sceneSpeechConfig(input),
+    cachePath: sceneCachePath({ model, contents, names: input.names, language: input.language }),
   };
+}
+
+export type LessonAudioUnit =
+  | { kind: "teacher"; segment: LessonSegment }
+  | { kind: "scene"; segments: LessonSegment[] };
+
+/** Teacher lines stay single-speaker. Consecutive dialogue lines are one conversation. */
+export function lessonAudioUnits(segments: LessonSegment[]): LessonAudioUnit[] {
+  const units: LessonAudioUnit[] = [];
+  let scene: LessonSegment[] = [];
+  const flush = () => {
+    if (!scene.length) return;
+    units.push({ kind: "scene", segments: scene });
+    scene = [];
+  };
+  for (const segment of segments) {
+    if (segment.speaker === "teacher") {
+      flush();
+      units.push({ kind: "teacher", segment });
+    } else {
+      scene.push(segment);
+    }
+  }
+  flush();
+  return units;
+}
+
+export type SceneChunk = SceneTurn & { language: LanguageId };
+
+function hasSpeech(text: string): boolean {
+  return /[\p{L}\p{N}]/u.test(text);
+}
+
+/** Split a scene where the language changes, so each multi-speaker call has one language. */
+export function sceneChunks(segments: LessonSegment[], names: SpeakerNames): SceneChunk[][] {
+  const turns: SceneChunk[] = [];
+  for (const segment of segments) {
+    if (segment.speaker === "teacher") continue;
+    const speaker = segment.speaker === "speakerB" ? "speakerB" : "speakerA";
+    const spans = speechSpans(segment.text, segment.language);
+    const pieces = spans.length > 0 ? spans : [{ language: segment.language, text: segment.text }];
+    for (const span of pieces) {
+      const text = spokenLine(span.text, names[speaker]);
+      if (!hasSpeech(text)) continue;
+      turns.push({ speaker, text, delivery: segment.delivery ?? "warm", language: span.language });
+    }
+  }
+  if (turns.length === 0) {
+    return segments.flatMap((segment) => {
+      if (segment.speaker === "teacher") return [];
+      const speaker = segment.speaker === "speakerB" ? "speakerB" : "speakerA";
+      return [[{ speaker, text: segment.text.trim(), delivery: segment.delivery ?? "warm", language: segment.language }]];
+    });
+  }
+  const chunks: SceneChunk[][] = [];
+  for (const turn of turns) {
+    const last = chunks[chunks.length - 1];
+    if (last && last[0]?.language === turn.language) last.push(turn);
+    else chunks.push([turn]);
+  }
+  return chunks;
 }

@@ -13,7 +13,8 @@ import { adminFunctions, db } from "./firebase.js";
 import { generateLessonContent } from "./gemini.js";
 import { sendUserPush } from "./push.js";
 import { withoutReservation } from "./quota.js";
-import { synthesizeSegment } from "./tts.js";
+import { lessonAudioUnits } from "./speech.js";
+import { synthesizeScene, synthesizeSegment } from "./tts.js";
 
 type JobPayload = { uid: string; lessonId: string };
 
@@ -135,6 +136,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       title: content.title,
       topic: content.topic,
       summary: content.summary,
+      speakerNames: content.speakerNames,
       segments: content.segments,
       status: "synthesizing_audio",
       progress: 40,
@@ -142,15 +144,25 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
     });
 
     let completedSegments = 0;
-    const segments = await mapConcurrent(content.segments as LessonSegment[], 4, async (segment) => {
-      const synthesized = await synthesizeSegment({ uid: payload.uid, lessonId: payload.lessonId, level, segment });
-      completedSegments += 1;
+    const units = lessonAudioUnits(content.segments as LessonSegment[]);
+    const rendered = await mapConcurrent(units, 4, async (unit) => {
+      const synthesized = unit.kind === "teacher"
+        ? [await synthesizeSegment({ uid: payload.uid, lessonId: payload.lessonId, level, segment: unit.segment })]
+        : await synthesizeScene({
+          uid: payload.uid,
+          lessonId: payload.lessonId,
+          level,
+          segments: unit.segments,
+          names: content.speakerNames,
+        });
+      completedSegments += synthesized.length;
       await lessonRef.update({
         progress: 40 + Math.round((completedSegments / content.segments.length) * 55),
         updatedAt: FieldValue.serverTimestamp(),
       });
       return synthesized;
     });
+    const segments = rendered.flat();
 
     const usageRef = db.doc(`users/${payload.uid}/dailyUsage/${lessonData.quotaDate}`);
     const topicRef = db.doc(`users/${payload.uid}/recentTopics/${topicKey}`);

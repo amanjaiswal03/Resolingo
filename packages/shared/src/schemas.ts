@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LanguageIdSchema } from "./languages.js";
+import { normalizeSpeakerNames } from "./speakers.js";
 
 export const LessonTypeSchema = z.enum(["conversation", "grammar"]);
 export type LessonType = z.infer<typeof LessonTypeSchema>;
@@ -39,10 +40,20 @@ export const LessonSegmentSchema = z.object({
 });
 export type LessonSegment = z.infer<typeof LessonSegmentSchema>;
 
+export const SpeakerNamesSchema = z.object({
+  teacher: z.string().min(1).max(24),
+  speakerA: z.string().min(1).max(24),
+  speakerB: z.string().min(1).max(24),
+});
+
+/** Always yields three distinct, speakable aliases, including for lessons saved before names existed. */
+export const SpeakerNamesField = z.preprocess((value) => normalizeSpeakerNames(value), SpeakerNamesSchema);
+
 export const GeneratedLessonSchema = z.object({
   title: z.string().min(3).max(90),
   topic: z.string().min(3).max(160),
   summary: z.string().min(5).max(280),
+  speakerNames: SpeakerNamesField,
   segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(40),
 });
 export type GeneratedLesson = z.infer<typeof GeneratedLessonSchema>;
@@ -79,6 +90,7 @@ export const LessonSchema = z.object({
   title: z.string().default("Preparing your lesson"),
   topic: z.string().default(""),
   summary: z.string().default(""),
+  speakerNames: SpeakerNamesField,
   segments: z.array(LessonSegmentSchema).default([]),
   manifest: AudioManifestSchema.optional(),
   failureCode: z.string().optional(),

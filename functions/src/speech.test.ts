@@ -1,6 +1,6 @@
 import { Modality } from "@google/genai";
 import { describe, expect, it, vi } from "vitest";
-import { speechSpans } from "@resolingo/shared";
+import { speechSpans, type LessonSegment } from "@resolingo/shared";
 import {
   cloudCachePath,
   cloudLanguageCode,
@@ -8,10 +8,12 @@ import {
   concatPcm16,
   geminiFallbackFields,
   geminiSpeechRequest,
+  lessonAudioUnits,
   pcmDurationMs,
   pcmPayload,
   renderLessonAudio,
   roleVoices,
+  sceneSpeechRequest,
   toPlayableAudio,
   wrapPcm16AsWav,
 } from "./speech.js";
@@ -33,14 +35,16 @@ describe("Gemini speech requests", () => {
     });
     const speech = speechConfig(request);
     expect(request.model).toBe("gemini-3.1-flash-tts-preview");
-    expect(request.contents).toContain("excited praise");
+    expect(request.contents).toContain("brightly pleased");
     expect(request.contents).toContain("[excited] Sehr gut.");
     expect(request.contents).toContain("native speaker of German");
     expect(request.contents).toContain("more slowly");
+    expect(request.contents.startsWith("Say the following")).toBe(true);
     expect(request.config.responseModalities).toEqual([Modality.AUDIO]);
     expect(speech.voiceConfig?.prebuiltVoiceConfig?.voiceName).toBe(roleVoices.teacher);
     expect(speech.multiSpeakerVoiceConfig).toBeUndefined();
     expect(speech.languageCode).toBe("de-de");
+    expect(roleVoices).toEqual({ teacher: "Achernar", speakerA: "Puck", speakerB: "Sulafat" });
   });
 
   it("assigns the two dialogue voices through the native multi-speaker config", () => {
@@ -52,15 +56,16 @@ describe("Gemini speech requests", () => {
       level: "B2",
     });
     const speech = speechConfig(request);
-    expect(request.contents).toContain("Only SpeakerB speaks.");
-    expect(request.contents).toContain("curious question");
+    expect(request.contents).toContain("only Anna speaks");
+    expect(request.contents).toContain("Anna: [curious] Could we try that again?");
     expect(request.contents).toContain("natural conversational pace");
     const speakers = speech.multiSpeakerVoiceConfig?.speakerVoiceConfigs ?? [];
-    expect(speakers.map((speaker) => speaker.speaker)).toEqual(["SpeakerA", "SpeakerB"]);
+    expect(speakers.map((speaker) => speaker.speaker)).toEqual(["Lukas", "Anna"]);
     expect(speakers.map((speaker) => speaker.voiceConfig?.prebuiltVoiceConfig?.voiceName)).toEqual([
       roleVoices.speakerA,
       roleVoices.speakerB,
     ]);
+    expect(speakers.map((speaker) => speaker.voiceConfig?.prebuiltVoiceConfig?.voiceName)).not.toContain(roleVoices.teacher);
     expect(speech.voiceConfig).toBeUndefined();
   });
 
@@ -107,13 +112,52 @@ describe("Gemini speech requests", () => {
     });
     expect(native).toEqual({ language: "en-US", text: "please." });
     expect(speechConfig(dialogue).languageCode).toBe("en-us");
-    expect(dialogue.contents).toContain("native speaker of English (US)");
-    expect(dialogue.contents).toContain("Only SpeakerA speaks.");
+    expect(dialogue.contents).toContain("native speakers of English (US)");
+    expect(dialogue.contents).toContain("only Lukas speaks");
+    expect(dialogue.contents).toContain("Lukas: please.");
     const speakers = speechConfig(dialogue).multiSpeakerVoiceConfig?.speakerVoiceConfigs ?? [];
     expect(speakers.map((speaker) => speaker.voiceConfig?.prebuiltVoiceConfig?.voiceName)).toEqual([
       roleVoices.speakerA,
       roleVoices.speakerB,
     ]);
+    expect(speakers.map((speaker) => speaker.voiceConfig?.prebuiltVoiceConfig?.voiceName)).not.toContain(roleVoices.teacher);
+  });
+
+  it("speaks the opening welcome with the teacher voice and a named dialogue scene", () => {
+    const segments = [
+      { id: "seg_01", kind: "narration" as const, speaker: "teacher" as const, language: "en-US" as const, text: "Welcome. Today we will practice ordering coffee.", delivery: "warm" as const },
+      { id: "seg_02", kind: "dialogue" as const, speaker: "speakerA" as const, language: "de-DE" as const, text: "Einen Kaffee, bitte.", delivery: "warm" as const },
+      { id: "seg_03", kind: "dialogue" as const, speaker: "speakerB" as const, language: "de-DE" as const, text: "Gerne.", delivery: "playful" as const },
+      { id: "seg_04", kind: "recap" as const, speaker: "teacher" as const, language: "en-US" as const, text: "You ordered a coffee.", delivery: "warm" as const },
+    ] satisfies LessonSegment[];
+    expect(lessonAudioUnits(segments).map((unit) => unit.kind)).toEqual(["teacher", "scene", "teacher"]);
+    const welcome = geminiSpeechRequest({
+      speaker: "teacher",
+      language: "en-US",
+      text: segments[0]!.text,
+      delivery: "warm",
+      level: "A1",
+    });
+    expect(welcome.contents.startsWith("Say the following in a soft, calm, and soothing voice")).toBe(true);
+    expect(welcome.contents).toContain("Welcome. Today we will practice ordering coffee.");
+    expect(speechConfig(welcome).voiceConfig?.prebuiltVoiceConfig?.voiceName).toBe(roleVoices.teacher);
+    expect(speechConfig(welcome).multiSpeakerVoiceConfig).toBeUndefined();
+    const names = { teacher: "Mira", speakerA: "Lukas", speakerB: "Anna" };
+    const scene = sceneSpeechRequest({
+      turns: [
+        { speaker: "speakerA", text: "Einen Kaffee, bitte.", delivery: "warm" },
+        { speaker: "speakerB", text: "Gerne.", delivery: "playful" },
+      ],
+      names,
+      level: "A1",
+      language: "de-DE",
+    });
+    const speakers = speechConfig(scene).multiSpeakerVoiceConfig?.speakerVoiceConfigs ?? [];
+    expect(speakers.map((speaker) => speaker.speaker)).toEqual(["Lukas", "Anna"]);
+    expect(scene.contents).toContain("Lukas: Einen Kaffee, bitte.");
+    expect(scene.contents).toContain("Anna: [amused] Gerne.");
+    expect(speakers.map((speaker) => speaker.voiceConfig?.prebuiltVoiceConfig?.voiceName)).toEqual(["Puck", "Sulafat"]);
+    expect(speakers.map((speaker) => speaker.voiceConfig?.prebuiltVoiceConfig?.voiceName)).not.toContain("Achernar");
   });
 
   it("records the segment kind and the Gemini error when speech falls back", () => {
@@ -130,7 +174,22 @@ describe("Gemini speech requests", () => {
       speaker: "teacher",
       language: "en-US",
       delivery: "warm",
-      message: "TTS_EMPTY_AUDIO",
+      errorMessage: "TTS_EMPTY_AUDIO",
+      errorCode: "unknown",
+      httpStatus: "unknown",
+    });
+    const apiError = Object.assign(new Error("Request contains an invalid argument."), { status: 400, code: "INVALID_ARGUMENT" });
+    expect(geminiFallbackFields({
+      segmentId: "seg_01",
+      kind: "narration",
+      speaker: "teacher",
+      language: "en-US",
+      delivery: "warm",
+      error: apiError,
+    })).toMatchObject({
+      errorMessage: "Request contains an invalid argument.",
+      errorCode: "INVALID_ARGUMENT",
+      httpStatus: "400",
     });
   });
 

@@ -65,6 +65,49 @@ function pushSpan(spans: SpeechSpan[], language: LanguageId, text: string): void
   else spans.push({ language, text });
 }
 
+/**
+ * Close or drop tags the model left unfinished, then keep a line the speech
+ * engine can split. A still-broken result falls back to the words with the tags removed.
+ */
+export function repairMarkup(text: string): string {
+  if (markupIssues(text).length === 0) return text;
+  let out = "";
+  let cursor = 0;
+  let open: string | null = null;
+  let openAt = 0;
+  for (const match of text.matchAll(TAG)) {
+    const index = match.index ?? 0;
+    out += text.slice(cursor, index);
+    const code = match[1];
+    if (code) {
+      if (open) {
+        if (out.slice(openAt) === `[[lang:${open}]]`) out = out.slice(0, openAt);
+        else out += "[[/lang]]";
+        open = null;
+      }
+      if (isLanguageId(code)) {
+        openAt = out.length;
+        out += match[0];
+        open = code;
+      }
+    } else if (open) {
+      if (out.slice(openAt) === `[[lang:${open}]]`) out = out.slice(0, openAt);
+      else out += "[[/lang]]";
+      open = null;
+    }
+    cursor = index + match[0].length;
+  }
+  out += text.slice(cursor);
+  if (open) {
+    if (out.slice(openAt) === `[[lang:${open}]]`) out = out.slice(0, openAt);
+    else out += "[[/lang]]";
+  }
+  const cleaned = out.replace(/[ \t]{2,}/g, " ").trim();
+  if (cleaned && markupIssues(cleaned).length === 0) return cleaned;
+  const plain = lessonDisplayText(text);
+  return plain || text;
+}
+
 /** Why a generated line cannot be spoken span by span. Empty means the markup is usable. */
 export function markupIssues(text: string): string[] {
   const issues: string[] = [];
