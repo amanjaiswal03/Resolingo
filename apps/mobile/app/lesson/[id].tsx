@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, StyleSheet, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import type { Lesson } from "@resolingo/shared";
+import { lessonDisplayText, type Lesson } from "@resolingo/shared";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { LessonPlayer } from "@/components/LessonPlayer";
@@ -91,7 +91,7 @@ export default function LessonScreen() {
       <View style={styles.header}><Body muted>{lesson.type.toUpperCase()} · 3–5 MINUTES</Body><Title>{lesson.title}</Title><Body muted>{lesson.summary}</Body></View>
       <LessonPlayer lesson={resolved} onComplete={complete} onStart={started} onSegmentChange={setActiveSegmentId} />
       <Heading>Transcript</Heading>
-      {resolved.segments.map((segment) => <Card key={segment.id} style={segment.id === activeSegmentId ? { backgroundColor: theme.surfaceMuted, borderColor: theme.primary, borderWidth: 2 } : undefined}><Body muted>{segment.speaker === "teacher" ? "TEACHER" : segment.speaker === "speakerA" ? "SPEAKER A" : "SPEAKER B"}</Body><Body>{segment.text}</Body>{segment.translation ? <Body muted>{segment.translation}</Body> : null}{segment.transliteration ? <Body muted>{segment.transliteration}</Body> : null}</Card>)}
+      {resolved.segments.map((segment) => <Card key={segment.id} style={segment.id === activeSegmentId ? { backgroundColor: theme.surfaceMuted, borderColor: theme.primary, borderWidth: 2 } : undefined}><Body muted>{segment.speaker === "teacher" ? "TEACHER" : segment.speaker === "speakerA" ? "SPEAKER A" : "SPEAKER B"}</Body><Body>{lessonDisplayText(segment.text)}</Body>{segment.translation ? <Body muted>{segment.translation}</Body> : null}{segment.transliteration ? <Body muted>{segment.transliteration}</Body> : null}</Card>)}
     </Screen>
   );
 }

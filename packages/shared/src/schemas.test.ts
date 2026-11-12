@@ -1,10 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { activeLessonBlocks, CreateDailyLessonRequestSchema, isStaleUnenqueuedLesson, languages, STALE_UNENQUEUED_AFTER_MS } from "./index.js";
+import { activeLessonBlocks, CreateDailyLessonRequestSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, STALE_UNENQUEUED_AFTER_MS } from "./index.js";
 
 describe("shared contracts", () => {
   it("contains the canonical 32-language catalog", () => {
     expect(languages).toHaveLength(32);
     expect(new Set(languages.map((language) => language.id)).size).toBe(32);
+  });
+
+  it("maps Arabic Cloud TTS to ar-XA and defaults a missing delivery hint", () => {
+    expect(languageById["ar-EG"].googleTtsLanguageCode).toBe("ar-XA");
+    const segment = LessonSegmentSchema.parse({
+      id: "s1",
+      kind: "narration",
+      speaker: "teacher",
+      language: "ar-EG",
+      text: "مرحبا",
+    });
+    expect(segment.delivery).toBe("warm");
   });
 
   it("rejects a non-UUID idempotency key", () => {

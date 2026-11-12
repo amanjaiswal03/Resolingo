@@ -15,6 +15,11 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("teaching=en-US, target=de-DE");
     expect(prompt).toContain("Ordering at a bakery");
     expect(prompt).toContain("listen-and-repeat drills");
+    expect(prompt).toContain("delivery");
+    expect(prompt).toContain("clear");
+    expect(prompt).toContain("[[lang:de-DE]]");
+    expect(prompt).toContain("[[lang:en-US]]");
+    expect(prompt).toContain("3–5 minute");
   });
 
   it("requires transliteration for configured writing systems", () => {
