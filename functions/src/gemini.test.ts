@@ -44,6 +44,7 @@ describe("Gemini lesson generation", () => {
   it("asks Vertex for JSON mode with medium safety filters and no response schema", () => {
     const config = lessonGenerationConfig();
     expect(config.responseMimeType).toBe("application/json");
+    expect(config.systemInstruction).toContain("delivery");
     expect(config.responseJsonSchema).toBeUndefined();
     expect(config.responseSchema).toBeUndefined();
     expect(config.thinkingConfig).toBeUndefined();
