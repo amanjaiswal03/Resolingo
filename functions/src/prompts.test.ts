@@ -19,7 +19,11 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("clear");
     expect(prompt).toContain("[[lang:de-DE]]");
     expect(prompt).toContain("[[lang:en-US]]");
-    expect(prompt).toContain("3–5 minute");
+    expect(prompt).toContain("7–10 minute");
+    expect(prompt).toContain("18 to 30");
+    expect(prompt).toContain("at least eight vocabulary");
+    expect(prompt).toContain("at least six listen-and-repeat");
+    expect(prompt).toContain("short recap of two or three segments");
   });
 
   it("requires transliteration for configured writing systems", () => {
@@ -31,5 +35,7 @@ describe("lesson prompts", () => {
       recentTopics: [],
     });
     expect(prompt).toContain("Latin-script transliteration");
+    expect(prompt).toContain("at least twelve dialogue");
+    expect(prompt).toContain("at least four listen-and-repeat");
   });
 });

@@ -30,3 +30,15 @@ export const TTS_VOICE_TIER = defineString("TTS_VOICE_TIER", {
 export const DAILY_LIMIT = 3;
 export const MAX_TASK_ATTEMPTS = 3;
 export const DELETE_ACCOUNT_TIMEOUT_SECONDS = 540;
+/** gemini-3.5-flash-lite allows 65,536 output tokens. 32,768 covers 18–30 segments plus thinking. */
+export const LESSON_MAX_OUTPUT_TOKENS = 32_768;
+/**
+ * Cloud Tasks HTTP dispatch deadline tops out at 30 minutes. The function
+ * timeout matches that ceiling so a 7–10 minute lesson, including per-span
+ * speech, still finishes inside one attempt.
+ */
+export const LESSON_TASK_TIMEOUT_SECONDS = 1_800;
+export const LESSON_TASK_MEMORY = "2GiB" as const;
+/** Segments synthesized at once. Span calls inside a segment are capped separately. */
+export const TTS_SEGMENT_CONCURRENCY = 6;
+export const TTS_SPAN_CONCURRENCY = 2;

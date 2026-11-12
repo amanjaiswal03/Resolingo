@@ -2,7 +2,8 @@ import textToSpeech, { protos } from "@google-cloud/text-to-speech";
 import { GoogleGenAI } from "@google/genai";
 import { speechSpans, type LanguageId, type LessonSegment } from "@resolingo/shared";
 import { logger } from "firebase-functions";
-import { GEMINI_TTS_LOCATION, GEMINI_TTS_MODEL, TTS_VOICE_TIER } from "./config.js";
+import { mapConcurrent } from "./concurrent.js";
+import { GEMINI_TTS_LOCATION, GEMINI_TTS_MODEL, TTS_SPAN_CONCURRENCY, TTS_VOICE_TIER } from "./config.js";
 import { bucket } from "./firebase.js";
 import { vertexProjectId } from "./gemini.js";
 import {
@@ -297,14 +298,15 @@ export async function synthesizeSegment(input: {
     await copyCached(rendered.cachePath, audioPath);
     return { ...input.segment, delivery, audioPath, durationMs: rendered.durationMs };
   }
-  const pcm = concatPcm16(await Promise.all(pieces.map((piece) => spanPcm({
+  const pcmParts = await mapConcurrent(pieces, TTS_SPAN_CONCURRENCY, (piece) => spanPcm({
     segment: input.segment,
     speaker,
     language: piece.language,
     text: piece.text.trim(),
     delivery,
     level: input.level,
-  }))));
+  }));
+  const pcm = concatPcm16(pcmParts);
   const audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${input.segment.id}.wav`;
   const durationMs = pcmDurationMs(pcm.length);
   await saveCached(audioPath, wrapPcm16AsWav(pcm), "audio/wav", durationMs);

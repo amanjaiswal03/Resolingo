@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeLessonBlocks, CreateDailyLessonRequestSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, STALE_UNENQUEUED_AFTER_MS } from "./index.js";
+import { activeLessonBlocks, CreateDailyLessonRequestSchema, GeneratedLessonSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, STALE_UNENQUEUED_AFTER_MS } from "./index.js";
 
 describe("shared contracts", () => {
   it("contains the canonical 32-language catalog", () => {
@@ -17,6 +17,26 @@ describe("shared contracts", () => {
       text: "مرحبا",
     });
     expect(segment.delivery).toBe("warm");
+  });
+
+  it("accepts 18 to 30 segments and rejects a short or oversized lesson", () => {
+    const segment = (index: number) => ({
+      id: `s${index}`,
+      kind: "narration" as const,
+      speaker: "teacher" as const,
+      language: "en-US" as const,
+      text: "Hello.",
+    });
+    const lesson = (count: number) => ({
+      title: "Cafe greetings today",
+      topic: "Ordering coffee",
+      summary: "Practice a longer cafe conversation.",
+      segments: Array.from({ length: count }, (_, index) => segment(index)),
+    });
+    expect(GeneratedLessonSchema.safeParse(lesson(17)).success).toBe(false);
+    expect(GeneratedLessonSchema.safeParse(lesson(18)).success).toBe(true);
+    expect(GeneratedLessonSchema.safeParse(lesson(30)).success).toBe(true);
+    expect(GeneratedLessonSchema.safeParse(lesson(31)).success).toBe(false);
   });
 
   it("rejects a non-UUID idempotency key", () => {

@@ -39,11 +39,15 @@ export const LessonSegmentSchema = z.object({
 });
 export type LessonSegment = z.infer<typeof LessonSegmentSchema>;
 
+/** A generated lesson is about twice the previous 8–16 segment script. */
+export const LESSON_SEGMENT_MIN = 18;
+export const LESSON_SEGMENT_MAX = 30;
+
 export const GeneratedLessonSchema = z.object({
   title: z.string().min(3).max(90),
   topic: z.string().min(3).max(160),
   summary: z.string().min(5).max(280),
-  segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(40),
+  segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(LESSON_SEGMENT_MIN).max(LESSON_SEGMENT_MAX),
 });
 export type GeneratedLesson = z.infer<typeof GeneratedLessonSchema>;
 

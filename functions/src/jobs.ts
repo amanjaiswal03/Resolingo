@@ -8,7 +8,8 @@ import {
   type LessonSegment,
 } from "@resolingo/shared";
 import { logger } from "firebase-functions";
-import { DAILY_LIMIT, MAX_TASK_ATTEMPTS, REGION } from "./config.js";
+import { mapConcurrent } from "./concurrent.js";
+import { DAILY_LIMIT, MAX_TASK_ATTEMPTS, REGION, TTS_SEGMENT_CONCURRENCY } from "./config.js";
 import { adminFunctions, db } from "./firebase.js";
 import { generateLessonContent } from "./gemini.js";
 import { sendUserPush } from "./push.js";
@@ -84,18 +85,6 @@ function validateLessonLanguages(
   }
 }
 
-async function mapConcurrent<T, R>(items: T[], limit: number, mapper: (item: T, index: number) => Promise<R>): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor++;
-      results[index] = await mapper(items[index]!, index);
-    }
-  }));
-  return results;
-}
-
 export async function processLessonJob(payload: JobPayload, retryCount: number): Promise<void> {
   const lessonRef = db.doc(`users/${payload.uid}/lessons/${payload.lessonId}`);
   const userRef = db.doc(`users/${payload.uid}`);
@@ -142,7 +131,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
     });
 
     let completedSegments = 0;
-    const segments = await mapConcurrent(content.segments as LessonSegment[], 4, async (segment) => {
+    const segments = await mapConcurrent(content.segments as LessonSegment[], TTS_SEGMENT_CONCURRENCY, async (segment) => {
       const synthesized = await synthesizeSegment({ uid: payload.uid, lessonId: payload.lessonId, level, segment });
       completedSegments += 1;
       await lessonRef.update({

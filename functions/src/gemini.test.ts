@@ -7,9 +7,9 @@ function lesson(topic: string) {
     title: "Coffee shop greetings",
     topic,
     summary: "Practice a short cafe greeting and order.",
-    segments: Array.from({ length: 8 }, (_, index) => ({
+    segments: Array.from({ length: 18 }, (_, index) => ({
       id: `s${index + 1}`,
-      kind: index === 7 ? "recap" : "dialogue",
+      kind: index === 17 ? "recap" : "dialogue",
       speaker: index % 2 === 0 ? "speakerA" : "speakerB",
       language: index % 2 === 0 ? "de-DE" : "en-US",
       text: `Line ${index + 1} of the cafe lesson.`,
@@ -45,7 +45,8 @@ describe("Gemini lesson generation", () => {
     const config = lessonGenerationConfig();
     expect(config.responseMimeType).toBe("application/json");
     expect(config.systemInstruction).toContain("delivery");
-    expect(config.systemInstruction).toContain("8 to 16");
+    expect(config.systemInstruction).toContain("18 to 30");
+    expect(config.maxOutputTokens).toBe(32_768);
     expect(config.systemInstruction).toContain("[[lang:BCP-47]]");
     expect(config.responseJsonSchema).toBeUndefined();
     expect(config.responseSchema).toBeUndefined();

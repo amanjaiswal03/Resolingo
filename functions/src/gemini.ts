@@ -8,6 +8,8 @@ import {
 } from "@google/genai";
 import {
   GeneratedLessonSchema,
+  LESSON_SEGMENT_MAX,
+  LESSON_SEGMENT_MIN,
   languageById,
   markupIssues,
   type CefrLevel,
@@ -16,13 +18,13 @@ import {
   type LessonType,
 } from "@resolingo/shared";
 import { logger } from "firebase-functions";
-import { DEFAULT_GEMINI_LESSON_MODEL, DEFAULT_GEMINI_LOCATION, GEMINI_LESSON_MODEL, GEMINI_LOCATION } from "./config.js";
+import { DEFAULT_GEMINI_LESSON_MODEL, DEFAULT_GEMINI_LOCATION, GEMINI_LESSON_MODEL, GEMINI_LOCATION, LESSON_MAX_OUTPUT_TOKENS } from "./config.js";
 import { lessonPrompt } from "./prompts.js";
 
 const SYSTEM_INSTRUCTION = [
   "You are Resolingo's expert multilingual lesson designer.",
   "Return only a JSON object with string keys title, topic, and summary, plus segments.",
-  "segments is an array of 8 to 16 objects.",
+  `segments is an array of ${LESSON_SEGMENT_MIN} to ${LESSON_SEGMENT_MAX} objects.`,
   "Each segment has id, kind (narration, dialogue, explanation, example, drill, or recap), speaker (teacher, speakerA, or speakerB), delivery (warm, praise, gentle, curious, clear, or playful), a BCP-47 language code, and text.",
   "When a line mixes the teaching language and the target language, wrap only the other-language span as [[lang:BCP-47]]...[[/lang]]. Do this for the teacher and for both dialogue speakers. Do not nest tags.",
 ].join(" ");
@@ -40,6 +42,7 @@ export function lessonGenerationConfig(): GenerateContentConfig {
   return {
     systemInstruction: SYSTEM_INSTRUCTION,
     responseMimeType: "application/json",
+    maxOutputTokens: LESSON_MAX_OUTPUT_TOKENS,
     safetySettings: SAFETY_CATEGORIES.map((category) => ({
       category,
       threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
