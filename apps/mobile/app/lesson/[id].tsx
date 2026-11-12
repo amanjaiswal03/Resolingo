@@ -8,6 +8,7 @@ import { LessonPlayer } from "@/components/LessonPlayer";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
+import { firstRouteParam, lessonExit, percentWidth } from "@/lesson/navigation";
 import { api } from "@/services/api";
 import { markLessonCompleted, resolveAudioUrls, subscribeLesson } from "@/services/lessons";
 import { report, track } from "@/services/telemetry";
@@ -15,7 +16,7 @@ import { useSession } from "@/session/SessionProvider";
 import { useTheme } from "@/theme/tokens";
 
 export default function LessonScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const id = firstRouteParam(useLocalSearchParams<{ id?: string | string[] }>().id);
   const { user, profile } = useSession();
   const router = useRouter();
   const theme = useTheme();
@@ -23,9 +24,35 @@ export default function LessonScreen() {
   const [resolved, setResolved] = useState<Lesson | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
-  useEffect(() => { if (user && id) return subscribeLesson(user.uid, id, setLesson); }, [user, id]);
+  const leave = () => {
+    if (lessonExit(router.canGoBack()) === "back") router.back();
+    else router.replace("/(tabs)");
+  };
   useEffect(() => {
-    if (lesson?.status === "ready") void resolveAudioUrls(lesson).then(setResolved).catch((error) => { report(error); Alert.alert("Audio unavailable", "Please check your connection and try again."); });
+    if (!user || !id) return;
+    let active = true;
+    const unsubscribe = subscribeLesson(user.uid, id, (next) => {
+      if (active) setLesson(next);
+    }, (error) => {
+      if (!active) return;
+      report(error);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [user, id]);
+  useEffect(() => {
+    if (lesson?.status !== "ready") return;
+    let cancelled = false;
+    void resolveAudioUrls(lesson).then((next) => {
+      if (!cancelled) setResolved(next);
+    }).catch((error: unknown) => {
+      if (cancelled) return;
+      report(error);
+      Alert.alert("Audio unavailable", "Please check your connection and try again.");
+    });
+    return () => { cancelled = true; };
   }, [lesson]);
   const complete = useCallback(async () => {
     if (!user || !id || !lesson) return;
@@ -36,25 +63,31 @@ export default function LessonScreen() {
   const started = useCallback(() => {
     if (profile?.telemetryConsent && lessonType) void track("playback_started", { type: lessonType });
   }, [lessonType, profile?.telemetryConsent]);
-  if (!lesson || !user || !id) return <LoadingScreen />;
-  const retry = async () => { setRetrying(true); try { await api.retryFailedLesson(id); } catch (error) { Alert.alert("Couldn’t retry", String(error)); } finally { setRetrying(false); } };
+  // Keep the loaded lesson mounted while the route param drops during a pop.
+  // Swapping in a spinner here unmounts the player mid-gesture.
+  if (!lesson || !user) return <LoadingScreen />;
+  const retry = async () => {
+    if (!id) return;
+    setRetrying(true);
+    try { await api.retryFailedLesson(id); } catch (error) { Alert.alert("Couldn’t retry", String(error)); } finally { setRetrying(false); }
+  };
   if (lesson.status !== "ready") {
     return (
       <Screen style={styles.center}>
         <View style={[styles.orb, { backgroundColor: lesson.status === "failed" ? theme.danger : theme.primary }]}><Body style={styles.orbText}>{lesson.status === "failed" ? "!" : "✦"}</Body></View>
         <Title style={styles.centerText}>{lesson.status === "failed" ? "This lesson hit a snag" : lesson.title}</Title>
         <Body muted style={styles.centerText}>{lesson.status === "queued" ? "Your lesson is safely queued." : lesson.status === "generating_content" ? "Choosing a fresh topic and writing your script." : lesson.status === "synthesizing_audio" ? "Giving every part a natural voice." : "No daily quota was used. You can try again."}</Body>
-        {lesson.status !== "failed" ? <View style={[styles.progress, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.primary, width: `${lesson.progress}%` }]} /></View> : null}
+        {lesson.status !== "failed" ? <View style={[styles.progress, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.primary, width: percentWidth(lesson.progress) }]} /></View> : null}
         <Body muted>{lesson.status === "failed" ? lesson.failureCode : `${lesson.progress}% complete · You can leave this screen`}</Body>
         {lesson.status === "failed" ? <Button label="Try again" loading={retrying} onPress={() => void retry()} /> : null}
-        <Button label="Back to today" variant="secondary" onPress={() => router.replace("/(tabs)")} />
+        <Button label="Back to today" variant="secondary" onPress={leave} />
       </Screen>
     );
   }
   if (!resolved) return <LoadingScreen />;
   return (
     <Screen>
-      <Button label="‹ Back" variant="ghost" onPress={() => router.back()} />
+      <Button label="‹ Back" variant="ghost" onPress={leave} />
       <View style={styles.header}><Body muted>{lesson.type.toUpperCase()} · 3–5 MINUTES</Body><Title>{lesson.title}</Title><Body muted>{lesson.summary}</Body></View>
       <LessonPlayer lesson={resolved} onComplete={complete} onStart={started} onSegmentChange={setActiveSegmentId} />
       <Heading>Transcript</Heading>

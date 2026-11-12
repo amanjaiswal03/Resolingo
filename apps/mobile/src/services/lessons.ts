@@ -14,8 +14,9 @@ export function subscribeProfile(uid: string, callback: (profile: UserProfile | 
   });
 }
 
-function mapLesson(document: FirebaseFirestoreTypes.QueryDocumentSnapshot): Lesson {
+function mapLesson(document: FirebaseFirestoreTypes.QueryDocumentSnapshot | FirebaseFirestoreTypes.DocumentSnapshot): Lesson {
   const data = document.data();
+  if (!data) throw new Error(`Lesson ${document.id} has no data.`);
   return LessonSchema.parse({
     ...data,
     id: document.id,
@@ -26,13 +27,29 @@ function mapLesson(document: FirebaseFirestoreTypes.QueryDocumentSnapshot): Less
 
 export function subscribeLessons(uid: string, callback: (lessons: Lesson[]) => void, onError?: (error: Error) => void): () => void {
   const lessonsQuery = query(collection(firestore, "users", uid, "lessons"), orderBy("createdAt", "desc"), limit(50));
-  return onSnapshot(lessonsQuery, (snapshot) => callback(snapshot.docs.map(mapLesson)), onError);
+  return onSnapshot(lessonsQuery, (snapshot) => {
+    const lessons: Lesson[] = [];
+    let firstError: Error | undefined;
+    for (const document of snapshot.docs) {
+      try {
+        lessons.push(mapLesson(document));
+      } catch {
+        firstError ??= new Error(`Could not read lesson ${document.id}.`);
+      }
+    }
+    callback(lessons);
+    if (firstError) onError?.(firstError);
+  }, onError);
 }
 
-export function subscribeLesson(uid: string, lessonId: string, callback: (lesson: Lesson | null) => void): () => void {
+export function subscribeLesson(uid: string, lessonId: string, callback: (lesson: Lesson | null) => void, onError?: (error: Error) => void): () => void {
   return onSnapshot(doc(firestore, "users", uid, "lessons", lessonId), (snapshot) => {
-    callback(snapshot.exists() ? mapLesson(snapshot as FirebaseFirestoreTypes.QueryDocumentSnapshot) : null);
-  });
+    try {
+      callback(snapshot.exists() ? mapLesson(snapshot) : null);
+    } catch {
+      onError?.(new Error(`Could not read lesson ${lessonId}.`));
+    }
+  }, onError);
 }
 
 export async function resolveAudioUrls(lesson: Lesson): Promise<Lesson> {

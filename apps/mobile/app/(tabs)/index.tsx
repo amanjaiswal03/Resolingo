@@ -10,6 +10,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
 import { useLessons } from "@/hooks/useLessons";
+import { percentWidth } from "@/lesson/navigation";
 import { api } from "@/services/api";
 import { listenForPushTokenChanges, registerForPush } from "@/services/notifications";
 import { report, track } from "@/services/telemetry";
@@ -52,7 +53,7 @@ export default function HomeScreen() {
   return (
     <Screen>
       <View style={styles.header}><Body muted>GOOD TO SEE YOU, {profile.nickname.toUpperCase()}</Body><Title>What will you practice?</Title><Body muted>{used}/3 lessons ready today · {3 - used} remaining</Body></View>
-      {active ? <Pressable onPress={() => router.push(`/lesson/${active.id}`)}><Card style={{ backgroundColor: theme.surfaceMuted }}><Body muted>IN PROGRESS</Body><Heading>{active.title}</Heading><View style={[styles.progressTrack, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.primary, width: `${active.progress}%` }]} /></View><Body muted>{active.progress}% · Tap to follow progress</Body></Card></Pressable> : null}
+      {active ? <Pressable onPress={() => router.push(`/lesson/${active.id}`)}><Card style={{ backgroundColor: theme.surfaceMuted }}><Body muted>IN PROGRESS</Body><Heading>{active.title}</Heading><View style={[styles.progressTrack, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.primary, width: percentWidth(active.progress) }]} /></View><Body muted>{Number.isFinite(active.progress) ? active.progress : 0}% · Tap to follow progress</Body></Card></Pressable> : null}
       <View style={styles.choices}>
         <Pressable disabled={Boolean(starting || active || used >= 3)} onPress={() => void start("conversation")} accessibilityRole="button" accessibilityLabel="Start a conversation lesson" style={{ opacity: starting || active || used >= 3 ? 0.5 : 1 }}>
           <Card style={[styles.lessonCard, { backgroundColor: theme.amber }]}><Body style={styles.eyebrow}>CONVERSATION</Body><Title style={styles.dark}>Speak through a fresh everyday topic.</Title><Body style={styles.darkMuted}>{starting === "conversation" ? "Starting…" : "3–5 minutes · Two voices"}</Body></Card>
