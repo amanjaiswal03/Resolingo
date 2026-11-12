@@ -9,6 +9,7 @@ import {
 import {
   GeneratedLessonSchema,
   languageById,
+  markupIssues,
   type CefrLevel,
   type GeneratedLesson,
   type LanguageId,
@@ -23,6 +24,7 @@ const SYSTEM_INSTRUCTION = [
   "Return only a JSON object with string keys title, topic, and summary, plus segments.",
   "segments is an array of 8 to 16 objects.",
   "Each segment has id, kind (narration, dialogue, explanation, example, drill, or recap), speaker (teacher, speakerA, or speakerB), delivery (warm, praise, gentle, curious, clear, or playful), a BCP-47 language code, and text.",
+  "When a line mixes the teaching language and the target language, wrap only the other-language span as [[lang:BCP-47]]...[[/lang]]. Do this for the teacher and for both dialogue speakers. Do not nest tags.",
 ].join(" ");
 
 const SAFETY_CATEGORIES = [
@@ -141,6 +143,14 @@ export async function generateLessonContent(
       continue;
     }
     const parsed = GeneratedLessonSchema.safeParse(json);
+    if (parsed.success) {
+      const markup = parsed.data.segments.flatMap((segment) => markupIssues(segment.text).map((issue) => `${segment.id}:${issue}`));
+      if (markup.length > 0) {
+        sawInvalid = true;
+        logger.warn("lesson_markup_rejected", { issues: markup.slice(0, 8) });
+        continue;
+      }
+    }
     if (!parsed.success) {
       sawInvalid = true;
       logger.warn("lesson_schema_rejected", {

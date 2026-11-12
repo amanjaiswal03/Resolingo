@@ -1,10 +1,15 @@
 import { Modality } from "@google/genai";
 import { describe, expect, it, vi } from "vitest";
+import { speechSpans } from "@resolingo/shared";
 import {
   cloudCachePath,
   cloudLanguageCode,
+  cloudSynthesis,
+  concatPcm16,
+  geminiFallbackFields,
   geminiSpeechRequest,
   pcmDurationMs,
+  pcmPayload,
   renderLessonAudio,
   roleVoices,
   toPlayableAudio,
@@ -30,6 +35,7 @@ describe("Gemini speech requests", () => {
     expect(request.model).toBe("gemini-3.1-flash-tts-preview");
     expect(request.contents).toContain("excited praise");
     expect(request.contents).toContain("[excited] Sehr gut.");
+    expect(request.contents).toContain("native speaker of German");
     expect(request.contents).toContain("more slowly");
     expect(request.config.responseModalities).toEqual([Modality.AUDIO]);
     expect(speech.voiceConfig?.prebuiltVoiceConfig?.voiceName).toBe(roleVoices.teacher);
@@ -69,6 +75,63 @@ describe("Gemini speech requests", () => {
     });
     expect(speechConfig(request).languageCode).toBe("ar-xa");
     expect(request.contents).toContain("short natural pause");
+    expect(cloudSynthesis({ language: "ar-EG", level: "A1", pcm: true })).toMatchObject({
+      languageCode: "ar-XA",
+      audioEncoding: "LINEAR16",
+      sampleRateHertz: 24_000,
+    });
+  });
+
+  it("pronounces a target phrase in the tutor voice and a native phrase in the dialogue voice", () => {
+    const teacherSpans = speechSpans("Say [[lang:de-DE]]Guten Tag[[/lang]] please.", "en-US");
+    const target = teacherSpans[1]!;
+    const tutor = geminiSpeechRequest({
+      speaker: "teacher",
+      language: target.language,
+      text: target.text,
+      delivery: "clear",
+      level: "A1",
+    });
+    expect(target).toEqual({ language: "de-DE", text: "Guten Tag" });
+    expect(speechConfig(tutor).languageCode).toBe("de-de");
+    expect(speechConfig(tutor).voiceConfig?.prebuiltVoiceConfig?.voiceName).toBe(roleVoices.teacher);
+
+    const speakerSpans = speechSpans("Das heißt [[lang:en-US]]please[[/lang]].", "de-DE");
+    const native = speakerSpans[1]!;
+    const dialogue = geminiSpeechRequest({
+      speaker: "speakerA",
+      language: native.language,
+      text: native.text,
+      delivery: "warm",
+      level: "A2",
+    });
+    expect(native).toEqual({ language: "en-US", text: "please." });
+    expect(speechConfig(dialogue).languageCode).toBe("en-us");
+    expect(dialogue.contents).toContain("native speaker of English (US)");
+    expect(dialogue.contents).toContain("Only SpeakerA speaks.");
+    const speakers = speechConfig(dialogue).multiSpeakerVoiceConfig?.speakerVoiceConfigs ?? [];
+    expect(speakers.map((speaker) => speaker.voiceConfig?.prebuiltVoiceConfig?.voiceName)).toEqual([
+      roleVoices.speakerA,
+      roleVoices.speakerB,
+    ]);
+  });
+
+  it("records the segment kind and the Gemini error when speech falls back", () => {
+    expect(geminiFallbackFields({
+      segmentId: "intro",
+      kind: "narration",
+      speaker: "teacher",
+      language: "en-US",
+      delivery: "warm",
+      error: new Error("TTS_EMPTY_AUDIO"),
+    })).toEqual({
+      segmentId: "intro",
+      segmentKind: "narration",
+      speaker: "teacher",
+      language: "en-US",
+      delivery: "warm",
+      message: "TTS_EMPTY_AUDIO",
+    });
   });
 
   it("changes the cache key when the line, voice, or style changes", () => {
@@ -151,6 +214,9 @@ describe("PCM wrapping", () => {
     expect(wav.readUInt16LE(22)).toBe(1);
     expect(wav.readUInt16LE(34)).toBe(16);
     expect(wav.length).toBe(pcm.length + 44);
+    expect(pcmPayload(wav).equals(pcm)).toBe(true);
+    const joined = concatPcm16([Buffer.alloc(4), Buffer.alloc(4)], 0);
+    expect(joined.length).toBe(8);
     const playable = toPlayableAudio({ data: pcm.toString("base64"), mimeType: "audio/pcm" });
     expect(playable.contentType).toBe("audio/wav");
     expect(playable.durationMs).toBe(1_000);

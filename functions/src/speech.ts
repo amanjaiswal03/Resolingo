@@ -62,9 +62,11 @@ export function speechContents(input: {
   text: string;
   delivery: Delivery;
   level: string;
+  language: LanguageId;
 }): string {
   const pace = paceForLevel(input.level);
-  const direction = `${deliveryDirection[input.delivery]} ${paceDirection[pace]} Perform the expression. Do not read bracketed stage directions aloud.`;
+  const languageName = languageById[input.language].label;
+  const direction = `${deliveryDirection[input.delivery]} ${paceDirection[pace]} Pronounce this as a native speaker of ${languageName}. Do not imitate a foreign accent. Perform the expression. Do not read bracketed stage directions aloud.`;
   const spoken = `${performanceTag[input.delivery]}${input.text}`;
   if (input.speaker === "teacher") return `${direction}: ${spoken}`;
   const alias = input.speaker === "speakerA" ? "SpeakerA" : "SpeakerB";
@@ -125,16 +127,73 @@ export function geminiCachePath(input: {
   );
 }
 
+export function speakingRateForLevel(level: string): number {
+  if (level === "A1") return 0.78;
+  if (level === "A2") return 0.84;
+  if (level === "B1") return 0.9;
+  return 0.96;
+}
+
+export function cloudSynthesis(input: {
+  language: LanguageId;
+  level: string;
+  pcm: boolean;
+}): { languageCode: string; audioEncoding: "MP3" | "LINEAR16"; sampleRateHertz?: number; speakingRate: number } {
+  const languageCode = cloudLanguageCode(input.language);
+  const speakingRate = speakingRateForLevel(input.level);
+  if (input.pcm) {
+    return { languageCode, audioEncoding: "LINEAR16", sampleRateHertz: GEMINI_TTS_SAMPLE_RATE, speakingRate };
+  }
+  return { languageCode, audioEncoding: "MP3", speakingRate };
+}
+
 export function cloudCachePath(input: {
   voiceName: string;
   languageCode: string;
   speakingRate: number;
   text: string;
+  encoding?: "MP3" | "LINEAR16";
 }): string {
+  const encoding = input.encoding ?? "MP3";
   return cacheObjectPath(
-    ["cloud-tts", input.voiceName, input.languageCode, String(input.speakingRate), input.text].join("\n"),
-    "mp3",
+    ["cloud-tts", input.voiceName, input.languageCode, String(input.speakingRate), encoding, input.text].join("\n"),
+    encoding === "LINEAR16" ? "wav" : "mp3",
   );
+}
+
+export function concatPcm16(chunks: Buffer[], gapMs = 80, sampleRate = GEMINI_TTS_SAMPLE_RATE): Buffer {
+  const gap = Buffer.alloc(Math.round(sampleRate * 2 * gapMs / 1000));
+  const parts: Buffer[] = [];
+  chunks.forEach((chunk, index) => {
+    if (index > 0 && gap.length > 0) parts.push(gap);
+    if (chunk.length > 0) parts.push(chunk);
+  });
+  return Buffer.concat(parts);
+}
+
+export function pcmPayload(bytes: Buffer): Buffer {
+  if (bytes.length >= 44 && bytes.subarray(0, 4).toString("ascii") === "RIFF") return bytes.subarray(44);
+  return bytes;
+}
+
+/** Structured fallback record. The spoken line itself is not included. */
+export function geminiFallbackFields(input: {
+  segmentId: string;
+  kind: string;
+  speaker: string;
+  language: string;
+  delivery: string;
+  error: unknown;
+}): { segmentId: string; segmentKind: string; speaker: string; language: string; delivery: string; message: string } {
+  const raw = input.error instanceof Error ? input.error.message : String(input.error);
+  return {
+    segmentId: input.segmentId,
+    segmentKind: input.kind,
+    speaker: input.speaker,
+    language: input.language,
+    delivery: input.delivery,
+    message: raw.replace(/\s+/g, " ").slice(0, 400),
+  };
 }
 
 export function wrapPcm16AsWav(pcm: Buffer, sampleRate = GEMINI_TTS_SAMPLE_RATE): Buffer {
