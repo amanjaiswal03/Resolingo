@@ -1,31 +1,38 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { createAudioPlaylist, setAudioModeAsync, useAudioPlaylistStatus } from "expo-audio";
-import { lessonDisplayText, type Lesson, type LessonSegment } from "@resolingo/shared";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { type Lesson, type LessonSegment } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
 import { stopOwnedPlaylist } from "@/lesson/player-lifecycle";
-import { elapsedMs, lessonTimeline, seekInTimeline } from "@/lesson/timeline";
+import { elapsedMs, formatClock, lessonTimeline, seekInTimeline } from "@/lesson/timeline";
 import { Button } from "./Button";
-import { Body, Heading } from "./Typography";
+import { Body } from "./Typography";
 import { useTheme } from "@/theme/tokens";
 
 const speeds = [0.8, 1, 1.2] as const;
 
-export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
+export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jumpTo }: {
   lesson: Lesson;
   onComplete: () => void;
   onStart?: () => void;
   onSegmentChange?: (segmentId: string) => void;
+  jumpTo?: { id: string; token: number } | null;
 }) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const playable = useMemo(() => lesson.segments.filter((segment): segment is LessonSegment & { audioUrl: string } => Boolean(segment.audioUrl)), [lesson.segments]);
   const [speedIndex, setSpeedIndex] = useState(1);
   const [measuredMs, setMeasuredMs] = useState<Record<number, number>>({});
+  const [scrubRatio, setScrubRatio] = useState<number | null>(null);
   const started = useRef(false);
   const completed = useRef(false);
   const alive = useRef(true);
   const generation = useRef(0);
   const onStartRef = useRef(onStart);
+  const trackWidth = useRef(0);
+  const jumpToken = useRef<number | null>(null);
+  const indexRef = useRef(0);
   onStartRef.current = onStart;
   // Owned outside useAudioPlaylist so we can pause before destroy(). That hook
   // releases in its own effect, which runs before later cleanups and crashes
@@ -40,7 +47,11 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
     const durationMs = measuredMs[index] ?? segment.durationMs;
     return durationMs ? { durationMs } : {};
   })), [measuredMs, playable]);
-  const current = playable[status.currentIndex] ?? playable[0];
+  indexRef.current = status.currentIndex;
+  const playedElapsed = elapsedMs(timeline, status.currentIndex, status.currentTime);
+  const shownElapsed = scrubRatio == null ? playedElapsed : scrubRatio * timeline.totalMs;
+  const shown = playable[seekInTimeline(timeline, shownElapsed).index] ?? playable[0];
+  const progress = timeline.totalMs > 0 ? Math.min(1, shownElapsed / timeline.totalMs) : 0;
 
   useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => { void setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: "doNotMix" }); }, []);
@@ -54,8 +65,20 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
     }
   }, [playlist, playable.length]);
   useEffect(() => {
-    if (current) onSegmentChange?.(current.id);
-  }, [current, onSegmentChange]);
+    if (shown) onSegmentChange?.(shown.id);
+  }, [shown, onSegmentChange]);
+  useEffect(() => {
+    if (!jumpTo || jumpTo.token === jumpToken.current) return;
+    jumpToken.current = jumpTo.token;
+    const index = playable.findIndex((segment) => segment.id === jumpTo.id);
+    const start = timeline.startsMs[index];
+    if (index < 0 || start == null) return;
+    completed.current = false;
+    setScrubRatio(null);
+    if (index !== indexRef.current) playlist.skipTo(index);
+    void playlist.seekTo(0);
+    playlist.play();
+  }, [jumpTo, playable, playlist, timeline.startsMs]);
   useEffect(() => {
     if (!status.isLoaded || status.duration <= 0) return;
     const durationMs = Math.round(status.duration * 1_000);
@@ -83,25 +106,42 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
     setSpeedIndex(next);
     playlist.playbackRate = speeds[next]!;
   };
-  const seekBy = (deltaSec: number) => {
+  const seekToLessonMs = (targetMs: number) => {
+    if (timeline.totalMs <= 0) return;
+    completed.current = false;
     const index = status.currentIndex;
-    const clipDuration = status.duration > 0 ? status.duration : (timeline.durationsMs[index] ?? 0) / 1_000;
-    const nextTime = status.currentTime + deltaSec;
-    if (nextTime >= 0 && nextTime <= clipDuration) {
-      void playlist.seekTo(nextTime);
-      return;
-    }
-    const target = seekInTimeline(timeline, elapsedMs(timeline, index, status.currentTime) + deltaSec * 1_000);
+    const target = seekInTimeline(timeline, targetMs);
     if (target.index !== index) playlist.skipTo(target.index);
-    if (target.offsetSec > 0.05) void playlist.seekTo(target.offsetSec);
+    void playlist.seekTo(target.offsetSec);
   };
-  const elapsed = elapsedMs(timeline, status.currentIndex, status.currentTime);
-  const progress = timeline.totalMs > 0 ? Math.min(1, elapsed / timeline.totalMs) : 0;
-  const transcript = current ? lessonDisplayText(current.text) : "";
+  const seekBy = (deltaSec: number) => seekToLessonMs(playedElapsed + deltaSec * 1_000);
+  const ratioFromX = (x: number) => trackWidth.current <= 0 ? 0 : Math.min(1, Math.max(0, x / trackWidth.current));
   return (
-    <View style={[styles.player, { backgroundColor: theme.navy }]}>
-      <View style={styles.now}><Body style={styles.kicker}>NOW PLAYING</Body><Heading style={styles.title}>{current?.speaker === "teacher" ? "Resolingo teacher" : current?.speaker === "speakerA" ? "Speaker A" : "Speaker B"}</Heading><Body style={styles.transcript}>{transcript}</Body>{current?.translation ? <Body style={styles.translation}>{current.translation}</Body> : null}</View>
-      <View style={[styles.track, { backgroundColor: "#314262" }]}><View style={[styles.fill, { backgroundColor: theme.coral, width: percentWidth(progress * 100) }]} /></View>
+    <View style={[styles.player, { backgroundColor: theme.navy, paddingBottom: Math.max(8, insets.bottom) }]}>
+      <View
+        accessibilityRole="adjustable"
+        accessibilityLabel="Lesson position"
+        accessibilityValue={{ text: `${formatClock(shownElapsed)} of ${formatClock(timeline.totalMs)}` }}
+        accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
+        onAccessibilityAction={(event) => seekBy(event.nativeEvent.actionName === "increment" ? 10 : -10)}
+        onLayout={(event) => { trackWidth.current = event.nativeEvent.layout.width; }}
+        onStartShouldSetResponder={() => timeline.totalMs > 0}
+        onMoveShouldSetResponder={() => timeline.totalMs > 0}
+        onResponderTerminationRequest={() => false}
+        onResponderGrant={(event) => setScrubRatio(ratioFromX(event.nativeEvent.locationX))}
+        onResponderMove={(event) => setScrubRatio(ratioFromX(event.nativeEvent.locationX))}
+        onResponderRelease={(event) => {
+          const ratio = ratioFromX(event.nativeEvent.locationX);
+          setScrubRatio(null);
+          seekToLessonMs(ratio * timeline.totalMs);
+        }}
+        onResponderTerminate={() => setScrubRatio(null)}
+        style={styles.scrubber}
+      >
+        <View style={[styles.track, { backgroundColor: "#314262" }]}><View style={[styles.fill, { backgroundColor: theme.coral, width: percentWidth(progress * 100) }]} /></View>
+        <View style={[styles.thumb, { backgroundColor: theme.coral, left: percentWidth(progress * 100) }]} />
+      </View>
+      <View style={styles.times}><Body style={styles.time}>{formatClock(shownElapsed)}</Body><Body style={styles.time}>{formatClock(timeline.totalMs)}</Body></View>
       <View style={styles.controls}>
         <Button label={`${speeds[speedIndex]}×`} variant="ghost" onPress={changeSpeed} />
         <Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.circle}><Body style={styles.controlText}>−10</Body></Pressable>
@@ -113,5 +153,5 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange }: {
 }
 
 const styles = StyleSheet.create({
-  player: { borderRadius: 26, padding: 20, gap: 18 }, now: { minHeight: 190, gap: 9, justifyContent: "center" }, kicker: { color: "#9FB0CC", fontSize: 11, fontWeight: "800", letterSpacing: 1.3 }, title: { color: "#FFFFFF" }, transcript: { color: "#FFFFFF", fontSize: 21, lineHeight: 30 }, translation: { color: "#BAC7DD" }, track: { height: 6, borderRadius: 3, overflow: "hidden" }, fill: { height: 6, borderRadius: 3 }, controls: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, circle: { width: 44, height: 44, alignItems: "center", justifyContent: "center" }, play: { width: 58, height: 58, borderRadius: 29, alignItems: "center", justifyContent: "center" }, controlText: { color: "#FFFFFF", fontWeight: "700" }, playText: { color: "#08152F", fontSize: 20, fontWeight: "800" },
+  player: { borderRadius: 22, paddingHorizontal: 16, paddingTop: 8, gap: 2 }, scrubber: { height: 28, justifyContent: "center" }, track: { height: 5, borderRadius: 3, overflow: "hidden" }, fill: { height: 5, borderRadius: 3 }, thumb: { position: "absolute", top: 6, width: 16, height: 16, borderRadius: 8, marginLeft: -8, borderWidth: 2, borderColor: "#FFFFFF" }, times: { flexDirection: "row", justifyContent: "space-between" }, time: { color: "#9FB0CC", fontSize: 12, fontVariant: ["tabular-nums"] }, controls: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, circle: { width: 40, height: 40, alignItems: "center", justifyContent: "center" }, play: { width: 46, height: 46, borderRadius: 23, alignItems: "center", justifyContent: "center" }, controlText: { color: "#FFFFFF", fontWeight: "700" }, playText: { color: "#08152F", fontSize: 18, fontWeight: "800" },
 });

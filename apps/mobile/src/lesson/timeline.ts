@@ -25,6 +25,14 @@ export function elapsedMs(timeline: LessonTimeline, index: number, currentTimeSe
   return (timeline.startsMs[safeIndex] ?? 0) + Math.max(0, currentTimeSec) * 1_000;
 }
 
+/** `m:ss` for the transport clock. Lessons are a few minutes, so hours are not needed. */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1_000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
 /** Map a position on the combined lesson back to a phrase and a time within that phrase. */
 export function seekInTimeline(timeline: LessonTimeline, targetMs: number): { index: number; offsetSec: number } {
   if (timeline.startsMs.length === 0) return { index: 0, offsetSec: 0 };

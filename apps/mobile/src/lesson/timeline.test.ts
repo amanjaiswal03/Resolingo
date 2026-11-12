@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { elapsedMs, lessonTimeline, seekInTimeline } from "./timeline";
+import { elapsedMs, formatClock, lessonTimeline, seekInTimeline } from "./timeline";
 
 describe("lesson timeline", () => {
   const timeline = lessonTimeline([
@@ -22,6 +22,12 @@ describe("lesson timeline", () => {
     expect(seekInTimeline(timeline, -100)).toEqual({ index: 0, offsetSec: 0 });
     expect(seekInTimeline(timeline, 3_700)).toEqual({ index: 2, offsetSec: 0.2 });
     expect(seekInTimeline(timeline, 9_000)).toEqual({ index: 2, offsetSec: 0.5 });
+  });
+
+  it("formats the transport clock", () => {
+    expect(formatClock(0)).toBe("0:00");
+    expect(formatClock(1_250)).toBe("0:01");
+    expect(formatClock(75_000)).toBe("1:15");
   });
 
   it("counts time from the start of the lesson, not the start of the phrase", () => {
