@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -11,7 +11,21 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 2, sta
 
 function Navigation() {
   const router = useRouter();
-  const { profile } = useSession();
+  const segments = useSegments();
+  const { loading, user, profile } = useSession();
+  useEffect(() => {
+    if (loading) return;
+    const root = segments[0];
+    if (!user) {
+      if (root !== "(auth)") router.replace("/(auth)/sign-in");
+      return;
+    }
+    if (!profile?.onboardingComplete) {
+      if (root !== "onboarding") router.replace("/onboarding");
+      return;
+    }
+    if (root === "(auth)" || root === "index" || root === undefined) router.replace("/(tabs)");
+  }, [loading, user, profile?.onboardingComplete, segments, router]);
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const path = response.notification.request.content.data?.path;

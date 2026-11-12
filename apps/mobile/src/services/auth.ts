@@ -4,6 +4,7 @@ import * as Crypto from "expo-crypto";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { AppleAuthProvider, GoogleAuthProvider, signInWithCredential, signOut } from "@react-native-firebase/auth";
 import { firebaseAuth } from "./firebase";
+import { cancelPushRegistration } from "./notifications";
 
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim();
 GoogleSignin.configure({
@@ -33,5 +34,6 @@ export async function signInWithApple(): Promise<void> {
 }
 
 export async function logOut(): Promise<void> {
+  cancelPushRegistration();
   await Promise.allSettled([GoogleSignin.signOut(), signOut(firebaseAuth)]);
 }

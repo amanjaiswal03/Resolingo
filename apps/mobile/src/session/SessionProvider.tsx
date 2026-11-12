@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type PropsWithChildren } from "react";
 import { onAuthStateChanged, type FirebaseAuthTypes } from "@react-native-firebase/auth";
 import type { UserProfile } from "@resolingo/shared";
 import { firebaseAuth, initializeFirebaseSecurity } from "@/services/firebase";
@@ -18,16 +18,25 @@ export function SessionProvider({ children }: PropsWithChildren) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const signedInUid = useRef<string | null>(null);
+
   useEffect(() => {
     let unsubscribe = () => {};
     let mounted = true;
     void initializeFirebaseSecurity().finally(() => {
       if (!mounted) return;
       unsubscribe = onAuthStateChanged(firebaseAuth, (nextUser) => {
+        const nextUid = nextUser?.uid ?? null;
         setUser(nextUser);
         if (!nextUser) {
+          signedInUid.current = null;
           setProfile(null);
           setLoading(false);
+          return;
+        }
+        if (signedInUid.current !== nextUid) {
+          signedInUid.current = nextUid;
+          setLoading(true);
         }
       });
     });
