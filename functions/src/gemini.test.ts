@@ -45,6 +45,8 @@ describe("Gemini lesson generation", () => {
     const config = lessonGenerationConfig();
     expect(config.responseMimeType).toBe("application/json");
     expect(config.systemInstruction).toContain("delivery");
+    expect(config.systemInstruction).toContain("8 to 16");
+    expect(config.systemInstruction).toContain("[[lang:BCP-47]]");
     expect(config.responseJsonSchema).toBeUndefined();
     expect(config.responseSchema).toBeUndefined();
     expect(config.thinkingConfig).toBeUndefined();
@@ -106,6 +108,17 @@ describe("Gemini lesson generation", () => {
       { text: JSON.stringify(lesson("Weekend market")) },
     ]);
     await expect(generateLessonContent(input, model)).resolves.toMatchObject({ topic: "Weekend market" });
+  });
+
+  it("rejects broken pronunciation markup and keeps the repaired lesson", async () => {
+    const broken = lesson("Broken markup");
+    broken.segments[0]!.text = "Say [[lang:de-DE]]Guten Tag";
+    const model = client([
+      { text: JSON.stringify(broken) },
+      { text: JSON.stringify(lesson("Fixed markup")) },
+    ]);
+    await expect(generateLessonContent(input, model)).resolves.toMatchObject({ topic: "Fixed markup" });
+    expect(model.contents[1]).toContain("REPAIR");
   });
 
   it("fails closed when both attempts are blocked or invalid", async () => {
