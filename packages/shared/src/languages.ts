@@ -29,7 +29,8 @@ const language = (
 // resolved from Google's live voice inventory and cached by the backend, so a
 // discontinued voice can never silently ship in a mobile binary.
 export const languages: readonly LanguageConfig[] = [
-  language("ar-EG", "Arabic", "ar-EG", true), language("bn-IN", "Bengali"),
+  // Cloud TTS has no ar-EG inventory. Arabic voices are published under ar-XA.
+  language("ar-EG", "Arabic", "ar-XA", true), language("bn-IN", "Bengali"),
   language("da-DK", "Danish"), language("de-DE", "German"),
   language("en-AU", "English (Australia)"), language("en-GB", "English (UK)"),
   language("en-US", "English (US)"), language("es-ES", "Spanish (Spain)"),

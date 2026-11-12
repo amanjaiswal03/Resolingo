@@ -22,7 +22,7 @@ const SYSTEM_INSTRUCTION = [
   "You are Resolingo's expert multilingual lesson designer.",
   "Return only a JSON object with string keys title, topic, and summary, plus segments.",
   "segments is an array of 8 to 16 objects.",
-  "Each segment has id, kind (narration, dialogue, explanation, example, drill, or recap), speaker (teacher, speakerA, or speakerB), a BCP-47 language code, and text.",
+  "Each segment has id, kind (narration, dialogue, explanation, example, drill, or recap), speaker (teacher, speakerA, or speakerB), delivery (warm, praise, gentle, curious, clear, or playful), a BCP-47 language code, and text.",
 ].join(" ");
 
 const SAFETY_CATEGORIES = [

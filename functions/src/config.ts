@@ -12,9 +12,20 @@ export const GEMINI_LOCATION = defineString("GEMINI_LOCATION", {
   default: DEFAULT_GEMINI_LOCATION,
   description: "Vertex AI location. gemini-3.5-flash-lite is not in europe-west1; eu keeps processing in the EU.",
 });
+export const DEFAULT_GEMINI_TTS_MODEL = "gemini-3.1-flash-tts-preview";
+/** Vertex hosts this preview only on the global endpoint, not in europe-west1. */
+export const DEFAULT_GEMINI_TTS_LOCATION = "global";
+export const GEMINI_TTS_MODEL = defineString("GEMINI_TTS_MODEL", {
+  default: DEFAULT_GEMINI_TTS_MODEL,
+  description: "Vertex speech model. gemini-3.1-flash-tts-preview is the Gemini 3.1 Flash TTS id.",
+});
+export const GEMINI_TTS_LOCATION = defineString("GEMINI_TTS_LOCATION", {
+  default: DEFAULT_GEMINI_TTS_LOCATION,
+  description: "Vertex location for TTS. gemini-3.1-flash-tts-preview is available on global only.",
+});
 export const TTS_VOICE_TIER = defineString("TTS_VOICE_TIER", {
   default: "wavenet",
-  description: "Google TTS tier: wavenet (default), standard, neural2, or chirp3",
+  description: "Cloud TTS fallback tier when Gemini TTS fails: wavenet (default), standard, neural2, or chirp3",
 });
 export const DAILY_LIMIT = 3;
 export const MAX_TASK_ATTEMPTS = 3;

@@ -20,10 +20,15 @@ export const SegmentKindSchema = z.enum([
   "narration", "dialogue", "explanation", "example", "drill", "recap",
 ]);
 
+export const DeliverySchema = z.enum(["warm", "praise", "gentle", "curious", "clear", "playful"]);
+export type Delivery = z.infer<typeof DeliverySchema>;
+
 export const LessonSegmentSchema = z.object({
   id: z.string().min(1),
   kind: SegmentKindSchema,
   speaker: z.enum(["teacher", "speakerA", "speakerB"]),
+  /** How this line should be spoken. Missing values from older lessons stay warm. */
+  delivery: DeliverySchema.default("warm"),
   language: LanguageIdSchema,
   text: z.string().min(1).max(900),
   translation: z.string().max(900).optional(),
