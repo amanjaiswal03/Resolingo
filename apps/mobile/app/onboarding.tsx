@@ -33,6 +33,10 @@ export default function OnboardingScreen() {
   const [telemetryConsent, setTelemetryConsent] = useState(profile?.telemetryConsent ?? false);
   const [saving, setSaving] = useState(false);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const leave = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/settings");
+  };
 
   const save = async () => {
     if (!nickname.trim()) return Alert.alert("Add your name", "Tell us what we should call you.");
@@ -53,6 +57,7 @@ export default function OnboardingScreen() {
 
   return (
     <Screen>
+      {edit ? <Button label="‹ Back" variant="ghost" onPress={leave} /> : null}
       <View style={styles.header}>
         <Body muted>{edit ? "LEARNING SETTINGS" : "WELCOME TO RESOLINGO"}</Body>
         <Title>{edit ? "Tune your lessons" : "Make it yours"}</Title>
