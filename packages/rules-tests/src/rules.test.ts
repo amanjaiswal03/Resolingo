@@ -45,6 +45,8 @@ describe("Firestore owner rules", () => {
     const own = env.authenticatedContext("alice").firestore();
     await assertSucceeds(updateDoc(doc(own, "users/alice"), { nickname: "Ali", updatedAt: new Date() }));
     await assertFails(updateDoc(doc(own, "users/alice"), { status: "tampered", updatedAt: new Date() }));
+    await assertFails(updateDoc(doc(own, "users/alice"), { unlimitedLessons: true }));
+    await assertFails(updateDoc(doc(own, "users/alice"), { nickname: "Ali", unlimitedLessons: true, updatedAt: new Date() }));
   });
 
   it("allows completion while denying lesson status changes", async () => {

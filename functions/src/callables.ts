@@ -17,7 +17,7 @@ import { auth, bucket, db } from "./firebase.js";
 import { abandonUnenqueuedLesson, enqueueLesson } from "./jobs.js";
 import { nextReminderAt, localDate, assertTimezone } from "./time.js";
 import { tokenHash } from "./push.js";
-import { reserveLesson, withoutReservation } from "./quota.js";
+import { dailyReservationLimit, reserveLesson, withoutReservation } from "./quota.js";
 
 function timestampMillis(value: unknown): number | null {
   if (!value || typeof value !== "object" || !("toMillis" in value) || typeof value.toMillis !== "function") return null;
@@ -147,7 +147,12 @@ export const createDailyLesson = onCall(callableOptions, async (request) => {
     const readyCount = Number(usage.readyCount ?? 0);
     let nextReservations: string[];
     try {
-      nextReservations = reserveLesson(readyCount, reservations, lessonId, DAILY_LIMIT);
+      nextReservations = reserveLesson(
+        readyCount,
+        reservations,
+        lessonId,
+        dailyReservationLimit(profile.unlimitedLessons, DAILY_LIMIT),
+      );
     } catch {
       throw new HttpsError("resource-exhausted", "Daily lesson limit reached.");
     }
@@ -219,7 +224,12 @@ export const retryFailedLesson = onCall(callableOptions, async (request) => {
     const usage = usageSnapshot.data() ?? {};
     let nextReservations: string[];
     try {
-      nextReservations = reserveLesson(Number(usage.readyCount ?? 0), withoutReservation(usage.reservations, stale?.lessonId), parsed.data.lessonId, DAILY_LIMIT);
+      nextReservations = reserveLesson(
+        Number(usage.readyCount ?? 0),
+        withoutReservation(usage.reservations, stale?.lessonId),
+        parsed.data.lessonId,
+        dailyReservationLimit(userSnapshot.data()?.unlimitedLessons, DAILY_LIMIT),
+      );
     } catch {
       throw new HttpsError("resource-exhausted", "Daily lesson limit reached.");
     }

@@ -33,6 +33,8 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
   const trackWidth = useRef(0);
   const jumpToken = useRef<number | null>(null);
   const indexRef = useRef(0);
+  // Read by the playback effects below. Assigned during render so a jump in the same commit sees the latest callback.
+  // eslint-disable-next-line react-hooks/refs -- playback callback mirror
   onStartRef.current = onStart;
   // Owned outside useAudioPlaylist so we can pause before destroy(). That hook
   // releases in its own effect, which runs before later cleanups and crashes
@@ -47,6 +49,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
     const durationMs = measuredMs[index] ?? segment.durationMs;
     return durationMs ? { durationMs } : {};
   })), [measuredMs, playable]);
+  // eslint-disable-next-line react-hooks/refs -- compared inside the jump effect in this commit
   indexRef.current = status.currentIndex;
   const playedElapsed = elapsedMs(timeline, status.currentIndex, status.currentTime);
   const shownElapsed = scrubRatio == null ? playedElapsed : scrubRatio * timeline.totalMs;
@@ -55,6 +58,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
 
   useEffect(() => () => { alive.current = false; }, []);
   useEffect(() => { void setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true, interruptionMode: "doNotMix" }); }, []);
+  /* eslint-disable react-hooks/immutability -- playbackRate is a property of the expo-audio playlist */
   useEffect(() => {
     if (!alive.current || playable.length === 0) return;
     playlist.playbackRate = 1;
@@ -64,6 +68,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
       onStartRef.current?.();
     }
   }, [playlist, playable.length]);
+  /* eslint-enable react-hooks/immutability */
   useEffect(() => {
     if (shown) onSegmentChange?.(shown.id);
   }, [shown, onSegmentChange]);
@@ -74,6 +79,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
     const start = timeline.startsMs[index];
     if (index < 0 || start == null) return;
     completed.current = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop the scrub preview when an external jump is applied
     setScrubRatio(null);
     if (index !== indexRef.current) playlist.skipTo(index);
     void playlist.seekTo(0);
@@ -82,6 +88,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
   useEffect(() => {
     if (!status.isLoaded || status.duration <= 0) return;
     const durationMs = Math.round(status.duration * 1_000);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- record the loaded clip length for the timeline
     setMeasuredMs((currentMs) => currentMs[status.currentIndex] === durationMs ? currentMs : { ...currentMs, [status.currentIndex]: durationMs });
   }, [status.currentIndex, status.duration, status.isLoaded]);
   useEffect(() => {
@@ -104,6 +111,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
   const changeSpeed = () => {
     const next = (speedIndex + 1) % speeds.length;
     setSpeedIndex(next);
+    // eslint-disable-next-line react-hooks/immutability -- playbackRate is a property of the expo-audio playlist
     playlist.playbackRate = speeds[next]!;
   };
   const seekToLessonMs = (targetMs: number) => {

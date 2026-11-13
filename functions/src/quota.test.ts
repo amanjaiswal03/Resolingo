@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DAILY_LIMIT, DELETE_ACCOUNT_TIMEOUT_SECONDS } from "./config.js";
-import { quotaUsed, reserveLesson, withoutReservation } from "./quota.js";
+import { dailyReservationLimit, quotaUsed, reserveLesson, withoutReservation } from "./quota.js";
 
 describe("daily quota", () => {
   it("counts ready lessons plus unique active reservations", () => {
@@ -13,6 +13,14 @@ describe("daily quota", () => {
 
   it("rejects a fourth reserved or ready lesson", () => {
     expect(() => reserveLesson(2, ["active"], "fourth", 3)).toThrow("DAILY_LIMIT_REACHED");
+  });
+
+  it("skips the daily cap only for an explicit unlimited flag and still records the slot", () => {
+    expect(dailyReservationLimit(true, DAILY_LIMIT)).toBe(Number.POSITIVE_INFINITY);
+    expect(dailyReservationLimit(false, DAILY_LIMIT)).toBe(DAILY_LIMIT);
+    expect(dailyReservationLimit(undefined, DAILY_LIMIT)).toBe(DAILY_LIMIT);
+    expect(dailyReservationLimit("true", DAILY_LIMIT)).toBe(DAILY_LIMIT);
+    expect(reserveLesson(3, ["a", "b"], "fourth", dailyReservationLimit(true, DAILY_LIMIT))).toEqual(["a", "b", "fourth"]);
   });
 
   it("keeps the three-lesson cap and gives account deletion enough time", () => {
