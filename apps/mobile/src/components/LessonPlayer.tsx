@@ -124,6 +124,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
   };
   const seekBy = (deltaSec: number) => seekToLessonMs(playedElapsed + deltaSec * 1_000);
   const ratioFromX = (x: number) => trackWidth.current <= 0 ? 0 : Math.min(1, Math.max(0, x / trackWidth.current));
+  const yourTurn = shown?.segments.some((segment) => (segment.pauseAfterMs ?? 0) > 0) ?? false;
   return (
     <View style={[styles.player, { backgroundColor: theme.navy, paddingBottom: Math.max(8, insets.bottom) }]}>
       <View
@@ -149,7 +150,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
         <View style={[styles.track, { backgroundColor: "#314262" }]}><View style={[styles.fill, { backgroundColor: theme.coral, width: percentWidth(progress * 100) }]} /></View>
         <View style={[styles.thumb, { backgroundColor: theme.coral, left: percentWidth(progress * 100) }]} />
       </View>
-      <View style={styles.times}><Body style={styles.time}>{formatClock(shownElapsed)}</Body><Body style={styles.time}>{formatClock(timeline.totalMs)}</Body></View>
+      <View style={styles.times}><Body style={styles.time}>{formatClock(shownElapsed)}</Body>{yourTurn ? <Body style={styles.time}>Say it aloud</Body> : null}<Body style={styles.time}>{formatClock(timeline.totalMs)}</Body></View>
       <View style={styles.controls}>
         <Button label={`${speeds[speedIndex]}×`} variant="ghost" onPress={changeSpeed} />
         <Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.circle}><Body style={styles.controlText}>−10</Body></Pressable>

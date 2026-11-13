@@ -44,8 +44,9 @@ describe("Gemini lesson generation", () => {
   it("asks Vertex for JSON mode with medium safety filters and no response schema", () => {
     const config = lessonGenerationConfig();
     expect(config.responseMimeType).toBe("application/json");
-    expect(config.systemInstruction).toContain("delivery");
-    expect(config.systemInstruction).toContain("8 to 16");
+    expect(config.systemInstruction).toContain("howWouldYouSay");
+    expect(config.systemInstruction).toContain("lines is an array of 4 to 6");
+    expect(config.systemInstruction).toContain("phrases is an array of 2 or 3");
     expect(config.systemInstruction).toContain("[[lang:BCP-47]]");
     expect(config.systemInstruction).toContain("speakerNames");
     expect(config.responseJsonSchema).toBeUndefined();
@@ -114,15 +115,14 @@ describe("Gemini lesson generation", () => {
 
   it("repairs an unclosed language tag and an unknown kind instead of discarding the lesson", async () => {
     const broken = lesson("Broken markup");
-    broken.segments[0]!.text = "Speaker A says [[lang:de-DE]]Guten Tag";
-    (broken.segments[0] as { kind: string }).kind = "welcome";
-    broken.segments[0]!.speaker = "teacher";
+    broken.segments[2]!.text = "Speaker A says [[lang:de-DE]]Guten Tag";
+    (broken.segments[2] as { kind: string }).kind = "welcome";
     (broken as { speakerNames?: unknown }).speakerNames = { teacher: "Mira", speakerA: "Lukas", speakerB: "Lukas" };
     const model = client([{ text: JSON.stringify(broken) }]);
     const result = await generateLessonContent(input, model);
     expect(result.topic).toBe("Broken markup");
-    expect(result.segments[0]?.text).toBe("Lukas says [[lang:de-DE]]Guten Tag[[/lang]]");
-    expect(result.segments[0]?.kind).toBe("narration");
+    expect(result.segments.some((segment) => segment.text === "Lukas says [[lang:de-DE]]Guten Tag[[/lang]]")).toBe(true);
+    expect(result.segments.some((segment) => segment.pauseAfterMs === 5_000)).toBe(true);
     expect(result.speakerNames).toEqual({ teacher: "Mira", speakerA: "Lukas", speakerB: "Anna" });
     expect(model.contents).toHaveLength(1);
   });

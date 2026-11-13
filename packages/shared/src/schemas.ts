@@ -34,6 +34,10 @@ export const LessonSegmentSchema = z.object({
   text: z.string().min(1).max(900),
   translation: z.string().max(900).optional(),
   transliteration: z.string().max(900).optional(),
+  /** Silence after this clip so the learner can answer aloud. The player does not add a second wait. */
+  pauseAfterMs: z.number().int().min(0).max(20_000).optional(),
+  /** Lesson section, kept as a string so an unexpected value cannot fail generation. */
+  phase: z.string().min(1).max(24).optional(),
   audioPath: z.string().min(1).optional(),
   audioUrl: z.string().url().optional(),
   durationMs: z.number().int().positive().optional(),
@@ -54,7 +58,7 @@ export const GeneratedLessonSchema = z.object({
   topic: z.string().min(3).max(160),
   summary: z.string().min(5).max(280),
   speakerNames: SpeakerNamesField,
-  segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(40),
+  segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(48),
 });
 export type GeneratedLesson = z.infer<typeof GeneratedLessonSchema>;
 

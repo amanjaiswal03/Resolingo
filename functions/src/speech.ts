@@ -290,6 +290,13 @@ export function pcmDurationMs(pcmByteLength: number, sampleRate = GEMINI_TTS_SAM
   return Math.max(1, Math.round((samples / sampleRate) * 1000));
 }
 
+/** Trailing silence so autoplay waits for the learner. Applied on the lesson file, not the shared TTS cache. */
+export function pcmWithTrailingSilence(pcm: Buffer, pauseMs: number, sampleRate = GEMINI_TTS_SAMPLE_RATE): Buffer {
+  if (pauseMs <= 0) return pcm;
+  const silence = Buffer.alloc(Math.round(sampleRate * 2 * pauseMs / 1000));
+  return Buffer.concat([pcm, silence]);
+}
+
 export function toPlayableAudio(inline: { data: string; mimeType?: string }): {
   bytes: Buffer;
   contentType: string;
@@ -388,7 +395,10 @@ export type LessonAudioUnit =
   | { kind: "teacher"; segment: LessonSegment }
   | { kind: "scene"; segments: LessonSegment[] };
 
-/** Teacher lines stay single-speaker. Consecutive dialogue lines are one conversation. */
+/**
+ * Teacher lines stay single-speaker. Consecutive dialogue lines are one conversation.
+ * A line with pauseAfterMs stays its own clip so the silence belongs to that line.
+ */
 export function lessonAudioUnits(segments: LessonSegment[]): LessonAudioUnit[] {
   const units: LessonAudioUnit[] = [];
   let scene: LessonSegment[] = [];
@@ -398,7 +408,7 @@ export function lessonAudioUnits(segments: LessonSegment[]): LessonAudioUnit[] {
     scene = [];
   };
   for (const segment of segments) {
-    if (segment.speaker === "teacher") {
+    if (segment.speaker === "teacher" || (segment.pauseAfterMs ?? 0) > 0) {
       flush();
       units.push({ kind: "teacher", segment });
     } else {
