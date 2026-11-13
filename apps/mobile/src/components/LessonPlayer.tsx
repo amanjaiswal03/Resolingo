@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 import { createAudioPlaylist, setAudioModeAsync, useAudioPlaylistStatus } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { type Lesson, type LessonSegment } from "@resolingo/shared";
+import { type Lesson } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
 import { stopOwnedPlaylist } from "@/lesson/player-lifecycle";
-import { elapsedMs, formatClock, lessonTimeline, seekInTimeline } from "@/lesson/timeline";
+import { elapsedMs, formatClock, lessonTimeline, playbackClips, seekInTimeline } from "@/lesson/timeline";
 import { Button } from "./Button";
 import { Body } from "./Typography";
 import { useTheme } from "@/theme/tokens";
@@ -21,7 +21,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const playable = useMemo(() => lesson.segments.filter((segment): segment is LessonSegment & { audioUrl: string } => Boolean(segment.audioUrl)), [lesson.segments]);
+  const playable = useMemo(() => playbackClips(lesson.segments), [lesson.segments]);
   const [speedIndex, setSpeedIndex] = useState(1);
   const [measuredMs, setMeasuredMs] = useState<Record<number, number>>({});
   const [scrubRatio, setScrubRatio] = useState<number | null>(null);
@@ -40,13 +40,13 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
   // releases in its own effect, which runs before later cleanups and crashes
   // iOS on the way back to home.
   const [playlist] = useState(() => createAudioPlaylist({
-    sources: playable.map((segment) => ({ uri: segment.audioUrl, name: lesson.title })),
+    sources: playable.map((clip) => ({ uri: clip.audioUrl, name: lesson.title })),
     updateInterval: 250,
     loop: "none",
   }));
   const status = useAudioPlaylistStatus(playlist);
-  const timeline = useMemo(() => lessonTimeline(playable.map((segment, index) => {
-    const durationMs = measuredMs[index] ?? segment.durationMs;
+  const timeline = useMemo(() => lessonTimeline(playable.map((clip, index) => {
+    const durationMs = measuredMs[index] ?? clip.durationMs;
     return durationMs ? { durationMs } : {};
   })), [measuredMs, playable]);
   // eslint-disable-next-line react-hooks/refs -- compared inside the jump effect in this commit
@@ -75,7 +75,7 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
   useEffect(() => {
     if (!jumpTo || jumpTo.token === jumpToken.current) return;
     jumpToken.current = jumpTo.token;
-    const index = playable.findIndex((segment) => segment.id === jumpTo.id);
+    const index = playable.findIndex((clip) => clip.segmentIds.includes(jumpTo.id));
     const start = timeline.startsMs[index];
     if (index < 0 || start == null) return;
     completed.current = false;

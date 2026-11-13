@@ -24,6 +24,34 @@ export function voiceTierOf(name: string): VoiceTier | null {
   return null;
 }
 
+export type ListedVoice = { name: string; gender: "FEMALE" | "MALE" | "NEUTRAL" };
+
+export type RoleVoiceAssignment = { teacher: string; speakerA: string; speakerB: string };
+
+function voicesForTier(voices: readonly ListedVoice[], tier: VoiceTier): ListedVoice[] {
+  let single: ListedVoice[] = [];
+  for (const candidate of fallbacks[tier]) {
+    const matches = voices.filter((voice) => voiceTierOf(voice.name) === candidate).sort((left, right) => left.name.localeCompare(right.name));
+    if (matches.length >= 2) return matches;
+    if (!single.length && matches.length === 1) single = matches;
+  }
+  return single;
+}
+
+/**
+ * Teacher and speaker B are female, and they are different voices when the
+ * language has two. Speaker A is male. Alphabetical order is not gender.
+ */
+export function assignRoleVoices(voices: readonly ListedVoice[], tier: VoiceTier): RoleVoiceAssignment {
+  const pool = voicesForTier(voices, tier);
+  const females = pool.filter((voice) => voice.gender === "FEMALE");
+  const males = pool.filter((voice) => voice.gender === "MALE");
+  const teacher = females[0]?.name ?? pool[0]?.name ?? "";
+  const speakerB = females.find((voice) => voice.name !== teacher)?.name ?? teacher;
+  const speakerA = males[0]?.name ?? pool.find((voice) => voice.name !== teacher && voice.name !== speakerB)?.name ?? teacher;
+  return { teacher, speakerA, speakerB };
+}
+
 export function selectVoices(names: readonly string[], tier: VoiceTier): { tier: VoiceTier | null; voices: string[] } {
   let single: { tier: VoiceTier; voices: string[] } | null = null;
   for (const candidate of fallbacks[tier]) {

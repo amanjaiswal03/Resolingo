@@ -1,3 +1,5 @@
+import type { LessonSegment } from "@resolingo/shared";
+
 /** Used when a phrase has no measured duration yet, so the bar still has a place for it. */
 const FALLBACK_DURATION_MS = 1_000;
 
@@ -43,4 +45,37 @@ export function seekInTimeline(timeline: LessonTimeline, targetMs: number): { in
   }
   const offsetMs = Math.min(clamped - (timeline.startsMs[index] ?? 0), timeline.durationsMs[index] ?? 0);
   return { index, offsetSec: offsetMs / 1_000 };
+}
+
+export type PlaybackClip = {
+  id: string;
+  audioUrl: string;
+  durationMs?: number;
+  segmentIds: string[];
+  segments: (LessonSegment & { audioUrl: string })[];
+};
+
+/** One playlist item per audio file. A dialogue scene shares one file across its lines. */
+export function playbackClips(segments: LessonSegment[]): PlaybackClip[] {
+  const clips: PlaybackClip[] = [];
+  for (const segment of segments) {
+    if (!segment.audioUrl) continue;
+    const key = segment.audioPath ?? segment.audioUrl;
+    const last = clips[clips.length - 1];
+    const lastKey = last ? (last.segments[0]?.audioPath ?? last.audioUrl) : undefined;
+    if (last && lastKey === key) {
+      last.segments.push(segment as LessonSegment & { audioUrl: string });
+      last.segmentIds.push(segment.id);
+      if (!last.durationMs && segment.durationMs) last.durationMs = segment.durationMs;
+      continue;
+    }
+    clips.push({
+      id: segment.id,
+      audioUrl: segment.audioUrl,
+      ...(segment.durationMs ? { durationMs: segment.durationMs } : {}),
+      segmentIds: [segment.id],
+      segments: [segment as LessonSegment & { audioUrl: string }],
+    });
+  }
+  return clips;
 }

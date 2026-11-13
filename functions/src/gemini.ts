@@ -8,8 +8,11 @@ import {
 } from "@google/genai";
 import {
   GeneratedLessonSchema,
+  dialogueText,
   languageById,
   markupIssues,
+  normalizeSpeakerNames,
+  repairMarkup,
   type CefrLevel,
   type GeneratedLesson,
   type LanguageId,
@@ -24,7 +27,9 @@ const SYSTEM_INSTRUCTION = [
   "Return only a JSON object with string keys title, topic, and summary, plus segments.",
   "segments is an array of 8 to 16 objects.",
   "Each segment has id, kind (narration, dialogue, explanation, example, drill, or recap), speaker (teacher, speakerA, or speakerB), delivery (warm, praise, gentle, curious, clear, or playful), a BCP-47 language code, and text.",
-  "When a line mixes the teaching language and the target language, wrap only the other-language span as [[lang:BCP-47]]...[[/lang]]. Do this for the teacher and for both dialogue speakers. Do not nest tags.",
+  "Also return speakerNames with teacher, speakerA, and speakerB. speakerA is male and speakerB is female. Each name is one Latin-script word of letters only, and the three names are different.",
+  "Use those exact names inside dialogue lines. Do not write Speaker A or Speaker B.",
+  "When a line mixes the teaching language and the target language, wrap only the other-language span as [[lang:BCP-47]]...[[/lang]] and close every tag. Do this for the teacher and for both dialogue speakers. Do not nest tags.",
 ].join(" ");
 
 const SAFETY_CATEGORIES = [
@@ -47,14 +52,33 @@ export function lessonGenerationConfig(): GenerateContentConfig {
   };
 }
 
+const SEGMENT_KINDS = new Set(["narration", "dialogue", "explanation", "example", "drill", "recap"]);
+
 function asJson(text: string | undefined): unknown {
   const parsed: unknown = JSON.parse(text ?? "");
   const value: unknown = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
-    if (typeof record.title === "string") {
-      if (typeof record.topic !== "string") record.topic = record.title;
-      if (typeof record.summary !== "string") record.summary = record.title;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  if (typeof record.title === "string") {
+    if (typeof record.topic !== "string") record.topic = record.title;
+    if (typeof record.summary !== "string") record.summary = record.title;
+  }
+  const names = normalizeSpeakerNames(record.speakerNames);
+  record.speakerNames = names;
+  if (!Array.isArray(record.segments)) return value;
+  for (const segment of record.segments) {
+    if (!segment || typeof segment !== "object" || Array.isArray(segment)) continue;
+    const item = segment as Record<string, unknown>;
+    const speaker = item.speaker === "speakerA" || item.speaker === "speakerB" ? item.speaker : "teacher";
+    if (typeof item.kind !== "string" || !SEGMENT_KINDS.has(item.kind)) {
+      if (typeof item.kind === "string") logger.warn("lesson_kind_coerced", { segmentId: item.id, kind: item.kind });
+      item.kind = speaker === "teacher" ? "narration" : "dialogue";
+    }
+    if (typeof item.text === "string") {
+      const named = dialogueText(item.text, names);
+      const issues = markupIssues(named);
+      item.text = issues.length > 0 ? repairMarkup(named) : named;
+      if (issues.length > 0) logger.warn("lesson_markup_repaired", { segmentId: item.id, issues: issues.slice(0, 4) });
     }
   }
   return value;
@@ -143,14 +167,6 @@ export async function generateLessonContent(
       continue;
     }
     const parsed = GeneratedLessonSchema.safeParse(json);
-    if (parsed.success) {
-      const markup = parsed.data.segments.flatMap((segment) => markupIssues(segment.text).map((issue) => `${segment.id}:${issue}`));
-      if (markup.length > 0) {
-        sawInvalid = true;
-        logger.warn("lesson_markup_rejected", { issues: markup.slice(0, 8) });
-        continue;
-      }
-    }
     if (!parsed.success) {
       sawInvalid = true;
       logger.warn("lesson_schema_rejected", {

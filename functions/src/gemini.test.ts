@@ -47,6 +47,7 @@ describe("Gemini lesson generation", () => {
     expect(config.systemInstruction).toContain("delivery");
     expect(config.systemInstruction).toContain("8 to 16");
     expect(config.systemInstruction).toContain("[[lang:BCP-47]]");
+    expect(config.systemInstruction).toContain("speakerNames");
     expect(config.responseJsonSchema).toBeUndefined();
     expect(config.responseSchema).toBeUndefined();
     expect(config.thinkingConfig).toBeUndefined();
@@ -74,6 +75,7 @@ describe("Gemini lesson generation", () => {
     const model = client([{ text: JSON.stringify(lesson("Buying a train ticket")) }]);
     const result = await generateLessonContent(input, model);
     expect(result.topic).toBe("Buying a train ticket");
+    expect(result.speakerNames).toEqual({ teacher: "Mira", speakerA: "Lukas", speakerB: "Anna" });
     expect(model.contents).toHaveLength(1);
     expect(model.contents[0]).toContain("teaching=en-US, target=de-DE");
     expect(model.contents[0]).toContain("learner of German");
@@ -110,15 +112,19 @@ describe("Gemini lesson generation", () => {
     await expect(generateLessonContent(input, model)).resolves.toMatchObject({ topic: "Weekend market" });
   });
 
-  it("rejects broken pronunciation markup and keeps the repaired lesson", async () => {
+  it("repairs an unclosed language tag and an unknown kind instead of discarding the lesson", async () => {
     const broken = lesson("Broken markup");
-    broken.segments[0]!.text = "Say [[lang:de-DE]]Guten Tag";
-    const model = client([
-      { text: JSON.stringify(broken) },
-      { text: JSON.stringify(lesson("Fixed markup")) },
-    ]);
-    await expect(generateLessonContent(input, model)).resolves.toMatchObject({ topic: "Fixed markup" });
-    expect(model.contents[1]).toContain("REPAIR");
+    broken.segments[0]!.text = "Speaker A says [[lang:de-DE]]Guten Tag";
+    (broken.segments[0] as { kind: string }).kind = "welcome";
+    broken.segments[0]!.speaker = "teacher";
+    (broken as { speakerNames?: unknown }).speakerNames = { teacher: "Mira", speakerA: "Lukas", speakerB: "Lukas" };
+    const model = client([{ text: JSON.stringify(broken) }]);
+    const result = await generateLessonContent(input, model);
+    expect(result.topic).toBe("Broken markup");
+    expect(result.segments[0]?.text).toBe("Lukas says [[lang:de-DE]]Guten Tag[[/lang]]");
+    expect(result.segments[0]?.kind).toBe("narration");
+    expect(result.speakerNames).toEqual({ teacher: "Mira", speakerA: "Lukas", speakerB: "Anna" });
+    expect(model.contents).toHaveLength(1);
   });
 
   it("fails closed when both attempts are blocked or invalid", async () => {

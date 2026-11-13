@@ -1,6 +1,6 @@
 import textToSpeech, { protos } from "@google-cloud/text-to-speech";
 import { GoogleGenAI } from "@google/genai";
-import { speechSpans, type LanguageId, type LessonSegment } from "@resolingo/shared";
+import { speechSpans, type LanguageId, type LessonSegment, type SpeakerNames } from "@resolingo/shared";
 import { logger } from "firebase-functions";
 import { GEMINI_TTS_LOCATION, GEMINI_TTS_MODEL, TTS_VOICE_TIER } from "./config.js";
 import { bucket } from "./firebase.js";
@@ -15,13 +15,16 @@ import {
   pcmDurationMs,
   pcmPayload,
   renderLessonAudio,
+  sceneChunks,
+  sceneSpeechRequest,
   wrapPcm16AsWav,
   type LessonSpeaker,
+  type SceneChunk,
 } from "./speech.js";
-import { selectVoices, voiceTierFromEnv } from "./voices.js";
+import { assignRoleVoices, voiceTierFromEnv, voiceTierOf, type ListedVoice, type RoleVoiceAssignment } from "./voices.js";
 
 const cloudClient = new textToSpeech.TextToSpeechClient();
-const voiceCache = new Map<string, string[]>();
+const voiceCache = new Map<string, RoleVoiceAssignment>();
 let geminiClient: GoogleGenAI | undefined;
 
 function speechClient(): GoogleGenAI {
@@ -38,16 +41,26 @@ function configured(value: string, fallback: string): string {
   return trimmed || fallback;
 }
 
-async function voicesFor(language: LanguageId): Promise<string[]> {
+function listedGender(value: unknown): ListedVoice["gender"] {
+  const text = String(value ?? "").toUpperCase();
+  if (text.includes("FEMALE")) return "FEMALE";
+  if (text.includes("MALE")) return "MALE";
+  return "NEUTRAL";
+}
+
+async function voicesFor(language: LanguageId): Promise<RoleVoiceAssignment> {
   const tier = voiceTierFromEnv(TTS_VOICE_TIER.value());
   const languageCode = cloudLanguageCode(language);
   const cacheKey = `${tier}:${languageCode}`;
   const cached = voiceCache.get(cacheKey);
   if (cached) return cached;
   const [response] = await cloudClient.listVoices({ languageCode });
-  const names = (response.voices ?? []).flatMap((voice) => voice.name ? [voice.name] : []);
-  const selected = selectVoices(names, tier).voices;
-  if (!selected.length) throw new Error(`TTS_VOICE_UNAVAILABLE:${language}`);
+  const listed = (response.voices ?? []).flatMap((voice): ListedVoice[] => {
+    if (!voice.name || !voiceTierOf(voice.name)) return [];
+    return [{ name: voice.name, gender: listedGender(voice.ssmlGender) }];
+  });
+  const selected = assignRoleVoices(listed, tier);
+  if (!selected.teacher) throw new Error(`TTS_VOICE_UNAVAILABLE:${language}`);
   voiceCache.set(cacheKey, selected);
   return selected;
 }
@@ -98,7 +111,17 @@ function fallbackLog(input: {
   }));
 }
 
-async function geminiInline(request: ReturnType<typeof geminiSpeechRequest>): Promise<{ data: string; mimeType?: string }> {
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function httpStatusOf(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
+}
+
+async function geminiInline(request: { model: string; contents: string; config: ReturnType<typeof geminiSpeechRequest>["config"] }): Promise<{ data: string; mimeType?: string }> {
   let last: unknown;
   for (let attempt = 0; attempt < GEMINI_ATTEMPTS; attempt += 1) {
     try {
@@ -107,16 +130,22 @@ async function geminiInline(request: ReturnType<typeof geminiSpeechRequest>): Pr
         contents: request.contents,
         config: request.config,
       });
-      const part = response.candidates?.[0]?.content?.parts?.find((item) => item.inlineData?.data);
+      const parts = response.candidates?.flatMap((candidate) => candidate.content?.parts ?? []) ?? [];
+      const part = parts.find((item) => item.inlineData?.data);
       const data = part?.inlineData?.data;
       if (!data) throw new Error("TTS_EMPTY_AUDIO");
       const mimeType = part?.inlineData?.mimeType;
       return mimeType ? { data, mimeType } : { data };
     } catch (error) {
       last = error;
+      const status = httpStatusOf(error);
+      if (attempt + 1 < GEMINI_ATTEMPTS && (status === 429 || status === 503)) await delay(700);
     }
   }
-  throw last instanceof Error ? last : new Error("GEMINI_TTS_FAILED");
+  if (last instanceof Error) throw last;
+  const failed = new Error("GEMINI_TTS_FAILED");
+  if (last && typeof last === "object") Object.assign(failed, last);
+  throw failed;
 }
 
 async function synthesizeWithGemini(input: {
@@ -149,7 +178,7 @@ async function synthesizeWithGemini(input: {
 
 async function voiceNameFor(speaker: LessonSpeaker, language: LanguageId): Promise<string> {
   const voices = await voicesFor(language);
-  return (speaker === "speakerB" ? voices[1] : voices[0]) ?? voices[0]!;
+  return voices[speaker];
 }
 
 async function synthesizeWithCloudTts(input: {
@@ -275,7 +304,7 @@ export async function synthesizeSegment(input: {
 }): Promise<LessonSegment> {
   const speaker = input.segment.speaker;
   const delivery = input.segment.delivery ?? "warm";
-  const spans = speechSpans(input.segment.text, input.segment.language);
+  const spans = speechSpans(input.segment.text, input.segment.language).filter((span) => /[\p{L}\p{N}]/u.test(span.text));
   const pieces = spans.length > 0 ? spans : [{ language: input.segment.language, text: input.segment.text }];
   if (pieces.length === 1) {
     const piece = pieces[0]!;
@@ -309,4 +338,90 @@ export async function synthesizeSegment(input: {
   const durationMs = pcmDurationMs(pcm.length);
   await saveCached(audioPath, wrapPcm16AsWav(pcm), "audio/wav", durationMs);
   return { ...input.segment, delivery, audioPath, durationMs };
+}
+
+const SCENE_GAP_MS = 160;
+
+async function cloudScene(input: {
+  turns: SceneChunk[];
+  level: string;
+}): Promise<{ cachePath: string; durationMs: number }> {
+  const language = input.turns[0]!.language;
+  const voices = await voicesFor(language);
+  const pieces: Buffer[] = [];
+  for (const turn of input.turns) {
+    pieces.push(await cloudPcm({ speaker: turn.speaker, language: turn.language, text: turn.text, level: input.level }));
+  }
+  const pcm = concatPcm16(pieces, SCENE_GAP_MS);
+  const cloud = cloudSynthesis({ language, level: input.level, pcm: true });
+  const cachePath = cloudCachePath({
+    voiceName: `scene:${voices.teacher}/${voices.speakerA}/${voices.speakerB}`,
+    languageCode: cloud.languageCode,
+    speakingRate: cloud.speakingRate,
+    text: input.turns.map((turn) => `${turn.speaker}:${turn.text}`).join("\n"),
+    encoding: "LINEAR16",
+  });
+  const durationMs = pcmDurationMs(pcm.length);
+  await saveCached(cachePath, wrapPcm16AsWav(pcm), "audio/wav", durationMs);
+  return { cachePath, durationMs };
+}
+
+async function renderChunk(input: {
+  segment: LessonSegment;
+  turns: SceneChunk[];
+  names: SpeakerNames;
+  level: string;
+}): Promise<{ cachePath: string; durationMs: number; extension: "wav" | "mp3" }> {
+  const request = sceneSpeechRequest({
+    model: configured(GEMINI_TTS_MODEL.value(), "gemini-3.1-flash-tts-preview"),
+    turns: input.turns,
+    names: input.names,
+    level: input.level,
+    language: input.turns[0]!.language,
+  });
+  return renderLessonAudio({
+    request,
+    load: findCached,
+    store: saveCached,
+    onGeminiError: (error) => fallbackLog({ segment: input.segment, language: input.turns[0]!.language, error }),
+    synthesizeGemini: () => geminiInline(request),
+    cloud: () => cloudScene({ turns: input.turns, level: input.level }),
+  });
+}
+
+export async function synthesizeScene(input: {
+  uid: string;
+  lessonId: string;
+  level: string;
+  segments: LessonSegment[];
+  names: SpeakerNames;
+}): Promise<LessonSegment[]> {
+  const chunks = sceneChunks(input.segments, input.names);
+  const first = input.segments[0]!;
+  let audioPath: string;
+  let durationMs: number;
+  if (chunks.length === 1) {
+    const rendered = await renderChunk({ segment: first, turns: chunks[0]!, names: input.names, level: input.level });
+    audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${first.id}.${rendered.extension}`;
+    durationMs = rendered.durationMs;
+    await copyCached(rendered.cachePath, audioPath);
+  } else {
+    const pieces: Buffer[] = [];
+    for (const chunk of chunks) {
+      const rendered = await renderChunk({ segment: first, turns: chunk, names: input.names, level: input.level });
+      const pcm = await loadPcm(rendered.cachePath);
+      if (!pcm || pcm.length === 0) throw new Error("TTS_EMPTY_AUDIO");
+      pieces.push(pcm);
+    }
+    const pcm = concatPcm16(pieces, SCENE_GAP_MS);
+    audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${first.id}.wav`;
+    durationMs = pcmDurationMs(pcm.length);
+    await saveCached(audioPath, wrapPcm16AsWav(pcm), "audio/wav", durationMs);
+  }
+  return input.segments.map((segment, index) => ({
+    ...segment,
+    delivery: segment.delivery ?? "warm",
+    audioPath,
+    ...(index === 0 ? { durationMs } : {}),
+  }));
 }

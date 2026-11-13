@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { selectVoices, voiceTierFromEnv } from "./voices.js";
+import { assignRoleVoices, selectVoices, voiceTierFromEnv } from "./voices.js";
 
 const inventory = [
   "en-US-Chirp3-HD-Aoede",
@@ -40,6 +40,30 @@ describe("voice tier selection", () => {
     const selected = selectVoices([...inventory, "en-US-Chirp3-HD-Puck"], "chirp3");
     expect(selected.tier).toBe("chirp3");
     expect(selected.voices).toEqual(["en-US-Chirp3-HD-Aoede", "en-US-Chirp3-HD-Puck"]);
+  });
+
+  it("keeps the teacher and speaker B female and speaker A male, including Arabic", () => {
+    const arabic = [
+      { name: "ar-XA-Wavenet-A", gender: "FEMALE" as const },
+      { name: "ar-XA-Wavenet-B", gender: "MALE" as const },
+      { name: "ar-XA-Wavenet-C", gender: "MALE" as const },
+      { name: "ar-XA-Wavenet-D", gender: "FEMALE" as const },
+    ];
+    expect(assignRoleVoices(arabic, "wavenet")).toEqual({
+      teacher: "ar-XA-Wavenet-A",
+      speakerA: "ar-XA-Wavenet-B",
+      speakerB: "ar-XA-Wavenet-D",
+    });
+    const english = [
+      { name: "en-US-Wavenet-A", gender: "FEMALE" as const },
+      { name: "en-US-Wavenet-B", gender: "MALE" as const },
+      { name: "en-US-Wavenet-C", gender: "FEMALE" as const },
+      { name: "en-US-Wavenet-D", gender: "MALE" as const },
+    ];
+    const assigned = assignRoleVoices(english, "wavenet");
+    expect(assigned.teacher).not.toBe(assigned.speakerA);
+    expect(assigned.speakerB).not.toBe(assigned.teacher);
+    expect(assigned.speakerA).toBe("en-US-Wavenet-B");
   });
 
   it("rejects an unknown tier", () => {
