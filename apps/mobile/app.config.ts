@@ -30,12 +30,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       bundleIdentifier: identifier,
       supportsTablet: true,
       usesAppleSignIn: true,
-      googleServicesFile: googleInfoPlist,
+      ...(googleInfoPlist ? { googleServicesFile: googleInfoPlist } : {}),
       infoPlist: { UIBackgroundModes: ["audio", "remote-notification"] },
     },
     android: {
       package: identifier,
-      googleServicesFile,
+      ...(googleServicesFile ? { googleServicesFile } : {}),
       adaptiveIcon: {
         foregroundImage: "./assets/resolingo-icon.png",
         backgroundColor: "#08152F",

@@ -7,8 +7,9 @@ import { firebaseAuth } from "./firebase";
 import { cancelPushRegistration } from "./notifications";
 
 const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID?.trim();
+const webClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID?.trim();
 GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  ...(webClientId ? { webClientId } : {}),
   ...(iosClientId ? { iosClientId } : {}),
 });
 
