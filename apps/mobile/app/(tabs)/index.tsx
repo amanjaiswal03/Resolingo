@@ -9,6 +9,7 @@ import { LessonRow } from "@/components/LessonRow";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
+import { dailyCapBlocksStart, dailyQuotaLabel } from "@/home/daily-quota";
 import { useLessons } from "@/hooks/useLessons";
 import { percentWidth } from "@/lesson/navigation";
 import { api } from "@/services/api";
@@ -37,7 +38,9 @@ export default function HomeScreen() {
   }, [profile?.reminderEnabled]);
   const today = profile ? dateInZone(profile.timezone) : "";
   const used = useMemo(() => lessons.filter((lesson) => lesson.quotaDate === today && lesson.status === "ready").length, [lessons, today]);
+  const unlimited = profile?.unlimitedLessons === true;
   const active = lessons.find((lesson) => ["queued", "generating_content", "synthesizing_audio"].includes(lesson.status));
+  const startDisabled = Boolean(starting || active) || dailyCapBlocksStart(used, unlimited);
   const start = async (type: LessonType) => {
     setStarting(type);
     try {
@@ -52,13 +55,13 @@ export default function HomeScreen() {
   if (loading || !profile) return <LoadingScreen />;
   return (
     <Screen>
-      <View style={styles.header}><Body muted>GOOD TO SEE YOU, {profile.nickname.toUpperCase()}</Body><Title>What will you practice?</Title><Body muted>{used}/3 lessons ready today · {3 - used} remaining</Body></View>
+      <View style={styles.header}><Body muted>GOOD TO SEE YOU, {profile.nickname.toUpperCase()}</Body><Title>What will you practice?</Title><Body muted>{dailyQuotaLabel(used, unlimited)}</Body></View>
       {active ? <Pressable onPress={() => router.push(`/lesson/${active.id}`)}><Card style={{ backgroundColor: theme.surfaceMuted }}><Body muted>IN PROGRESS</Body><Heading>{active.title}</Heading><View style={[styles.progressTrack, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.primary, width: percentWidth(active.progress) }]} /></View><Body muted>{Number.isFinite(active.progress) ? active.progress : 0}% · Tap to follow progress</Body></Card></Pressable> : null}
       <View style={styles.choices}>
-        <Pressable disabled={Boolean(starting || active || used >= 3)} onPress={() => void start("conversation")} accessibilityRole="button" accessibilityLabel="Start a conversation lesson" style={{ opacity: starting || active || used >= 3 ? 0.5 : 1 }}>
+        <Pressable disabled={startDisabled} onPress={() => void start("conversation")} accessibilityRole="button" accessibilityLabel="Start a conversation lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
           <Card style={[styles.lessonCard, { backgroundColor: theme.amber }]}><Body style={styles.eyebrow}>CONVERSATION</Body><Title style={styles.dark}>Speak through a fresh everyday topic.</Title><Body style={styles.darkMuted}>{starting === "conversation" ? "Starting…" : "3–5 minutes · Two voices"}</Body></Card>
         </Pressable>
-        <Pressable disabled={Boolean(starting || active || used >= 3)} onPress={() => void start("grammar")} accessibilityRole="button" accessibilityLabel="Start a grammar lesson" style={{ opacity: starting || active || used >= 3 ? 0.5 : 1 }}>
+        <Pressable disabled={startDisabled} onPress={() => void start("grammar")} accessibilityRole="button" accessibilityLabel="Start a grammar lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
           <Card style={[styles.lessonCard, { backgroundColor: theme.mint }]}><Body style={styles.eyebrow}>GRAMMAR</Body><Title style={styles.dark}>Understand one useful pattern clearly.</Title><Body style={styles.darkMuted}>{starting === "grammar" ? "Starting…" : "3–5 minutes · Guided examples"}</Body></Card>
         </Pressable>
       </View>

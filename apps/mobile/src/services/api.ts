@@ -10,7 +10,7 @@ async function call<Request, Response>(name: string, data: Request): Promise<Res
 }
 
 export const api = {
-  initializeProfile: (profile: Omit<UserProfile, "uid" | "onboardingComplete">) => call("initializeProfile", profile),
+  initializeProfile: (profile: Omit<UserProfile, "uid" | "onboardingComplete" | "unlimitedLessons">) => call("initializeProfile", profile),
   createDailyLesson: (type: LessonType, idempotencyKey: string) => call<unknown, { lessonId: string }>("createDailyLesson", { type, idempotencyKey }),
   retryFailedLesson: (lessonId: string) => call("retryFailedLesson", { lessonId }),
   registerPushDevice: (data: { expoPushToken: string; nativePushToken?: string; platform: "ios" | "android" }) => call("registerPushDevice", data),

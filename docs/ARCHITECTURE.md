@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-Resolingo does one thing well: produce a daily grammar or conversation lesson appropriate to a learner's language pair and CEFR level. The topic is always selected server-side. A user may have any mix of three ready lessons per IANA-timezone day and only one active generation job.
+Resolingo does one thing well: produce a daily grammar or conversation lesson appropriate to a learner's language pair and CEFR level. The topic is always selected server-side. A user may have any mix of three ready lessons per IANA-timezone day, unless `users/{uid}.unlimitedLessons` is true, and only one active generation job.
 
 ```mermaid
 flowchart LR

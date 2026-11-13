@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeLessonBlocks, CreateDailyLessonRequestSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, STALE_UNENQUEUED_AFTER_MS } from "./index.js";
+import { activeLessonBlocks, CreateDailyLessonRequestSchema, InitializeProfileRequestSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, STALE_UNENQUEUED_AFTER_MS } from "./index.js";
 
 describe("shared contracts", () => {
   it("contains the canonical 32-language catalog", () => {
@@ -21,6 +21,23 @@ describe("shared contracts", () => {
 
   it("rejects a non-UUID idempotency key", () => {
     expect(CreateDailyLessonRequestSchema.safeParse({ type: "grammar", idempotencyKey: "repeat" }).success).toBe(false);
+  });
+
+  it("drops unlimitedLessons from profile initialization so clients cannot grant it", () => {
+    const parsed = InitializeProfileRequestSchema.safeParse({
+      nickname: "Ada",
+      nativeLanguage: "en-US",
+      targetLanguage: "de-DE",
+      level: "A1",
+      timezone: "Europe/Berlin",
+      telemetryConsent: false,
+      reminderEnabled: true,
+      reminderTime: "18:00",
+      unlimitedLessons: true,
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data).not.toHaveProperty("unlimitedLessons");
   });
 });
 

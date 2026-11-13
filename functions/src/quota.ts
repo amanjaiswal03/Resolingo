@@ -7,6 +7,11 @@ export function quotaUsed(readyCount: number, reservations: readonly string[]): 
   return Math.max(0, readyCount) + new Set(reservations).size;
 }
 
+/** Cap for one new reservation. Infinity skips the daily cap and still records the slot. */
+export function dailyReservationLimit(unlimitedLessons: unknown, dailyLimit: number): number {
+  return unlimitedLessons === true ? Number.POSITIVE_INFINITY : dailyLimit;
+}
+
 export function reserveLesson(
   readyCount: number,
   reservations: readonly string[],

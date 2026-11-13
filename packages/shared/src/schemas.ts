@@ -65,6 +65,8 @@ export const UserProfileSchema = z.object({
   telemetryConsent: z.boolean(),
   reminderEnabled: z.boolean(),
   reminderTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  /** Admin SDK only. Absent or false keeps the daily lesson cap. */
+  unlimitedLessons: z.boolean().optional(),
 });
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 
@@ -86,7 +88,11 @@ export const LessonSchema = z.object({
 });
 export type Lesson = z.infer<typeof LessonSchema>;
 
-export const InitializeProfileRequestSchema = UserProfileSchema.omit({ uid: true, onboardingComplete: true });
+export const InitializeProfileRequestSchema = UserProfileSchema.omit({
+  uid: true,
+  onboardingComplete: true,
+  unlimitedLessons: true,
+});
 export const CreateDailyLessonRequestSchema = z.object({
   type: LessonTypeSchema,
   idempotencyKey: z.string().uuid(),
