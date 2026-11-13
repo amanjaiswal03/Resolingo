@@ -13,6 +13,7 @@ import {
   markupIssues,
   normalizeSpeakerNames,
   repairMarkup,
+  shapePimsleurLesson,
   type CefrLevel,
   type GeneratedLesson,
   type LanguageId,
@@ -24,12 +25,13 @@ import { lessonPrompt } from "./prompts.js";
 
 const SYSTEM_INSTRUCTION = [
   "You are Resolingo's expert multilingual lesson designer.",
-  "Return only a JSON object with string keys title, topic, and summary, plus segments.",
-  "segments is an array of 8 to 16 objects.",
-  "Each segment has id, kind (narration, dialogue, explanation, example, drill, or recap), speaker (teacher, speakerA, or speakerB), delivery (warm, praise, gentle, curious, clear, or playful), a BCP-47 language code, and text.",
+  "Return only a JSON object with title, topic, summary, speakerNames, lines, phrases, and cues.",
+  "lines is an array of 4 to 6 dialogue turns. Each line has speaker (speakerA or speakerB), text, translation, and a BCP-47 language code.",
+  "phrases is an array of 2 or 3 items taken from those lines. Each phrase has speaker, text, translation, language, and note.",
+  "cues has welcome, listen, afterDialogue, buildup, howWouldYouSay, again, and closing.",
   "Also return speakerNames with teacher, speakerA, and speakerB. speakerA is male and speakerB is female. Each name is one Latin-script word of letters only, and the three names are different.",
   "Use those exact names inside dialogue lines. Do not write Speaker A or Speaker B.",
-  "When a line mixes the teaching language and the target language, wrap only the other-language span as [[lang:BCP-47]]...[[/lang]] and close every tag. Do this for the teacher and for both dialogue speakers. Do not nest tags.",
+  "When a line mixes the teaching language and the target language, wrap only the other-language span as [[lang:BCP-47]]...[[/lang]] and close every tag. Do not nest tags.",
 ].join(" ");
 
 const SAFETY_CATEGORIES = [
@@ -166,7 +168,11 @@ export async function generateLessonContent(
       });
       continue;
     }
-    const parsed = GeneratedLessonSchema.safeParse(json);
+    const shaped = shapePimsleurLesson(json, {
+      nativeLanguage: input.nativeLanguage,
+      targetLanguage: input.targetLanguage,
+    });
+    const parsed = GeneratedLessonSchema.safeParse(shaped ?? json);
     if (!parsed.success) {
       sawInvalid = true;
       logger.warn("lesson_schema_rejected", {

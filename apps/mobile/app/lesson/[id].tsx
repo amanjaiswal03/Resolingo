@@ -97,13 +97,13 @@ export default function LessonScreen() {
   return (
     <Screen scroll={false}>
       <Button label="‹ Back" variant="ghost" onPress={leave} />
-      <View style={styles.header}><Body muted style={styles.eyebrow}>{lesson.type.toUpperCase()} · 3–5 MINUTES</Body><Title style={styles.title} numberOfLines={2}>{lesson.title}</Title><Body muted style={styles.summary} numberOfLines={2}>{lesson.summary}</Body></View>
+      <View style={styles.header}><Body muted style={styles.eyebrow}>{lesson.type.toUpperCase()}{lesson.manifest?.totalDurationMs ? ` · ${Math.max(1, Math.round(lesson.manifest.totalDurationMs / 60_000))} MIN` : ""}</Body><Title style={styles.title} numberOfLines={2}>{lesson.title}</Title><Body muted style={styles.summary} numberOfLines={2}>{lesson.summary}</Body></View>
       <ScrollView ref={transcriptRef} style={styles.transcript} contentContainerStyle={styles.transcriptContent} showsVerticalScrollIndicator={false}>
         <Heading>Transcript</Heading>
         {resolved.segments.map((segment) => {
           const active = resolved.segments.find((item) => item.id === activeSegmentId);
           const highlighted = segment.id === activeSegmentId || Boolean(active?.audioPath && segment.audioPath === active.audioPath);
-          return <Pressable key={segment.id} accessibilityRole="button" accessibilityLabel="Play this part" onPress={() => setJumpTo({ id: segment.id, token: Date.now() })} onLayout={(event) => { transcriptOffsets.current[segment.id] = event.nativeEvent.layout.y; }}><Card style={highlighted ? { backgroundColor: theme.surfaceMuted, borderColor: theme.primary, borderWidth: 2 } : undefined}><Body muted>{speakerLabel(segment.speaker, resolved.speakerNames)}</Body><Body>{lessonDisplayText(segment.text)}</Body>{segment.translation ? <Body muted>{segment.translation}</Body> : null}{segment.transliteration ? <Body muted>{segment.transliteration}</Body> : null}</Card></Pressable>;
+          return <Pressable key={segment.id} accessibilityRole="button" accessibilityLabel="Play this part" onPress={() => setJumpTo({ id: segment.id, token: Date.now() })} onLayout={(event) => { transcriptOffsets.current[segment.id] = event.nativeEvent.layout.y; }}><Card style={highlighted ? { backgroundColor: theme.surfaceMuted, borderColor: theme.primary, borderWidth: 2 } : undefined}><Body muted>{speakerLabel(segment.speaker, resolved.speakerNames)}</Body><Body>{lessonDisplayText(segment.text)}</Body>{segment.translation ? <Body muted>{segment.translation}</Body> : null}{(segment.pauseAfterMs ?? 0) > 0 ? <Body muted>Say it aloud</Body> : null}{segment.transliteration ? <Body muted>{segment.transliteration}</Body> : null}</Card></Pressable>;
         })}
       </ScrollView>
       <LessonPlayer lesson={resolved} onComplete={complete} onStart={started} onSegmentChange={setActiveSegmentId} jumpTo={jumpTo} />

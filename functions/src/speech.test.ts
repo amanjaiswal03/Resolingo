@@ -11,6 +11,7 @@ import {
   lessonAudioUnits,
   pcmDurationMs,
   pcmPayload,
+  pcmWithTrailingSilence,
   renderLessonAudio,
   roleVoices,
   sceneSpeechRequest,
@@ -131,6 +132,11 @@ describe("Gemini speech requests", () => {
       { id: "seg_04", kind: "recap" as const, speaker: "teacher" as const, language: "en-US" as const, text: "You ordered a coffee.", delivery: "warm" as const },
     ] satisfies LessonSegment[];
     expect(lessonAudioUnits(segments).map((unit) => unit.kind)).toEqual(["teacher", "scene", "teacher"]);
+    const paused = lessonAudioUnits([
+      segments[1]!,
+      { ...segments[2]!, pauseAfterMs: 5_000 },
+    ]);
+    expect(paused.map((unit) => unit.kind)).toEqual(["scene", "teacher"]);
     const welcome = geminiSpeechRequest({
       speaker: "teacher",
       language: "en-US",
@@ -280,6 +286,9 @@ describe("PCM wrapping", () => {
     expect(playable.contentType).toBe("audio/wav");
     expect(playable.durationMs).toBe(1_000);
     expect(pcmDurationMs(pcm.length)).toBe(1_000);
+    const paused = pcmWithTrailingSilence(Buffer.alloc(480), 1_000);
+    expect(paused.length - 480).toBe(24_000 * 2);
+    expect(pcmDurationMs(paused.length) - pcmDurationMs(480)).toBe(1_000);
   });
 
   it("leaves an existing WAV payload untouched", () => {

@@ -14,6 +14,7 @@ import {
   geminiSpeechRequest,
   pcmDurationMs,
   pcmPayload,
+  pcmWithTrailingSilence,
   renderLessonAudio,
   sceneChunks,
   sceneSpeechRequest,
@@ -322,18 +323,30 @@ export async function synthesizeSegment(input: {
         level: input.level,
       }),
     });
-    const audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${input.segment.id}.${rendered.extension}`;
-    await copyCached(rendered.cachePath, audioPath);
-    return { ...input.segment, delivery, audioPath, durationMs: rendered.durationMs };
+    const pauseMs = input.segment.pauseAfterMs ?? 0;
+    if (pauseMs <= 0) {
+      const audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${input.segment.id}.${rendered.extension}`;
+      await copyCached(rendered.cachePath, audioPath);
+      return { ...input.segment, delivery, audioPath, durationMs: rendered.durationMs };
+    }
+    const cachedPcm = rendered.extension === "wav" ? await loadPcm(rendered.cachePath) : null;
+    const voiced = cachedPcm && cachedPcm.length > 0
+      ? cachedPcm
+      : await cloudPcm({ speaker, language: piece.language, text: piece.text, level: input.level });
+    const pcm = pcmWithTrailingSilence(voiced, pauseMs);
+    const durationMs = pcmDurationMs(pcm.length);
+    const audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${input.segment.id}.wav`;
+    await saveCached(audioPath, wrapPcm16AsWav(pcm), "audio/wav", durationMs);
+    return { ...input.segment, delivery, audioPath, durationMs };
   }
-  const pcm = concatPcm16(await Promise.all(pieces.map((piece) => spanPcm({
+  const pcm = pcmWithTrailingSilence(concatPcm16(await Promise.all(pieces.map((piece) => spanPcm({
     segment: input.segment,
     speaker,
     language: piece.language,
     text: piece.text.trim(),
     delivery,
     level: input.level,
-  }))));
+  })))), input.segment.pauseAfterMs ?? 0);
   const audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${input.segment.id}.wav`;
   const durationMs = pcmDurationMs(pcm.length);
   await saveCached(audioPath, wrapPcm16AsWav(pcm), "audio/wav", durationMs);
