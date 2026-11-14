@@ -60,10 +60,9 @@ describe("Pimsleur arrangement", () => {
     const closing = segments.filter((segment) => segment.phase === "closing" && segment.speaker !== "teacher").map((segment) => segment.text);
     expect(opening).toEqual(lines.map((line) => line.text));
     expect(closing).toEqual(opening);
-    const prompt = segments.find((segment) => segment.text.startsWith("How would you say Where is the station"));
-    expect(prompt?.pauseAfterMs).toBe(ANSWER_PAUSE_MS);
+    const prompt = segments.find((segment) => segment.pauseAfterMs === ANSWER_PAUSE_MS && segment.phase === "recall");
     expect(prompt?.speaker).toBe("teacher");
-    expect(prompt?.text).toContain("Say it out loud.");
+    expect(prompt?.language).toBe("en-US");
     const answer = segments[segments.indexOf(prompt!) + 1];
     expect(answer).toMatchObject({ speaker: "speakerA", text: "Wo ist der Bahnhof?" });
     expect(answer?.pauseAfterMs).toBeUndefined();
@@ -71,9 +70,12 @@ describe("Pimsleur arrangement", () => {
     const answers = lines.map((line) => segments.find((segment) => segment.phase === "answer" && segment.text === line.text));
     expect(answers.every(Boolean)).toBe(true);
     const pauses = segments.filter((segment) => segment.pauseAfterMs);
-    expect(pauses.length).toBeGreaterThan(0);
-    expect(pauses.every((segment) => segment.speaker === "teacher" && segment.language === "en-US")).toBe(true);
-    expect(pauses.every((segment) => /say it out loud|now you say it/i.test(segment.text))).toBe(true);
+    expect(pauses.length).toBeGreaterThan(1);
+    expect(pauses.every((segment) => segment.speaker === "teacher" && segment.language === "en-US" && segment.kind === "drill")).toBe(true);
+    expect(new Set(pauses.map((segment) => segment.text)).size).toBeGreaterThan(1);
+    for (let index = 1; index < pauses.length; index += 1) {
+      expect(pauses[index]?.text.toLocaleLowerCase()).not.toBe(pauses[index - 1]?.text.toLocaleLowerCase());
+    }
     expect(segments.filter((segment) => segment.phase === "answer").every((segment) => segment.pauseAfterMs === undefined)).toBe(true);
     expect(segments.length).toBeGreaterThan(16);
     expect(segments.length).toBeLessThanOrEqual(96);
@@ -123,7 +125,20 @@ describe("model shaping", () => {
       ],
     }, { nativeLanguage: "en-US", targetLanguage: "de-DE" });
     expect(compact?.segments[0]?.text).toContain("Welcome");
-    expect(compact?.segments.some((segment) => segment.text.startsWith("Wie sagt man"))).toBe(true);
+    const custom = arrangePimsleur({
+      lines: [
+        { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?", language: "de-DE" },
+        { speaker: "speakerB", text: "Geradeaus.", translation: "Straight ahead.", language: "de-DE" },
+      ],
+      phrases: [{ speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?", language: "de-DE" }],
+      cues: { ...cues, howWouldYouSay: "Wie sagt man" },
+      names,
+      nativeLanguage: "en-US",
+      targetLanguage: "de-DE",
+      seed: 0,
+      estimateMs: () => 10_000,
+    });
+    expect(custom.find((segment) => segment.pauseAfterMs)?.text.startsWith("Wie sagt man")).toBe(true);
     expect(compact?.segments.find((segment) => segment.text === "Wo ist der Bahnhof?")?.language).toBe("de-DE");
 
     const legacy = shapePimsleurLesson({
@@ -165,8 +180,11 @@ describe("model shaping", () => {
     const closing = segments.filter((segment) => segment.phase === "closing" && segment.speaker !== "teacher").map((segment) => segment.text);
     expect(closing).toEqual(four.map((line) => line.text));
     const pauses = segments.filter((segment) => segment.pauseAfterMs);
-    expect(pauses.every((segment) => segment.speaker === "teacher")).toBe(true);
-    expect(pauses.every((segment) => /say it out loud|now you say it/i.test(segment.text))).toBe(true);
+    expect(pauses.every((segment) => segment.speaker === "teacher" && segment.kind === "drill")).toBe(true);
+    expect(new Set(pauses.map((segment) => segment.text)).size).toBeGreaterThan(1);
+    for (let index = 1; index < pauses.length; index += 1) {
+      expect(pauses[index]?.text.toLocaleLowerCase()).not.toBe(pauses[index - 1]?.text.toLocaleLowerCase());
+    }
     expect(GeneratedLessonSchema.safeParse({
       title: "Morning",
       topic: "Greeting",
@@ -174,5 +192,65 @@ describe("model shaping", () => {
       speakerNames: shaped?.speakerNames,
       segments,
     }).success).toBe(true);
+  });
+
+  it("uses the model's speak lines, and a gloss only on the matching chunk", () => {
+    const shaped = shapePimsleurLesson({
+      title: "At the station",
+      topic: "Asking the way",
+      summary: "Ask where the station is.",
+      cues: {
+        speak: [
+          "Can you say {translation}?",
+          "Your turn.",
+          "Give it a try.",
+          "Imagine you want to tell {name} — what would you say?",
+          "Repeat after me.",
+          "How would you ask for that?",
+        ],
+      },
+      lines: [
+        { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?", language: "de-DE" },
+        { speaker: "speakerB", text: "Geradeaus.", translation: "Straight ahead.", language: "de-DE" },
+      ],
+      phrases: [
+        {
+          speaker: "speakerA",
+          text: "Wo ist der Bahnhof?",
+          translation: "Where is the station?",
+          chunks: [
+            { text: "Bahnhof", gloss: "Bahnhof means the station." },
+            { text: "ist", gloss: "This one is obvious and should still be optional." },
+          ],
+        },
+      ],
+    }, { nativeLanguage: "en-US", targetLanguage: "de-DE" });
+    const segments = shaped?.segments ?? [];
+    const pauses = segments.filter((segment) => segment.pauseAfterMs);
+    const allowed = new Set([
+      "Can you say Where is the station?",
+      "Can you say Straight ahead?",
+      "Your turn.",
+      "Give it a try.",
+      "Imagine you want to tell Anna — what would you say?",
+      "Imagine you want to tell Lukas — what would you say?",
+      "Repeat after me.",
+      "How would you ask for that?",
+    ]);
+    expect(pauses.every((segment) => segment.speaker === "teacher" && segment.kind === "drill")).toBe(true);
+    expect(pauses.every((segment) => allowed.has(segment.text))).toBe(true);
+    expect(pauses.some((segment) => segment.text === "Your turn." || segment.text === "Give it a try." || segment.text === "Repeat after me.")).toBe(true);
+    for (let index = 1; index < pauses.length; index += 1) {
+      expect(pauses[index]?.text.toLocaleLowerCase()).not.toBe(pauses[index - 1]?.text.toLocaleLowerCase());
+    }
+    const gloss = segments.find((segment) => segment.text === "Bahnhof means the station.");
+    expect(gloss).toMatchObject({ speaker: "teacher", kind: "explanation", phase: "buildup", language: "en-US" });
+    expect(gloss?.pauseAfterMs).toBeUndefined();
+    const glossAt = segments.indexOf(gloss!);
+    expect(segments[glossAt - 1]?.text.toLocaleLowerCase().includes("bahnhof")).toBe(true);
+    expect(segments[glossAt + 1]?.pauseAfterMs).toBeGreaterThan(0);
+    expect(segments[glossAt + 1]?.speaker).toBe("teacher");
+    expect(segments.filter((segment) => segment.kind === "explanation").every((segment) => segment.pauseAfterMs === undefined)).toBe(true);
+    expect(segments.some((segment) => segment.text.includes("obvious"))).toBe(false);
   });
 });

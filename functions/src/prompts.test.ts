@@ -16,8 +16,9 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("Ordering at a bakery");
     expect(prompt).toContain("listen-and-repeat drills");
     expect(prompt).toContain("one item for every line");
-    expect(prompt).toContain("Say it out loud");
-    expect(prompt).toContain("howWouldYouSay");
+    expect(prompt).toContain("speak is 6 to 8");
+    expect(prompt).toContain("{translation}");
+    expect(prompt).toContain("Do not gloss every word");
     expect(prompt).toContain("[[lang:de-DE]]");
     expect(prompt).toContain("[[lang:en-US]]");
   });
