@@ -147,11 +147,12 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
     const units = lessonAudioUnits(content.segments as LessonSegment[]);
     const rendered = await mapConcurrent(units, 4, async (unit) => {
       const synthesized = unit.kind === "teacher"
-        ? [await synthesizeSegment({ uid: payload.uid, lessonId: payload.lessonId, level, segment: unit.segment })]
+        ? [await synthesizeSegment({ uid: payload.uid, lessonId: payload.lessonId, level, targetLanguage, segment: unit.segment })]
         : await synthesizeScene({
           uid: payload.uid,
           lessonId: payload.lessonId,
           level,
+          targetLanguage,
           segments: unit.segments,
           names: content.speakerNames,
         });

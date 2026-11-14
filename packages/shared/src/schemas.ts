@@ -58,7 +58,7 @@ export const GeneratedLessonSchema = z.object({
   topic: z.string().min(3).max(160),
   summary: z.string().min(5).max(280),
   speakerNames: SpeakerNamesField,
-  segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(48),
+  segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(96),
 });
 export type GeneratedLesson = z.infer<typeof GeneratedLessonSchema>;
 

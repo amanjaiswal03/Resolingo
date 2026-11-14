@@ -156,6 +156,7 @@ async function synthesizeWithGemini(input: {
   text: string;
   delivery: LessonSegment["delivery"];
   level: string;
+  targetLanguage: LanguageId;
   cloud: () => Promise<{ cachePath: string; durationMs: number }>;
 }): Promise<{ cachePath: string; durationMs: number; extension: "wav" | "mp3" }> {
   const request = geminiSpeechRequest({
@@ -165,6 +166,7 @@ async function synthesizeWithGemini(input: {
     text: input.text,
     delivery: input.delivery,
     level: input.level,
+    targetLanguage: input.targetLanguage,
   });
   const rendered = await renderLessonAudio({
     request,
@@ -187,9 +189,10 @@ async function synthesizeWithCloudTts(input: {
   language: LanguageId;
   text: string;
   level: string;
+  targetLanguage: LanguageId;
 }): Promise<{ cachePath: string; durationMs: number }> {
   const voiceName = await voiceNameFor(input.speaker, input.language);
-  const cloud = cloudSynthesis({ language: input.language, level: input.level, pcm: false });
+  const cloud = cloudSynthesis({ language: input.language, level: input.level, pcm: false, targetLanguage: input.targetLanguage });
   const cachePath = cloudCachePath({
     voiceName,
     languageCode: cloud.languageCode,
@@ -229,6 +232,7 @@ async function geminiPcm(input: {
   text: string;
   delivery: LessonSegment["delivery"];
   level: string;
+  targetLanguage: LanguageId;
 }): Promise<Buffer> {
   const request = geminiSpeechRequest({
     model: configured(GEMINI_TTS_MODEL.value(), "gemini-3.1-flash-tts-preview"),
@@ -237,6 +241,7 @@ async function geminiPcm(input: {
     text: input.text,
     delivery: input.delivery,
     level: input.level,
+    targetLanguage: input.targetLanguage,
   });
   const cached = await loadPcm(request.cachePath);
   if (cached && cached.length > 0) return cached;
@@ -254,9 +259,10 @@ async function cloudPcm(input: {
   language: LanguageId;
   text: string;
   level: string;
+  targetLanguage: LanguageId;
 }): Promise<Buffer> {
   const voiceName = await voiceNameFor(input.speaker, input.language);
-  const cloud = cloudSynthesis({ language: input.language, level: input.level, pcm: true });
+  const cloud = cloudSynthesis({ language: input.language, level: input.level, pcm: true, targetLanguage: input.targetLanguage });
   const cachePath = cloudCachePath({
     voiceName,
     languageCode: cloud.languageCode,
@@ -288,6 +294,7 @@ async function spanPcm(input: {
   text: string;
   delivery: LessonSegment["delivery"];
   level: string;
+  targetLanguage: LanguageId;
 }): Promise<Buffer> {
   try {
     return await geminiPcm(input);
@@ -301,6 +308,7 @@ export async function synthesizeSegment(input: {
   uid: string;
   lessonId: string;
   level: string;
+  targetLanguage: LanguageId;
   segment: LessonSegment;
 }): Promise<LessonSegment> {
   const speaker = input.segment.speaker;
@@ -316,11 +324,13 @@ export async function synthesizeSegment(input: {
       text: piece.text,
       delivery,
       level: input.level,
+      targetLanguage: input.targetLanguage,
       cloud: () => synthesizeWithCloudTts({
         speaker,
         language: piece.language,
         text: piece.text,
         level: input.level,
+        targetLanguage: input.targetLanguage,
       }),
     });
     const pauseMs = input.segment.pauseAfterMs ?? 0;
@@ -332,7 +342,7 @@ export async function synthesizeSegment(input: {
     const cachedPcm = rendered.extension === "wav" ? await loadPcm(rendered.cachePath) : null;
     const voiced = cachedPcm && cachedPcm.length > 0
       ? cachedPcm
-      : await cloudPcm({ speaker, language: piece.language, text: piece.text, level: input.level });
+      : await cloudPcm({ speaker, language: piece.language, text: piece.text, level: input.level, targetLanguage: input.targetLanguage });
     const pcm = pcmWithTrailingSilence(voiced, pauseMs);
     const durationMs = pcmDurationMs(pcm.length);
     const audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${input.segment.id}.wav`;
@@ -346,7 +356,8 @@ export async function synthesizeSegment(input: {
     text: piece.text.trim(),
     delivery,
     level: input.level,
-  })))), input.segment.pauseAfterMs ?? 0);
+    targetLanguage: input.targetLanguage,
+  }))), 0), input.segment.pauseAfterMs ?? 0);
   const audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${input.segment.id}.wav`;
   const durationMs = pcmDurationMs(pcm.length);
   await saveCached(audioPath, wrapPcm16AsWav(pcm), "audio/wav", durationMs);
@@ -358,12 +369,13 @@ const SCENE_GAP_MS = 160;
 async function cloudScene(input: {
   turns: SceneChunk[];
   level: string;
+  targetLanguage: LanguageId;
 }): Promise<{ cachePath: string; durationMs: number }> {
   const language = input.turns[0]!.language;
   const voices = await voicesFor(language);
   const pieces: Buffer[] = [];
   for (const turn of input.turns) {
-    pieces.push(await cloudPcm({ speaker: turn.speaker, language: turn.language, text: turn.text, level: input.level }));
+    pieces.push(await cloudPcm({ speaker: turn.speaker, language: turn.language, text: turn.text, level: input.level, targetLanguage: input.targetLanguage }));
   }
   const pcm = concatPcm16(pieces, SCENE_GAP_MS);
   const cloud = cloudSynthesis({ language, level: input.level, pcm: true });
@@ -384,6 +396,7 @@ async function renderChunk(input: {
   turns: SceneChunk[];
   names: SpeakerNames;
   level: string;
+  targetLanguage: LanguageId;
 }): Promise<{ cachePath: string; durationMs: number; extension: "wav" | "mp3" }> {
   const request = sceneSpeechRequest({
     model: configured(GEMINI_TTS_MODEL.value(), "gemini-3.1-flash-tts-preview"),
@@ -391,6 +404,7 @@ async function renderChunk(input: {
     names: input.names,
     level: input.level,
     language: input.turns[0]!.language,
+    targetLanguage: input.targetLanguage,
   });
   return renderLessonAudio({
     request,
@@ -398,7 +412,7 @@ async function renderChunk(input: {
     store: saveCached,
     onGeminiError: (error) => fallbackLog({ segment: input.segment, language: input.turns[0]!.language, error }),
     synthesizeGemini: () => geminiInline(request),
-    cloud: () => cloudScene({ turns: input.turns, level: input.level }),
+    cloud: () => cloudScene({ turns: input.turns, level: input.level, targetLanguage: input.targetLanguage }),
   });
 }
 
@@ -406,6 +420,7 @@ export async function synthesizeScene(input: {
   uid: string;
   lessonId: string;
   level: string;
+  targetLanguage: LanguageId;
   segments: LessonSegment[];
   names: SpeakerNames;
 }): Promise<LessonSegment[]> {
@@ -414,14 +429,14 @@ export async function synthesizeScene(input: {
   let audioPath: string;
   let durationMs: number;
   if (chunks.length === 1) {
-    const rendered = await renderChunk({ segment: first, turns: chunks[0]!, names: input.names, level: input.level });
+    const rendered = await renderChunk({ segment: first, turns: chunks[0]!, names: input.names, level: input.level, targetLanguage: input.targetLanguage });
     audioPath = `users/${input.uid}/lessons/${input.lessonId}/segments/${first.id}.${rendered.extension}`;
     durationMs = rendered.durationMs;
     await copyCached(rendered.cachePath, audioPath);
   } else {
     const pieces: Buffer[] = [];
     for (const chunk of chunks) {
-      const rendered = await renderChunk({ segment: first, turns: chunk, names: input.names, level: input.level });
+      const rendered = await renderChunk({ segment: first, turns: chunk, names: input.names, level: input.level, targetLanguage: input.targetLanguage });
       const pcm = await loadPcm(rendered.cachePath);
       if (!pcm || pcm.length === 0) throw new Error("TTS_EMPTY_AUDIO");
       pieces.push(pcm);

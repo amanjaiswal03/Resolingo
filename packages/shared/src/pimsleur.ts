@@ -17,9 +17,11 @@ export const REVIEW_INTERVALS_MS = [25_000, 120_000] as const;
 export const BUILDUP_PAUSE_MS = 2_000;
 
 export const MAX_DIALOGUE_LINES = 6;
-export const MAX_PHRASES = 3;
+/** One drilled phrase per dialogue turn. A 4-turn conversation is not cut down to 3. */
+export const MAX_PHRASES = MAX_DIALOGUE_LINES;
 export const MAX_BUILDUP_CHUNKS = 3;
-export const MAX_PIMSLEUR_SEGMENTS = 48;
+/** Room for every turn's buildup, recall, spaced review, and the closing replay. */
+export const MAX_PIMSLEUR_SEGMENTS = 96;
 
 const VOWEL = /[aeiouyäöüáéíóúàèìòùâêîôûæøå]/i;
 
@@ -29,6 +31,8 @@ export type LessonCues = {
   afterDialogue: string;
   buildup: string;
   howWouldYouSay: string;
+  sayIt: string;
+  yourTurn: string;
   again: string;
   closing: string;
 };
@@ -39,6 +43,8 @@ export const DEFAULT_CUES: LessonCues = {
   afterDialogue: "You just heard the conversation. Now let's go through it.",
   buildup: "Let's build it up from the end.",
   howWouldYouSay: "How would you say",
+  sayIt: "Say it out loud.",
+  yourTurn: "Now you say it.",
   again: "Let's hear the conversation once more.",
   closing: "That's the conversation. Nice work.",
 };
@@ -111,6 +117,8 @@ export function cuesFrom(value: unknown): LessonCues {
     afterDialogue: cueText(record.afterDialogue, DEFAULT_CUES.afterDialogue),
     buildup: cueText(record.buildup, DEFAULT_CUES.buildup),
     howWouldYouSay: cueText(record.howWouldYouSay, DEFAULT_CUES.howWouldYouSay),
+    sayIt: cueText(record.sayIt, DEFAULT_CUES.sayIt),
+    yourTurn: cueText(record.yourTurn, DEFAULT_CUES.yourTurn),
     again: cueText(record.again, DEFAULT_CUES.again),
     closing: cueText(record.closing, DEFAULT_CUES.closing),
   };
@@ -148,7 +156,7 @@ export function arrangePimsleur(input: {
   const estimate = input.estimateMs ?? estimateSpeechMs;
   const names = input.names;
   const lines = input.lines.slice(0, MAX_DIALOGUE_LINES);
-  const phrases = input.phrases.slice(0, MAX_PHRASES);
+  const phrases = phrasesForLines(lines, input.phrases.slice(0, MAX_PHRASES));
   const segments: LessonSegment[] = [];
   const reviews: Review[] = [];
   let clock = 0;
@@ -177,7 +185,12 @@ export function arrangePimsleur(input: {
   const recall = (phrase: PimsleurPhrase): boolean => {
     const limit = MAX_PIMSLEUR_SEGMENTS - reserved;
     if (segments.length + 2 > limit) return false;
-    const prompt = `${input.cues.howWouldYouSay.replace(/[?？]\s*$/u, "")} ${phrase.translation ?? phrase.text}?`;
+    const ask = input.cues.howWouldYouSay.replace(/[?？]\s*$/u, "");
+    const instruction = input.cues.sayIt.replace(/[.。]\s*$/u, "");
+    const question = `${ask} ${phrase.translation ?? phrase.text}?`;
+    const prompt = question.toLocaleLowerCase().includes(instruction.toLocaleLowerCase())
+      ? question
+      : `${question} ${instruction}.`;
     push({
       kind: "drill",
       speaker: "teacher",
@@ -194,7 +207,7 @@ export function arrangePimsleur(input: {
       text: phrase.text,
       ...(phrase.translation ? { translation: phrase.translation } : {}),
       delivery: "clear",
-    }, ANSWER_PAUSE_MS);
+    });
     return true;
   };
 
@@ -278,6 +291,14 @@ export function arrangePimsleur(input: {
           language: phrase.language,
           text: chunk,
           delivery: "clear",
+        });
+        push({
+          kind: "drill",
+          speaker: "teacher",
+          phase: "buildup",
+          language: input.nativeLanguage,
+          text: input.cues.yourTurn,
+          delivery: "curious",
         }, BUILDUP_PAUSE_MS);
       }
     }
@@ -285,37 +306,34 @@ export function arrangePimsleur(input: {
   }
   drain();
 
-  const room = MAX_PIMSLEUR_SEGMENTS - segments.length;
-  if (room >= lines.length + 2) {
+  push({
+    kind: "narration",
+    speaker: "teacher",
+    phase: "closing",
+    language: input.nativeLanguage,
+    text: input.cues.again,
+    delivery: "warm",
+  }, 0, true);
+  for (const line of lines) {
     push({
-      kind: "narration",
-      speaker: "teacher",
+      kind: "dialogue",
+      speaker: line.speaker,
       phase: "closing",
-      language: input.nativeLanguage,
-      text: input.cues.again,
+      language: line.language,
+      text: line.text,
+      ...(line.translation ? { translation: line.translation } : {}),
+      ...(line.transliteration ? { transliteration: line.transliteration } : {}),
       delivery: "warm",
     }, 0, true);
-    for (const line of lines) {
-      push({
-        kind: "dialogue",
-        speaker: line.speaker,
-        phase: "closing",
-        language: line.language,
-        text: line.text,
-        ...(line.translation ? { translation: line.translation } : {}),
-        ...(line.transliteration ? { transliteration: line.transliteration } : {}),
-        delivery: "warm",
-      }, 0, true);
-    }
-    push({
-      kind: "recap",
-      speaker: "teacher",
-      phase: "closing",
-      language: input.nativeLanguage,
-      text: input.cues.closing,
-      delivery: "praise",
-    }, 0, true);
   }
+  push({
+    kind: "recap",
+    speaker: "teacher",
+    phase: "closing",
+    language: input.nativeLanguage,
+    text: input.cues.closing,
+    delivery: "praise",
+  }, 0, true);
   return segments.map((segment) => ({ ...segment, text: clean(segment.text, names) || segment.text }));
 }
 
@@ -339,11 +357,26 @@ function lineFrom(value: unknown, names: SpeakerNames, fallbackLanguage: Languag
   };
 }
 
-function phrasesFrom(lines: PimsleurLine[], targetLanguage: LanguageId): PimsleurPhrase[] {
-  const preferred = lines.filter((line) => line.language === targetLanguage && line.translation);
-  const source = preferred.length > 0 ? preferred : lines.filter((line) => line.language === targetLanguage);
-  const chosen = (source.length > 0 ? source : lines).slice(0, MAX_PHRASES);
-  return chosen.map((line) => ({ ...line, ...(line.translation ? { note: line.translation } : {}) }));
+function phraseFor(line: PimsleurLine): PimsleurPhrase {
+  return { ...line, ...(line.translation ? { note: line.translation } : {}) };
+}
+
+/** One phrase per dialogue turn. A model phrase fills the matching turn; every other turn is still drilled. */
+function phrasesForLines(lines: PimsleurLine[], explicit: PimsleurPhrase[]): PimsleurPhrase[] {
+  const used = new Set<number>();
+  const placed: Array<PimsleurPhrase | undefined> = lines.map(() => undefined);
+  for (const phrase of explicit) {
+    const index = lines.findIndex((line, position) => !used.has(position)
+      && line.text === phrase.text
+      && line.speaker === phrase.speaker);
+    const fallback = index >= 0
+      ? index
+      : lines.findIndex((line, position) => !used.has(position) && line.text === phrase.text);
+    if (fallback < 0) continue;
+    used.add(fallback);
+    placed[fallback] = phrase;
+  }
+  return lines.map((line, position) => placed[position] ?? phraseFor(line));
 }
 
 export function shapePimsleurLesson(value: unknown, context: {
@@ -380,11 +413,11 @@ export function shapePimsleurLesson(value: unknown, context: {
         return { ...line, ...(note ? { note: clean(note, names) } : {}) };
       })
       .filter((phrase): phrase is PimsleurPhrase => Boolean(phrase))
-      .slice(0, MAX_PHRASES)
-    : phrasesFrom(lines, context.targetLanguage);
+    : [];
+  const keptLines = lines.slice(0, MAX_DIALOGUE_LINES);
   const segments = arrangePimsleur({
-    lines,
-    phrases: phrases.length > 0 ? phrases : phrasesFrom(lines, context.targetLanguage),
+    lines: keptLines,
+    phrases: phrasesForLines(keptLines, phrases),
     cues,
     names,
     nativeLanguage: context.nativeLanguage,
