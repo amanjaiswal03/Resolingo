@@ -63,6 +63,7 @@ export const FALLBACK_SPEAK_PROMPTS = [
   "Try saying {translation}.",
   "Imagine you want to tell {name} — what would you say?",
   "Repeat after me.",
+  "Now you try.",
   "How would you ask for that?",
   "Say it out loud.",
   "Now you say it.",
@@ -79,9 +80,9 @@ export type PimsleurLine = {
   language: LanguageId;
 };
 
-export type ChunkGloss = { text: string; gloss: string };
+export type ChunkNote = { text: string; translation?: string; gloss?: string };
 
-export type PimsleurPhrase = PimsleurLine & { note?: string; glosses?: ChunkGloss[] };
+export type PimsleurPhrase = PimsleurLine & { note?: string; chunks?: ChunkNote[] };
 
 type Review = { phrase: PimsleurPhrase; step: number; dueAt: number };
 
@@ -105,6 +106,29 @@ function splitSyllables(word: string): string[] {
   if (current) syllables.push(current);
   const joined = syllables.join("");
   return joined === word && syllables.length > 1 ? syllables : [word];
+}
+
+/** Drop a question mark that belonged to the whole line, not to this ending. */
+export function presentChunk(chunk: string, phrase: string): string {
+  const trimmed = chunk.trim();
+  const whole = phrase.trim();
+  const question = /[?？]\s*$/u.test(whole) && normalizeChunk(trimmed) === normalizeChunk(whole);
+  return question ? trimmed : trimmed.replace(/[?？]+\s*$/u, "").trim();
+}
+
+/**
+ * Last word, then the last two words, then the whole line when it is longer.
+ * The final step is always the full phrase, so the buildup ends on the sentence.
+ */
+export function buildupChunks(phrase: string): string[] {
+  const raw = backwardChunks(phrase);
+  if (raw.length === 0) return [];
+  const spoken = raw.map((chunk) => presentChunk(chunk, phrase)).filter(Boolean);
+  const full = presentChunk(phrase.trim(), phrase);
+  if (!full) return spoken;
+  if (normalizeChunk(spoken[spoken.length - 1] ?? "") === normalizeChunk(full)) return spoken;
+  if (spoken.length === 1) return [full];
+  return [...spoken.slice(0, -1), full];
 }
 
 /** Last word (or syllable) first, then a longer ending, then the whole phrase. */
@@ -174,26 +198,99 @@ export function speakPromptPool(modelPrompts: readonly string[] | undefined, cue
   return uniquePrompts([ask, cues.sayIt, cues.yourTurn, ...provided, ...FALLBACK_SPEAK_PROMPTS]);
 }
 
-function promptPicker(templates: string[], seed: number): (vars: { translation: string; name: string }) => string {
-  const pool = templates.length > 0 ? templates : ["Say it out loud."];
-  let index = seed % pool.length;
+function promptPicker(templates: string[], seed: number): (vars: { translation?: string; name: string }) => string {
+  const withMeaning = uniquePrompts(templates.filter((template) => template.includes("{translation}")));
+  const meaningPool = withMeaning.length >= 2
+    ? withMeaning
+    : uniquePrompts([...withMeaning, "Can you say {translation}?", "Try saying {translation}.", "How would you say {translation}?"]);
+  const withoutMeaning = uniquePrompts([
+    ...templates.filter((template) => !template.includes("{translation}")),
+    "Repeat after me.",
+    "Now you try.",
+  ]);
+  let meaningIndex = seed % meaningPool.length;
+  let plainIndex = seed % withoutMeaning.length;
   let previous = "";
   return (vars) => {
-    let chosen = fillPrompt(pool[index % pool.length]!, vars);
+    const pool = vars.translation ? meaningPool : withoutMeaning;
+    let index = vars.translation ? meaningIndex : plainIndex;
+    const fill = (template: string) => fillPrompt(template, { translation: vars.translation ?? "", name: vars.name });
+    let chosen = fill(pool[index % pool.length]!);
     index += 1;
+    if (!vars.translation) chosen = chosen.split("{translation}").join("").replace(/\s+/gu, " ").trim();
     if (chosen.toLocaleLowerCase() === previous.toLocaleLowerCase()) {
       for (let hop = 0; hop < pool.length; hop += 1) {
-        const next = fillPrompt(pool[index % pool.length]!, vars);
+        let next = fill(pool[index % pool.length]!);
         index += 1;
+        if (!vars.translation) next = next.split("{translation}").join("").replace(/\s+/gu, " ").trim();
         if (next.toLocaleLowerCase() !== previous.toLocaleLowerCase()) {
           chosen = next;
           break;
         }
       }
     }
+    if (vars.translation) meaningIndex = index;
+    else plainIndex = index;
     previous = chosen;
-    return chosen || "Say it out loud.";
+    return chosen || (vars.translation ? `Can you say ${vars.translation.replace(/[.!?？。]+$/u, "")}?` : "Repeat after me.");
   };
+}
+
+function meaningOf(value: string | undefined): string {
+  return (value ?? "").replace(/[.!?？。]+$/u, "").trim();
+}
+
+/** The longest known meaning that actually appears in the prompt. */
+function longestMeaning(prompt: string, meanings: string[]): string | undefined {
+  const haystack = prompt.toLocaleLowerCase();
+  return meanings
+    .map((meaning) => meaningOf(meaning))
+    .filter((meaning) => meaning.length >= 3 && haystack.includes(meaning.toLocaleLowerCase()))
+    .sort((left, right) => right.length - left.length)[0];
+}
+
+/**
+ * A paused prompt is followed by its answer. The meaning inside the prompt is
+ * that answer's meaning, never a longer line's translation.
+ */
+export function speakPromptsMatchAnswers(segments: LessonSegment[]): boolean {
+  const known = segments.map((segment) => segment.translation).filter((translation): translation is string => Boolean(translation));
+  for (let index = 0; index < segments.length; index += 1) {
+    const prompt = segments[index];
+    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher") continue;
+    const answer = segments[index + 1];
+    if (!answer || answer.speaker === "teacher") return false;
+    const own = meaningOf(answer.translation);
+    const longest = longestMeaning(prompt.text, known);
+    if (own) {
+      if (longest?.toLocaleLowerCase() !== own.toLocaleLowerCase()) return false;
+    } else if (longest) return false;
+  }
+  return true;
+}
+
+function enforcePromptAnswers(segments: LessonSegment[]): LessonSegment[] {
+  if (speakPromptsMatchAnswers(segments)) return segments;
+  const known = segments.map((segment) => segment.translation).filter((translation): translation is string => Boolean(translation));
+  return segments.map((segment, index) => {
+    if (!segment.pauseAfterMs || segment.speaker !== "teacher") return segment;
+    const answer = segments[index + 1];
+    if (!answer || answer.speaker === "teacher") return segment;
+    const own = meaningOf(answer.translation);
+    const longest = longestMeaning(segment.text, known);
+    const matches = own
+      ? longest?.toLocaleLowerCase() === own.toLocaleLowerCase()
+      : !longest;
+    return matches ? segment : { ...segment, text: "Repeat after me." };
+  });
+}
+
+function linkedGloss(chunk: string, gloss: string, translation: string | undefined, language: LanguageId): string {
+  const wrapped = `[[lang:${language}]]${chunk}[[/lang]]`;
+  if (gloss.includes("[[lang:") && gloss.includes(chunk)) return gloss.slice(0, 240);
+  if (gloss.includes(chunk) && /means|is how you say/i.test(gloss)) return gloss.replace(chunk, wrapped).slice(0, 240);
+  const meaning = meaningOf(translation || gloss);
+  return `${wrapped} means "${meaning}".`.slice(0, 240);
 }
 
 function cueText(value: unknown, fallback: string): string {
@@ -288,7 +385,7 @@ export function arrangePimsleur(input: {
     const limit = MAX_PIMSLEUR_SEGMENTS - reserved;
     if (segments.length + 2 > limit) return false;
     const prompt = nextPrompt({
-      translation: phrase.translation ?? phrase.text,
+      ...(phrase.translation ? { translation: phrase.translation } : {}),
       name: partnerName(phrase.speaker),
     });
     push({
@@ -373,7 +470,7 @@ export function arrangePimsleur(input: {
       text: explained(phrase, input.cues.listen),
       delivery: "clear",
     });
-    const chunks = backwardChunks(phrase.text);
+    const chunks = alignChunks(buildupChunks(phrase.text), phrase);
     if (chunks.length > 1) {
       push({
         kind: "narration",
@@ -384,16 +481,19 @@ export function arrangePimsleur(input: {
         delivery: "clear",
       });
       for (const chunk of chunks) {
+        const translation = chunkTranslation(chunk, phrase);
+        const gloss = chunk.gloss ? linkedGloss(chunk.text, chunk.gloss, translation, phrase.language) : undefined;
+        const slots = 3 + (gloss ? 1 : 0);
+        if (segments.length + slots > MAX_PIMSLEUR_SEGMENTS - reserved) break;
         push({
           kind: "drill",
           speaker: phrase.speaker,
           phase: "buildup",
           language: phrase.language,
-          text: chunk,
+          text: chunk.text,
           delivery: "clear",
         });
-        const gloss = glossFor(chunk, phrase.glosses ?? []);
-        if (gloss && segments.length + 3 < MAX_PIMSLEUR_SEGMENTS - reserved) {
+        if (gloss) {
           push({
             kind: "explanation",
             speaker: "teacher",
@@ -409,11 +509,20 @@ export function arrangePimsleur(input: {
           phase: "buildup",
           language: input.nativeLanguage,
           text: nextPrompt({
-            translation: phrase.translation ?? phrase.text,
+            ...(translation ? { translation } : {}),
             name: partnerName(phrase.speaker),
           }),
           delivery: "curious",
         }, BUILDUP_PAUSE_MS);
+        push({
+          kind: "drill",
+          speaker: phrase.speaker,
+          phase: "buildup",
+          language: phrase.language,
+          text: chunk.text,
+          ...(translation ? { translation } : {}),
+          delivery: "clear",
+        });
       }
     }
     if (recall(phrase)) reviews.push({ phrase, step: 0, dueAt: clock + REVIEW_INTERVALS_MS[0] });
@@ -448,7 +557,7 @@ export function arrangePimsleur(input: {
     text: input.cues.closing,
     delivery: "praise",
   }, 0, true);
-  return segments.map((segment) => ({ ...segment, text: clean(segment.text, names) || segment.text }));
+  return enforcePromptAnswers(segments).map((segment) => ({ ...segment, text: clean(segment.text, names) || segment.text }));
 }
 
 function textOf(value: unknown): string {
@@ -471,25 +580,51 @@ function lineFrom(value: unknown, names: SpeakerNames, fallbackLanguage: Languag
   };
 }
 
-function glossFor(chunk: string, glosses: ChunkGloss[]): string | undefined {
-  const key = normalizeChunk(chunk);
-  if (!key) return undefined;
-  return glosses.find((gloss) => normalizeChunk(gloss.text) === key)?.gloss;
+function chunkTranslation(chunk: ChunkNote, phrase: PimsleurPhrase): string | undefined {
+  if (chunk.translation) return chunk.translation;
+  if (normalizeChunk(chunk.text) === normalizeChunk(phrase.text)) return phrase.translation;
+  return undefined;
 }
 
-function glossesFrom(value: unknown, names: SpeakerNames): ChunkGloss[] {
+function alignChunks(spoken: string[], phrase: PimsleurPhrase): ChunkNote[] {
+  const notes = phrase.chunks ?? [];
+  return spoken.map((text, index) => {
+    const key = normalizeChunk(text);
+    const byText = notes.find((note) => note.text && normalizeChunk(presentChunk(note.text, phrase.text)) === key);
+    const byIndex = notes[index];
+    const indexed = byIndex && (!byIndex.text || normalizeChunk(presentChunk(byIndex.text, phrase.text)) === key)
+      ? byIndex
+      : undefined;
+    const source = byText ?? indexed;
+    return {
+      text,
+      ...(source?.translation ? { translation: source.translation } : {}),
+      ...(source?.gloss ? { gloss: source.gloss } : {}),
+    };
+  });
+}
+
+function notesFrom(value: unknown, names: SpeakerNames): ChunkNote[] {
   if (!Array.isArray(value)) return [];
-  const glosses: ChunkGloss[] = [];
+  const notes: ChunkNote[] = [];
+  let glosses = 0;
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
     const record = item as Record<string, unknown>;
     const text = textOf(record.text ?? record.chunk);
-    const gloss = clean(textOf(record.gloss ?? record.note), names);
-    if (!text || !gloss) continue;
-    glosses.push({ text, gloss: gloss.slice(0, 180) });
-    if (glosses.length >= MAX_GLOSSES) break;
+    const translation = textOf(record.translation);
+    const gloss = clean(textOf(record.gloss), names);
+    if (!text && !translation) continue;
+    const keepGloss = Boolean(gloss) && glosses < MAX_GLOSSES;
+    if (keepGloss) glosses += 1;
+    notes.push({
+      text,
+      ...(translation ? { translation: translation.slice(0, 180) } : {}),
+      ...(keepGloss && gloss ? { gloss: gloss.slice(0, 240) } : {}),
+    });
+    if (notes.length >= MAX_BUILDUP_CHUNKS) break;
   }
-  return glosses;
+  return notes;
 }
 
 function phraseFor(line: PimsleurLine): PimsleurPhrase {
@@ -549,11 +684,11 @@ export function shapePimsleurLesson(value: unknown, context: {
         const line = lineFrom(phrase, names, context.targetLanguage, allowed);
         if (!line) return null;
         const note = textOf((phrase as { note?: unknown }).note);
-        const glosses = glossesFrom((phrase as { chunks?: unknown }).chunks ?? (phrase as { glosses?: unknown }).glosses, names);
+        const chunks = notesFrom((phrase as { chunks?: unknown }).chunks ?? (phrase as { glosses?: unknown }).glosses, names);
         return {
           ...line,
           ...(note ? { note: clean(note, names) } : {}),
-          ...(glosses.length > 0 ? { glosses } : {}),
+          ...(chunks.length > 0 ? { chunks } : {}),
         };
       })
       .filter((phrase): phrase is PimsleurPhrase => Boolean(phrase))
