@@ -12,9 +12,10 @@ import { useSession } from "@/session/SessionProvider";
 import { useTheme } from "@/theme/tokens";
 
 export default function SettingsScreen() {
-  const { profile } = useSession();
+  const { user, profile } = useSession();
   const router = useRouter();
   const theme = useTheme();
+  if (!user) return null;
   if (!profile) return <LoadingScreen />;
   const toggleTelemetry = async (enabled: boolean) => {
     await api.setTelemetryConsent(enabled);

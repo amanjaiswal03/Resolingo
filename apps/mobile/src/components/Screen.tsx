@@ -3,11 +3,11 @@ import { ScrollView, StyleSheet, View, type ViewStyle } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTheme } from "@/theme/tokens";
 
-export function Screen({ children, scroll = true, style }: PropsWithChildren<{ scroll?: boolean; style?: ViewStyle }>) {
+export function Screen({ children, scroll = true, style, backgroundColor }: PropsWithChildren<{ scroll?: boolean; style?: ViewStyle; backgroundColor?: string }>) {
   const theme = useTheme();
   const content = <View style={[styles.content, style]}>{children}</View>;
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.background }]} edges={["top", "left", "right"]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: backgroundColor ?? theme.background }]} edges={["top", "left", "right"]}>
       {scroll ? <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content}</ScrollView> : content}
     </SafeAreaView>
   );

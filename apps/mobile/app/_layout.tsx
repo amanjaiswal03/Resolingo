@@ -1,17 +1,20 @@
 import { useEffect } from "react";
-import { Stack, useRouter, useSegments } from "expo-router";
+import { useColorScheme, View } from "react-native";
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as Notifications from "expo-notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { SessionProvider, useSession } from "@/session/SessionProvider";
 import { track } from "@/services/telemetry";
+import { useTheme } from "@/theme/tokens";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 2, staleTime: 20_000 } } });
 
 function Navigation() {
   const router = useRouter();
   const segments = useSegments();
+  const theme = useTheme();
   const { loading, user, profile } = useSession();
   useEffect(() => {
     if (loading) return;
@@ -36,24 +39,35 @@ function Navigation() {
     return () => subscription.remove();
   }, [profile?.telemetryConsent, router]);
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar style="auto" />
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="onboarding" />
-        <Stack.Screen name="(tabs)" />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}>
+        <Stack.Screen name="index" options={{ animation: "none" }} />
+        <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
+        <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
+        <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
         <Stack.Screen name="lesson/[id]" options={{ presentation: "card" }} />
       </Stack>
-    </>
+    </View>
   );
 }
 
 export default function RootLayout() {
+  const theme = useTheme();
+  const colorScheme = useColorScheme();
+  const base = colorScheme === "dark" ? DarkTheme : DefaultTheme;
+  const navigationTheme = {
+    ...base,
+    colors: { ...base.colors, background: theme.background, card: theme.surface, text: theme.text, border: theme.border, primary: theme.primary, notification: theme.danger },
+  };
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        <SessionProvider><Navigation /></SessionProvider>
+        <SessionProvider>
+          <ThemeProvider value={navigationTheme}>
+            <Navigation />
+          </ThemeProvider>
+        </SessionProvider>
       </QueryClientProvider>
     </SafeAreaProvider>
   );
