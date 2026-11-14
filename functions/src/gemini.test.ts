@@ -44,7 +44,7 @@ describe("Gemini lesson generation", () => {
   it("asks Vertex for JSON mode with medium safety filters and no response schema", () => {
     const config = lessonGenerationConfig();
     expect(config.responseMimeType).toBe("application/json");
-    expect(config.systemInstruction).toContain("howWouldYouSay");
+    expect(config.systemInstruction).toContain("speak is 6 to 8");
     expect(config.systemInstruction).toContain("lines is an array of 4 to 6");
     expect(config.systemInstruction).toContain("one item for every line");
     expect(config.systemInstruction).toContain("[[lang:BCP-47]]");

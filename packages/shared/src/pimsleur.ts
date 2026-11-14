@@ -49,6 +49,28 @@ export const DEFAULT_CUES: LessonCues = {
   closing: "That's the conversation. Nice work.",
 };
 
+/**
+ * Teaching-language lines that ask the learner to speak. {translation} is the
+ * meaning and {name} is the other speaker. Used when the model does not send
+ * its own varied list. The picker rotates this pool and never repeats the
+ * previous line.
+ */
+export const FALLBACK_SPEAK_PROMPTS = [
+  "How would you say {translation}?",
+  "Your turn.",
+  "Give it a try.",
+  "Can you say {translation}?",
+  "Try saying {translation}.",
+  "Imagine you want to tell {name} — what would you say?",
+  "Repeat after me.",
+  "How would you ask for that?",
+  "Say it out loud.",
+  "Now you say it.",
+] as const;
+
+const MAX_SPEAK_PROMPTS = 12;
+const MAX_GLOSSES = 2;
+
 export type PimsleurLine = {
   speaker: "speakerA" | "speakerB";
   text: string;
@@ -57,7 +79,9 @@ export type PimsleurLine = {
   language: LanguageId;
 };
 
-export type PimsleurPhrase = PimsleurLine & { note?: string };
+export type ChunkGloss = { text: string; gloss: string };
+
+export type PimsleurPhrase = PimsleurLine & { note?: string; glosses?: ChunkGloss[] };
 
 type Review = { phrase: PimsleurPhrase; step: number; dueAt: number };
 
@@ -101,6 +125,75 @@ export function backwardChunks(phrase: string): string[] {
   const start = Math.max(0, syllables.length - MAX_BUILDUP_CHUNKS);
   for (let index = syllables.length - 1; index >= start; index -= 1) chunks.push(syllables.slice(index).join(""));
   return chunks;
+}
+
+function hashSeed(text: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function normalizeChunk(value: string): string {
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/gu, " ").trim();
+}
+
+function fillPrompt(template: string, vars: { translation: string; name: string }): string {
+  const translation = vars.translation.replace(/[.!?？。]+$/u, "");
+  return template
+    .split("{translation}").join(translation)
+    .split("{name}").join(vars.name)
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, 220);
+}
+
+function uniquePrompts(values: string[]): string[] {
+  const seen = new Set<string>();
+  const prompts: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim().slice(0, 180);
+    const key = trimmed.toLocaleLowerCase();
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    prompts.push(trimmed);
+    if (prompts.length >= MAX_SPEAK_PROMPTS) break;
+  }
+  return prompts;
+}
+
+/** Model prompts when there are enough of them; otherwise the seeded fallback pool. */
+export function speakPromptPool(modelPrompts: readonly string[] | undefined, cues: LessonCues): string[] {
+  const provided = uniquePrompts([...(modelPrompts ?? [])]);
+  if (provided.length >= 4) return provided;
+  const ask = cues.howWouldYouSay.includes("{")
+    ? cues.howWouldYouSay
+    : `${cues.howWouldYouSay.replace(/[?？]\s*$/u, "")} {translation}?`;
+  return uniquePrompts([ask, cues.sayIt, cues.yourTurn, ...provided, ...FALLBACK_SPEAK_PROMPTS]);
+}
+
+function promptPicker(templates: string[], seed: number): (vars: { translation: string; name: string }) => string {
+  const pool = templates.length > 0 ? templates : ["Say it out loud."];
+  let index = seed % pool.length;
+  let previous = "";
+  return (vars) => {
+    let chosen = fillPrompt(pool[index % pool.length]!, vars);
+    index += 1;
+    if (chosen.toLocaleLowerCase() === previous.toLocaleLowerCase()) {
+      for (let hop = 0; hop < pool.length; hop += 1) {
+        const next = fillPrompt(pool[index % pool.length]!, vars);
+        index += 1;
+        if (next.toLocaleLowerCase() !== previous.toLocaleLowerCase()) {
+          chosen = next;
+          break;
+        }
+      }
+    }
+    previous = chosen;
+    return chosen || "Say it out loud.";
+  };
 }
 
 function cueText(value: unknown, fallback: string): string {
@@ -151,6 +244,8 @@ export function arrangePimsleur(input: {
   names: SpeakerNames;
   nativeLanguage: LanguageId;
   targetLanguage: LanguageId;
+  speakPrompts?: string[];
+  seed?: number;
   estimateMs?: (text: string) => number;
 }): LessonSegment[] {
   const estimate = input.estimateMs ?? estimateSpeechMs;
@@ -158,6 +253,13 @@ export function arrangePimsleur(input: {
   const lines = input.lines.slice(0, MAX_DIALOGUE_LINES);
   const phrases = phrasesForLines(lines, input.phrases.slice(0, MAX_PHRASES));
   const segments: LessonSegment[] = [];
+  const nextPrompt = promptPicker(
+    speakPromptPool(input.speakPrompts, input.cues),
+    input.seed ?? hashSeed(lines.map((line) => line.text).join("|")),
+  );
+  const partnerName = (speaker: PimsleurPhrase["speaker"]): string => (
+    speaker === "speakerA" ? names.speakerB : names.speakerA
+  );
   const reviews: Review[] = [];
   let clock = 0;
   let ordinal = 0;
@@ -185,12 +287,10 @@ export function arrangePimsleur(input: {
   const recall = (phrase: PimsleurPhrase): boolean => {
     const limit = MAX_PIMSLEUR_SEGMENTS - reserved;
     if (segments.length + 2 > limit) return false;
-    const ask = input.cues.howWouldYouSay.replace(/[?？]\s*$/u, "");
-    const instruction = input.cues.sayIt.replace(/[.。]\s*$/u, "");
-    const question = `${ask} ${phrase.translation ?? phrase.text}?`;
-    const prompt = question.toLocaleLowerCase().includes(instruction.toLocaleLowerCase())
-      ? question
-      : `${question} ${instruction}.`;
+    const prompt = nextPrompt({
+      translation: phrase.translation ?? phrase.text,
+      name: partnerName(phrase.speaker),
+    });
     push({
       kind: "drill",
       speaker: "teacher",
@@ -292,12 +392,26 @@ export function arrangePimsleur(input: {
           text: chunk,
           delivery: "clear",
         });
+        const gloss = glossFor(chunk, phrase.glosses ?? []);
+        if (gloss && segments.length + 3 < MAX_PIMSLEUR_SEGMENTS - reserved) {
+          push({
+            kind: "explanation",
+            speaker: "teacher",
+            phase: "buildup",
+            language: input.nativeLanguage,
+            text: gloss,
+            delivery: "clear",
+          });
+        }
         push({
           kind: "drill",
           speaker: "teacher",
           phase: "buildup",
           language: input.nativeLanguage,
-          text: input.cues.yourTurn,
+          text: nextPrompt({
+            translation: phrase.translation ?? phrase.text,
+            name: partnerName(phrase.speaker),
+          }),
           delivery: "curious",
         }, BUILDUP_PAUSE_MS);
       }
@@ -357,6 +471,27 @@ function lineFrom(value: unknown, names: SpeakerNames, fallbackLanguage: Languag
   };
 }
 
+function glossFor(chunk: string, glosses: ChunkGloss[]): string | undefined {
+  const key = normalizeChunk(chunk);
+  if (!key) return undefined;
+  return glosses.find((gloss) => normalizeChunk(gloss.text) === key)?.gloss;
+}
+
+function glossesFrom(value: unknown, names: SpeakerNames): ChunkGloss[] {
+  if (!Array.isArray(value)) return [];
+  const glosses: ChunkGloss[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const record = item as Record<string, unknown>;
+    const text = textOf(record.text ?? record.chunk);
+    const gloss = clean(textOf(record.gloss ?? record.note), names);
+    if (!text || !gloss) continue;
+    glosses.push({ text, gloss: gloss.slice(0, 180) });
+    if (glosses.length >= MAX_GLOSSES) break;
+  }
+  return glosses;
+}
+
 function phraseFor(line: PimsleurLine): PimsleurPhrase {
   return { ...line, ...(line.translation ? { note: line.translation } : {}) };
 }
@@ -389,6 +524,10 @@ export function shapePimsleurLesson(value: unknown, context: {
   if (title.length < 3) return null;
   const names = normalizeSpeakerNames(record.speakerNames);
   const cues = cuesFrom(record.cues);
+  const cueRecord = record.cues && typeof record.cues === "object" ? record.cues as Record<string, unknown> : {};
+  const speakPrompts = Array.isArray(cueRecord.speak)
+    ? cueRecord.speak.filter((item): item is string => typeof item === "string")
+    : [];
   const explicitLines = Array.isArray(record.lines) ? record.lines : [];
   const segmentLines = Array.isArray(record.segments)
     ? record.segments.filter((segment) => {
@@ -410,7 +549,12 @@ export function shapePimsleurLesson(value: unknown, context: {
         const line = lineFrom(phrase, names, context.targetLanguage, allowed);
         if (!line) return null;
         const note = textOf((phrase as { note?: unknown }).note);
-        return { ...line, ...(note ? { note: clean(note, names) } : {}) };
+        const glosses = glossesFrom((phrase as { chunks?: unknown }).chunks ?? (phrase as { glosses?: unknown }).glosses, names);
+        return {
+          ...line,
+          ...(note ? { note: clean(note, names) } : {}),
+          ...(glosses.length > 0 ? { glosses } : {}),
+        };
       })
       .filter((phrase): phrase is PimsleurPhrase => Boolean(phrase))
     : [];
@@ -422,6 +566,8 @@ export function shapePimsleurLesson(value: unknown, context: {
     names,
     nativeLanguage: context.nativeLanguage,
     targetLanguage: context.targetLanguage,
+    ...(speakPrompts.length > 0 ? { speakPrompts } : {}),
+    seed: hashSeed(title),
   });
   return {
     title: title.slice(0, 90),
