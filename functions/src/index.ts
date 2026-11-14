@@ -20,7 +20,7 @@ export const generateLessonTask = onTaskDispatched({
   retryConfig: { maxAttempts: 3, minBackoffSeconds: 10, maxBackoffSeconds: 120 },
   rateLimits: { maxConcurrentDispatches: 8, maxDispatchesPerSecond: 4 },
   memory: "1GiB",
-  timeoutSeconds: 540,
+  timeoutSeconds: 900,
 }, async (request) => {
   await processLessonJob(request.data as { uid: string; lessonId: string }, request.retryCount ?? 0);
 });

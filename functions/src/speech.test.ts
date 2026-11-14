@@ -40,6 +40,27 @@ describe("Gemini speech requests", () => {
     expect(request.contents).toContain("[excited] Sehr gut.");
     expect(request.contents).toContain("native speaker of German");
     expect(request.contents).toContain("more slowly");
+    const teaching = geminiSpeechRequest({
+      speaker: "teacher",
+      language: "en-US",
+      text: "How would you say that? Say it out loud.",
+      delivery: "curious",
+      level: "A1",
+      targetLanguage: "de-DE",
+    });
+    expect(teaching.contents).toContain("natural conversational pace");
+    expect(teaching.contents).not.toContain("more slowly");
+    const target = geminiSpeechRequest({
+      speaker: "teacher",
+      language: "de-DE",
+      text: "Guten Tag.",
+      delivery: "clear",
+      level: "A1",
+      targetLanguage: "de-DE",
+    });
+    expect(target.contents).toContain("more slowly");
+    expect(cloudSynthesis({ language: "en-US", level: "A1", pcm: false, targetLanguage: "de-DE" }).speakingRate).toBe(1);
+    expect(cloudSynthesis({ language: "de-DE", level: "A1", pcm: false, targetLanguage: "de-DE" }).speakingRate).toBe(0.78);
     expect(request.contents.startsWith("Say the following")).toBe(true);
     expect(request.config.responseModalities).toEqual([Modality.AUDIO]);
     expect(speech.voiceConfig?.prebuiltVoiceConfig?.voiceName).toBe(roleVoices.teacher);
@@ -80,7 +101,9 @@ describe("Gemini speech requests", () => {
       level: "A1",
     });
     expect(speechConfig(request).languageCode).toBe("ar-xa");
-    expect(request.contents).toContain("short natural pause");
+    expect(request.contents).toContain("soft and clear");
+    expect(request.contents).not.toContain("short natural pause");
+    expect(request.contents).not.toContain("[slowly]");
     expect(cloudSynthesis({ language: "ar-EG", level: "A1", pcm: true })).toMatchObject({
       languageCode: "ar-XA",
       audioEncoding: "LINEAR16",

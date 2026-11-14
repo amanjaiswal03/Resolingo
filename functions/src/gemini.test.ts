@@ -46,7 +46,7 @@ describe("Gemini lesson generation", () => {
     expect(config.responseMimeType).toBe("application/json");
     expect(config.systemInstruction).toContain("howWouldYouSay");
     expect(config.systemInstruction).toContain("lines is an array of 4 to 6");
-    expect(config.systemInstruction).toContain("phrases is an array of 2 or 3");
+    expect(config.systemInstruction).toContain("one item for every line");
     expect(config.systemInstruction).toContain("[[lang:BCP-47]]");
     expect(config.systemInstruction).toContain("speakerNames");
     expect(config.responseJsonSchema).toBeUndefined();

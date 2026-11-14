@@ -34,7 +34,7 @@ const deliveryStyle: Record<Delivery, string> = {
   praise: "soft, warm, and brightly pleased",
   gentle: "soft, patient, and gentle",
   curious: "soft, calm, and curious",
-  clear: "soft, slow, and clear, leaving a short natural pause between phrases",
+  clear: "soft and clear",
   playful: "soft, warm, and lightly playful",
 };
 
@@ -43,7 +43,7 @@ const performanceTag: Record<Delivery, string> = {
   praise: "[excited] ",
   gentle: "[gently] ",
   curious: "[curious] ",
-  clear: "[slowly] ",
+  clear: "",
   playful: "[amused] ",
 };
 
@@ -51,6 +51,17 @@ export function paceForLevel(level: string): "slow" | "moderate" | "natural" {
   if (level === "A1" || level === "A2") return "slow";
   if (level === "B1") return "moderate";
   return "natural";
+}
+
+/** Beginner slowing applies only to the language being learned. */
+export function paceForSpeech(level: string, language: LanguageId, targetLanguage?: LanguageId): "slow" | "moderate" | "natural" {
+  if (targetLanguage && language !== targetLanguage) return "natural";
+  return paceForLevel(level);
+}
+
+export function speakingRateForSpeech(level: string, language: LanguageId, targetLanguage?: LanguageId): number {
+  if (targetLanguage && language !== targetLanguage) return 1;
+  return speakingRateForLevel(level);
 }
 
 const pacePhrase = {
@@ -82,10 +93,12 @@ export function teacherSpeechContents(input: {
   delivery: Delivery;
   level: string;
   language: LanguageId;
+  targetLanguage?: LanguageId;
 }): string {
   const languageName = languageById[input.language].label;
   const spoken = `${performanceTag[input.delivery]}${input.text.trim()}`;
-  return `Say the following in a ${deliveryStyle[input.delivery]} voice, ${pacePhrase[paceForLevel(input.level)]}, at a moderate, steady speaking volume, as a native speaker of ${languageName}: ${spoken}`;
+  const pace = pacePhrase[paceForSpeech(input.level, input.language, input.targetLanguage)];
+  return `Say the following in a ${deliveryStyle[input.delivery]} voice, ${pace}, at a moderate, steady speaking volume, as a native speaker of ${languageName}: ${spoken}`;
 }
 
 export type SceneTurn = {
@@ -99,6 +112,7 @@ export function sceneSpeechContents(input: {
   names: SpeakerNames;
   level: string;
   language: LanguageId;
+  targetLanguage?: LanguageId;
 }): string {
   const languageName = languageById[input.language].label;
   const only = new Set(input.turns.map((turn) => turn.speaker));
@@ -107,7 +121,8 @@ export function sceneSpeechContents(input: {
     const name = input.names[turn.speaker];
     return `${name}: ${performanceTag[turn.delivery]}${spokenLine(turn.text, name)}`;
   }).join("\n");
-  return `TTS the following conversation between ${input.names.speakerA} and ${input.names.speakerB}${who} in a natural voice, ${pacePhrase[paceForLevel(input.level)]}, at a moderate, steady speaking volume, as native speakers of ${languageName}:\n${lines}`;
+  const pace = pacePhrase[paceForSpeech(input.level, input.language, input.targetLanguage)];
+  return `TTS the following conversation between ${input.names.speakerA} and ${input.names.speakerB}${who} in a natural voice, ${pace}, at a moderate, steady speaking volume, as native speakers of ${languageName}:\n${lines}`;
 }
 
 export function teacherSpeechConfig(language: LanguageId): GenerateContentConfig {
@@ -188,9 +203,10 @@ export function cloudSynthesis(input: {
   language: LanguageId;
   level: string;
   pcm: boolean;
+  targetLanguage?: LanguageId;
 }): { languageCode: string; audioEncoding: "MP3" | "LINEAR16"; sampleRateHertz?: number; speakingRate: number } {
   const languageCode = cloudLanguageCode(input.language);
-  const speakingRate = speakingRateForLevel(input.level);
+  const speakingRate = speakingRateForSpeech(input.level, input.language, input.targetLanguage);
   if (input.pcm) {
     return { languageCode, audioEncoding: "LINEAR16", sampleRateHertz: GEMINI_TTS_SAMPLE_RATE, speakingRate };
   }
@@ -354,6 +370,7 @@ export function geminiSpeechRequest(input: {
   delivery: Delivery;
   level: string;
   names?: SpeakerNames;
+  targetLanguage?: LanguageId;
 }): { model: string; contents: string; config: GenerateContentConfig; cachePath: string } {
   const model = input.model?.trim() || DEFAULT_GEMINI_TTS_MODEL;
   if (input.speaker === "teacher") {
@@ -371,6 +388,7 @@ export function geminiSpeechRequest(input: {
     names: input.names ?? DEFAULT_SPEAKER_NAMES,
     level: input.level,
     language: input.language,
+    ...(input.targetLanguage ? { targetLanguage: input.targetLanguage } : {}),
   });
 }
 
@@ -380,6 +398,7 @@ export function sceneSpeechRequest(input: {
   names: SpeakerNames;
   level: string;
   language: LanguageId;
+  targetLanguage?: LanguageId;
 }): { model: string; contents: string; config: GenerateContentConfig; cachePath: string } {
   const model = input.model?.trim() || DEFAULT_GEMINI_TTS_MODEL;
   const contents = sceneSpeechContents(input);
