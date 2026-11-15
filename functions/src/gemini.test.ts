@@ -13,6 +13,7 @@ function lesson(topic: string) {
       speaker: index % 2 === 0 ? "speakerA" : "speakerB",
       language: index % 2 === 0 ? "de-DE" : "en-US",
       text: `Line ${index + 1} of the cafe lesson.`,
+      translation: `Meaning ${index + 1}.`,
     })),
   };
 }
