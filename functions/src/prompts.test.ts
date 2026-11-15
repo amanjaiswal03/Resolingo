@@ -14,16 +14,27 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("B2 learner");
     expect(prompt).toContain("teaching=en-US, target=de-DE");
     expect(prompt).toContain("Ordering at a bakery");
-    expect(prompt).toContain("listen-and-repeat drills");
-    expect(prompt).toContain("one item for every line");
-    expect(prompt).toContain("speak is 6 to 8");
-    expect(prompt).toContain("{translation}");
-    expect(prompt).toContain("Do not gloss every word");
+    expect(prompt).toContain("One teacher");
+    expect(prompt).toContain("no second speaker");
+    expect(prompt).toContain("drills is 6");
     expect(prompt).toContain("der Bahnhof");
-    expect(prompt).toContain("that chunk alone");
     expect(prompt).toContain("means");
     expect(prompt).toContain("[[lang:de-DE]]");
     expect(prompt).toContain("[[lang:en-US]]");
+    expect(prompt).not.toContain("listen-and-repeat drills");
+  });
+
+  it("keeps conversation lessons as a two-speaker dialogue", () => {
+    const prompt = lessonPrompt({
+      type: "conversation",
+      nativeLanguage: languageById["en-US"],
+      targetLanguage: languageById["de-DE"],
+      level: "A2",
+      recentTopics: [],
+    });
+    expect(prompt).toContain("one item for every line");
+    expect(prompt).toContain("speak is 6 to 8");
+    expect(prompt).toContain("realistic conversation");
   });
 
   it("requires transliteration for configured writing systems", () => {

@@ -25,6 +25,7 @@ function asItem(id: string, value: DocumentData): ReviewItem | null {
   const dueAt = typeof value.dueAt === "string" ? value.dueAt : "";
   if (!text || !translation || !language.success || !nativeLanguage.success || Number.isNaN(Date.parse(dueAt))) return null;
   const speaker = value.speaker === "speakerB" ? "speakerB" : "speakerA";
+  const ruleId = typeof value.ruleId === "string" ? value.ruleId.trim() : "";
   return {
     id,
     text,
@@ -32,6 +33,7 @@ function asItem(id: string, value: DocumentData): ReviewItem | null {
     language: language.data,
     nativeLanguage: nativeLanguage.data,
     speaker,
+    ...(ruleId ? { ruleId } : {}),
     strength: Number.isFinite(value.strength) ? Number(value.strength) : 1,
     intervalDays: Number.isFinite(value.intervalDays) ? Number(value.intervalDays) : 1,
     lastSeen: typeof value.lastSeen === "string" ? value.lastSeen : dueAt,
@@ -82,6 +84,7 @@ export async function recordLessonReviews(uid: string, lessonId: string): Promis
     return;
   }
   const now = Date.now();
+  const ruleId = lesson.type === "grammar" && typeof lesson.ruleId === "string" ? lesson.ruleId.trim() : "";
   const collection = db.collection(`users/${uid}/reviewItems`);
   const refs = seen.map((phrase) => collection.doc(reviewItemId(target.data, phrase.text)));
   const existing = await db.getAll(...refs);
@@ -94,6 +97,7 @@ export async function recordLessonReviews(uid: string, lessonId: string): Promis
       language: target.data,
       nativeLanguage: native.data,
       speaker: phrase.speaker,
+      ...(ruleId ? { ruleId } : {}),
     }, now);
     batch.set(refs[index]!, item);
   });

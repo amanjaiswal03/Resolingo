@@ -62,7 +62,7 @@ export default function HomeScreen() {
           <Card style={[styles.lessonCard, { backgroundColor: theme.amber }]}><Body style={styles.eyebrow}>CONVERSATION</Body><Title style={styles.dark}>Speak through a fresh everyday topic.</Title><Body style={styles.darkMuted}>{starting === "conversation" ? "Starting…" : "3–5 minutes · Two voices"}</Body></Card>
         </Pressable>
         <Pressable disabled={startDisabled} onPress={() => void start("grammar")} accessibilityRole="button" accessibilityLabel="Start a grammar lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
-          <Card style={[styles.lessonCard, { backgroundColor: theme.mint }]}><Body style={styles.eyebrow}>GRAMMAR</Body><Title style={styles.dark}>Understand one useful pattern clearly.</Title><Body style={styles.darkMuted}>{starting === "grammar" ? "Starting…" : "3–5 minutes · Guided examples"}</Body></Card>
+          <Card style={[styles.lessonCard, { backgroundColor: theme.mint }]}><Body style={styles.eyebrow}>GRAMMAR</Body><Title style={styles.dark}>Understand one useful pattern clearly.</Title><Body style={styles.darkMuted}>{starting === "grammar" ? "Starting…" : "3–5 minutes · One narrator"}</Body></Card>
         </Pressable>
       </View>
       {lessons.length ? <View style={styles.recent}><Heading>Recent lessons</Heading>{lessons.slice(0, 3).map((lesson) => <LessonRow key={lesson.id} lesson={lesson} />)}</View> : null}
