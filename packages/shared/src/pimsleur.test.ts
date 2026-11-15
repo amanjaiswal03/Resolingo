@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import { GeneratedLessonSchema } from "./schemas.js";
 import {
   ANSWER_PAUSE_MS,
-  REVIEW_INTERVALS_MS,
+  MAX_PIMSLEUR_SEGMENTS,
+  REVIEW_GAPS,
   arrangePimsleur,
   backwardChunks,
   buildupChunks,
   drillsAreUnique,
   shapePimsleurLesson,
+  scheduleReviewSlots,
   speakPromptsMatchAnswers,
   type LessonCues,
 } from "./pimsleur.js";
@@ -84,7 +86,7 @@ describe("Pimsleur arrangement", () => {
     }
     expect(segments.filter((segment) => segment.phase === "answer").every((segment) => segment.pauseAfterMs === undefined)).toBe(true);
     expect(segments.length).toBeGreaterThan(16);
-    expect(segments.length).toBeLessThanOrEqual(96);
+    expect(segments.length).toBeLessThanOrEqual(MAX_PIMSLEUR_SEGMENTS);
     expect(GeneratedLessonSchema.safeParse({
       title: "At the station",
       topic: "Asking for the station",
@@ -104,14 +106,36 @@ describe("Pimsleur arrangement", () => {
       targetLanguage: "de-DE",
       estimateMs: () => 10_000,
     });
-    const answers = segments.filter((segment) => segment.phase === "answer" && segment.text === "Wo ist der Bahnhof?");
+    const answers = segments.filter((segment) => (segment.phase === "answer" || segment.phase === "review") && segment.text === "Wo ist der Bahnhof?");
     expect(answers.length).toBeGreaterThan(1);
     const first = segments.indexOf(answers[0]!);
     const second = segments.indexOf(answers[1]!);
     expect(second - first).toBeGreaterThan(1);
     const between = segments.slice(first + 1, second);
     expect(between.some((segment) => segment.text.includes("Straight ahead") || segment.text === "Geradeaus.")).toBe(true);
-    expect(REVIEW_INTERVALS_MS[0]).toBe(25_000);
+    expect(REVIEW_GAPS).toEqual([1, 3, 6]);
+  });
+});
+
+describe("review scheduler", () => {
+  it("spaces recalls after 1, 3, and 6 other items and keeps them apart", () => {
+    const slots = scheduleReviewSlots(4, 12);
+    const first = slots.filter((slot) => slot.item === 0).map((slot) => slot.gap);
+    expect(first[0]).toBe(1);
+    expect(first).toContain(3);
+    const placed = slots.filter((slot) => slot.afterItem < 4);
+    expect(placed.map((slot) => slot.afterItem)).toEqual([1, 2, 3]);
+    expect(new Set(placed.map((slot) => slot.item)).size).toBeGreaterThan(1);
+    const ends = new Map<number, number>();
+    for (const slot of placed) ends.set(slot.afterItem, (ends.get(slot.afterItem) ?? 0) + 1);
+    expect([...ends.values()].every((count) => count === 1)).toBe(true);
+  });
+
+  it("keeps the nearest gaps when the cap is small", () => {
+    const slots = scheduleReviewSlots(4, 2);
+    expect(slots).toHaveLength(2);
+    expect(slots.every((slot) => slot.gap === 1)).toBe(true);
+    expect(scheduleReviewSlots(3, 0)).toEqual([]);
   });
 });
 
@@ -423,6 +447,48 @@ describe("model shaping", () => {
     expect(stationPrompt?.text).not.toContain("where is the station");
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
-    expect(segments.length).toBeLessThanOrEqual(96);
+    expect(segments.length).toBeLessThanOrEqual(MAX_PIMSLEUR_SEGMENTS);
+  });
+
+  it("recalls earlier lines, recombines them, and warms up with a due phrase", () => {
+    const shaped = shapePimsleurLesson({
+      title: "At the station",
+      topic: "Asking the way",
+      summary: "Ask where the station is.",
+      lines: [
+        { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?", language: "de-DE" },
+        { speaker: "speakerB", text: "Geradeaus.", translation: "Straight ahead.", language: "de-DE" },
+        { speaker: "speakerA", text: "Danke.", translation: "Thanks.", language: "de-DE" },
+        { speaker: "speakerB", text: "Bitte.", translation: "You're welcome.", language: "de-DE" },
+      ],
+      recombinations: [{ speaker: "speakerA", text: "Wo ist das Hotel?", translation: "Where is the hotel?" }],
+      roleplay: { stimulus: "Wo ist der Bahnhof?", text: "Geradeaus.", translation: "Straight ahead." },
+    }, {
+      nativeLanguage: "en-US",
+      targetLanguage: "de-DE",
+      priorReviews: [{ speaker: "speakerA", text: "Einen Kaffee, bitte.", translation: "A coffee, please.", language: "de-DE" }],
+    });
+    const segments = shaped?.segments ?? [];
+    const warmup = segments.findIndex((segment) => segment.phase === "warmup" && segment.pauseAfterMs);
+    expect(segments[warmup + 1]).toMatchObject({ text: "Einen Kaffee, bitte.", phase: "warmup" });
+    expect(warmup).toBeLessThan(segments.findIndex((segment) => segment.phase === "dialogue"));
+    const first = segments.findIndex((segment) => segment.phase === "answer" && segment.text === "Wo ist der Bahnhof?");
+    const again = segments.findIndex((segment, index) => index > first && segment.phase === "review" && segment.text === "Wo ist der Bahnhof?");
+    expect(again).toBeGreaterThan(first);
+    expect(segments.slice(first + 1, again).some((segment) => segment.text === "Geradeaus.")).toBe(true);
+    const fresh = segments.findIndex((segment) => segment.text === "Wo ist das Hotel?");
+    expect(segments[fresh - 1]?.pauseAfterMs).toBeGreaterThan(0);
+    expect(segments[fresh - 1]?.text.toLowerCase()).toContain("where is the hotel");
+    const role = segments.findIndex((segment) => segment.phase === "roleplay" && segment.text === "Geradeaus.");
+    expect(segments[role - 1]?.phase).toBe("roleplay");
+    expect(segments[role - 1]?.pauseAfterMs).toBeGreaterThan(0);
+    expect(segments[role - 2]?.text).toBe("Wo ist der Bahnhof?");
+    const repeats = segments.filter((segment) => segment.pauseAfterMs && !segment.text.includes("?"));
+    const recalls = segments.filter((segment) => segment.phase === "review" && segment.pauseAfterMs);
+    expect(repeats.length).toBeGreaterThan(0);
+    expect(recalls.length).toBeGreaterThan(0);
+    expect(drillsAreUnique(segments)).toBe(true);
+    expect(speakPromptsMatchAnswers(segments)).toBe(true);
+    expect(segments.filter((segment) => segment.pauseAfterMs).every((segment) => segment.speaker === "teacher")).toBe(true);
   });
 });

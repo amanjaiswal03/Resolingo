@@ -24,6 +24,9 @@ export const SegmentKindSchema = z.enum([
 export const DeliverySchema = z.enum(["warm", "praise", "gentle", "curious", "clear", "playful"]);
 export type Delivery = z.infer<typeof DeliverySchema>;
 
+/** Upper bound for one generated lesson, including spaced recalls and a short review warm-up. */
+export const MAX_LESSON_SEGMENTS = 120;
+
 export const LessonSegmentSchema = z.object({
   id: z.string().min(1),
   kind: SegmentKindSchema,
@@ -58,7 +61,7 @@ export const GeneratedLessonSchema = z.object({
   topic: z.string().min(3).max(160),
   summary: z.string().min(5).max(280),
   speakerNames: SpeakerNamesField,
-  segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(96),
+  segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(MAX_LESSON_SEGMENTS),
 });
 export type GeneratedLesson = z.infer<typeof GeneratedLessonSchema>;
 
