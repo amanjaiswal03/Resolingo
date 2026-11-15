@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { elapsedMs, formatClock, lessonTimeline, playbackClips, seekInTimeline } from "./timeline";
+import { elapsedMs, formatClock, lessonTimeline, playbackClips, seekInTimeline, segmentAtClipTime } from "./timeline";
 
 describe("lesson timeline", () => {
   const timeline = lessonTimeline([
@@ -39,6 +39,9 @@ describe("lesson timeline", () => {
     expect(clips.map((clip) => clip.id)).toEqual(["seg_01", "seg_02"]);
     expect(clips[1]?.segmentIds).toEqual(["seg_02", "seg_03"]);
     expect(lessonTimeline(clips).totalMs).toBe(4_000);
+    const scene = clips[1]!;
+    expect(segmentAtClipTime(scene, 0, 3_000)).toBe("seg_02");
+    expect(segmentAtClipTime(scene, 2_900, 3_000)).toBe("seg_03");
   });
 
   it("counts time from the start of the lesson, not the start of the phrase", () => {

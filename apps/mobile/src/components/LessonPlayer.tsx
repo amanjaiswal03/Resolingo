@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type Lesson } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
 import { stopOwnedPlaylist } from "@/lesson/player-lifecycle";
-import { elapsedMs, formatClock, lessonTimeline, playbackClips, seekInTimeline } from "@/lesson/timeline";
+import { elapsedMs, formatClock, lessonTimeline, playbackClips, seekInTimeline, segmentAtClipTime } from "@/lesson/timeline";
 import { Button } from "./Button";
 import { Body } from "./Typography";
 import { useTheme } from "@/theme/tokens";
@@ -53,7 +53,9 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
   indexRef.current = status.currentIndex;
   const playedElapsed = elapsedMs(timeline, status.currentIndex, status.currentTime);
   const shownElapsed = scrubRatio == null ? playedElapsed : scrubRatio * timeline.totalMs;
-  const shown = playable[seekInTimeline(timeline, shownElapsed).index] ?? playable[0];
+  const position = seekInTimeline(timeline, shownElapsed);
+  const shown = playable[position.index] ?? playable[0];
+  const activeSegmentId = shown ? segmentAtClipTime(shown, position.offsetSec * 1_000, timeline.durationsMs[position.index]) : undefined;
   const progress = timeline.totalMs > 0 ? Math.min(1, shownElapsed / timeline.totalMs) : 0;
 
   useEffect(() => () => { alive.current = false; }, []);
@@ -70,8 +72,8 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
   }, [playlist, playable.length]);
   /* eslint-enable react-hooks/immutability */
   useEffect(() => {
-    if (shown) onSegmentChange?.(shown.id);
-  }, [shown, onSegmentChange]);
+    if (activeSegmentId) onSegmentChange?.(activeSegmentId);
+  }, [activeSegmentId, onSegmentChange]);
   useEffect(() => {
     if (!jumpTo || jumpTo.token === jumpToken.current) return;
     jumpToken.current = jumpTo.token;

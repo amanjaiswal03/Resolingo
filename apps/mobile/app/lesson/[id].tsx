@@ -25,8 +25,11 @@ export default function LessonScreen() {
   const [retrying, setRetrying] = useState(false);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [jumpTo, setJumpTo] = useState<{ id: string; token: number } | null>(null);
+  const [jumpDirection, setJumpDirection] = useState<"up" | "down" | null>(null);
   const transcriptRef = useRef<ScrollView>(null);
-  const transcriptOffsets = useRef<Record<string, number>>({});
+  const transcriptFrames = useRef<Record<string, { y: number; height: number }>>({});
+  const scrollY = useRef(0);
+  const viewportHeight = useRef(0);
   const leave = () => {
     if (lessonExit(router.canGoBack()) === "back") router.back();
     else router.replace("/(tabs)");
@@ -62,12 +65,27 @@ export default function LessonScreen() {
     await markLessonCompleted(user.uid, id);
     if (profile?.telemetryConsent) await track("lesson_completed", { type: lesson.type });
   }, [id, lesson, profile?.telemetryConsent, user]);
-  useEffect(() => {
-    if (!activeSegmentId) return;
-    const offset = transcriptOffsets.current[activeSegmentId];
-    if (offset == null) return;
-    transcriptRef.current?.scrollTo({ y: Math.max(0, offset - 8), animated: true });
+  const syncJump = useCallback(() => {
+    const frame = activeSegmentId ? transcriptFrames.current[activeSegmentId] : undefined;
+    const viewHeight = viewportHeight.current;
+    if (!frame || viewHeight <= 0) {
+      setJumpDirection((current) => current === null ? current : null);
+      return;
+    }
+    const top = scrollY.current;
+    const bottom = top + viewHeight;
+    const visible = frame.y + frame.height > top + 12 && frame.y < bottom - 12;
+    const next = visible ? null : frame.y < top ? "up" : "down";
+    setJumpDirection((current) => current === next ? current : next);
   }, [activeSegmentId]);
+  useEffect(() => { syncJump(); }, [syncJump]);
+  const scrollToActive = () => {
+    if (!activeSegmentId) return;
+    const frame = transcriptFrames.current[activeSegmentId];
+    if (!frame) return;
+    setJumpDirection(null);
+    transcriptRef.current?.scrollTo({ y: Math.max(0, frame.y - 8), animated: true });
+  };
   const lessonType = lesson?.type;
   const started = useCallback(() => {
     if (profile?.telemetryConsent && lessonType) void track("playback_started", { type: lessonType });
@@ -98,19 +116,21 @@ export default function LessonScreen() {
     <Screen scroll={false}>
       <Button label="‹ Back" variant="ghost" onPress={leave} />
       <View style={styles.header}><Body muted style={styles.eyebrow}>{lesson.type.toUpperCase()}{lesson.manifest?.totalDurationMs ? ` · ${Math.max(1, Math.round(lesson.manifest.totalDurationMs / 60_000))} MIN` : ""}</Body><Title style={styles.title} numberOfLines={2}>{lesson.title}</Title><Body muted style={styles.summary} numberOfLines={2}>{lesson.summary}</Body></View>
-      <ScrollView ref={transcriptRef} style={styles.transcript} contentContainerStyle={styles.transcriptContent} showsVerticalScrollIndicator={false}>
-        <Heading>Transcript</Heading>
-        {resolved.segments.map((segment) => {
-          const active = resolved.segments.find((item) => item.id === activeSegmentId);
-          const highlighted = segment.id === activeSegmentId || Boolean(active?.audioPath && segment.audioPath === active.audioPath);
-          return <Pressable key={segment.id} accessibilityRole="button" accessibilityLabel="Play this part" onPress={() => setJumpTo({ id: segment.id, token: Date.now() })} onLayout={(event) => { transcriptOffsets.current[segment.id] = event.nativeEvent.layout.y; }}><Card style={highlighted ? { backgroundColor: theme.surfaceMuted, borderColor: theme.primary, borderWidth: 2 } : undefined}><Body muted>{speakerLabel(segment.speaker, resolved.speakerNames)}</Body><Body>{lessonDisplayText(segment.text)}</Body>{segment.translation ? <Body muted>{lessonDisplayText(segment.translation)}</Body> : null}{(segment.pauseAfterMs ?? 0) > 0 ? <Body muted>Say it aloud</Body> : null}{segment.transliteration ? <Body muted>{segment.transliteration}</Body> : null}</Card></Pressable>;
-        })}
-      </ScrollView>
+      <View style={styles.transcript}>
+        <ScrollView ref={transcriptRef} style={styles.transcript} contentContainerStyle={styles.transcriptContent} showsVerticalScrollIndicator={false} scrollEventThrottle={32} onLayout={(event) => { viewportHeight.current = event.nativeEvent.layout.height; syncJump(); }} onScroll={(event) => { scrollY.current = event.nativeEvent.contentOffset.y; viewportHeight.current = event.nativeEvent.layoutMeasurement.height; syncJump(); }}>
+          <Heading>Transcript</Heading>
+          {resolved.segments.map((segment) => {
+            const highlighted = segment.id === activeSegmentId;
+            return <Pressable key={segment.id} accessibilityRole="button" accessibilityLabel="Play this part" onPress={() => setJumpTo({ id: segment.id, token: Date.now() })} onLayout={(event) => { transcriptFrames.current[segment.id] = { y: event.nativeEvent.layout.y, height: event.nativeEvent.layout.height }; if (segment.id === activeSegmentId) syncJump(); }}><Card style={highlighted ? { backgroundColor: theme.surfaceMuted, borderColor: theme.primary, borderWidth: 2 } : undefined}><Body muted>{speakerLabel(segment.speaker, resolved.speakerNames)}</Body><Body>{lessonDisplayText(segment.text)}</Body>{segment.translation ? <Body muted>{lessonDisplayText(segment.translation)}</Body> : null}{(segment.pauseAfterMs ?? 0) > 0 ? <Body muted>Say it aloud</Body> : null}{segment.transliteration ? <Body muted>{segment.transliteration}</Body> : null}</Card></Pressable>;
+          })}
+        </ScrollView>
+        {jumpDirection ? <Pressable accessibilityRole="button" accessibilityLabel="Jump to the line that is playing" onPress={scrollToActive} style={[styles.jump, { backgroundColor: theme.surface, borderColor: theme.border }]}><Body style={styles.jumpIcon}>{jumpDirection === "up" ? "↑" : "↓"}</Body></Pressable> : null}
+      </View>
       <LessonPlayer lesson={resolved} onComplete={complete} onStart={started} onSegmentChange={setActiveSegmentId} jumpTo={jumpTo} />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: "center", justifyContent: "center", gap: 18 }, centerText: { textAlign: "center" }, orb: { width: 82, height: 82, borderRadius: 41, alignItems: "center", justifyContent: "center" }, orbText: { color: "#FFFFFF", fontSize: 32, fontWeight: "800" }, progress: { width: "100%", height: 10, borderRadius: 5, overflow: "hidden" }, progressFill: { height: 10, borderRadius: 5 }, header: { gap: 2 }, eyebrow: { fontSize: 12, lineHeight: 16 }, title: { fontSize: 22, lineHeight: 26 }, summary: { fontSize: 14, lineHeight: 18 }, transcript: { flex: 1 }, transcriptContent: { gap: 16, paddingBottom: 8 },
+  center: { alignItems: "center", justifyContent: "center", gap: 18 }, centerText: { textAlign: "center" }, orb: { width: 82, height: 82, borderRadius: 41, alignItems: "center", justifyContent: "center" }, orbText: { color: "#FFFFFF", fontSize: 32, fontWeight: "800" }, progress: { width: "100%", height: 10, borderRadius: 5, overflow: "hidden" }, progressFill: { height: 10, borderRadius: 5 }, header: { gap: 2 }, eyebrow: { fontSize: 12, lineHeight: 16 }, title: { fontSize: 22, lineHeight: 26 }, summary: { fontSize: 14, lineHeight: 18 }, transcript: { flex: 1 }, transcriptContent: { gap: 16, paddingBottom: 8 }, jump: { position: "absolute", right: 8, bottom: 12, width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, shadowColor: "#08152F", shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 4 }, jumpIcon: { fontSize: 20, lineHeight: 24, fontWeight: "700" },
 });

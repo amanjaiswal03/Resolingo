@@ -55,6 +55,23 @@ export type PlaybackClip = {
   segments: (LessonSegment & { audioUrl: string })[];
 };
 
+/** Which line of a shared dialogue file is playing. Time is split by how long each line is. */
+export function segmentAtClipTime(clip: PlaybackClip, offsetMs: number, durationMs?: number): string {
+  const segments = clip.segments;
+  const only = segments[0];
+  if (!only || segments.length === 1) return clip.id;
+  const weights = segments.map((segment) => Math.max(1, segment.text.trim().length));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  const duration = durationMs && durationMs > 0 ? durationMs : clip.durationMs && clip.durationMs > 0 ? clip.durationMs : totalWeight;
+  const position = Math.min(Math.max(0, offsetMs), Math.max(0, duration - 0.001));
+  let cursor = 0;
+  for (let index = 0; index < segments.length; index += 1) {
+    cursor += (duration * weights[index]!) / totalWeight;
+    if (position < cursor) return segments[index]!.id;
+  }
+  return segments[segments.length - 1]!.id;
+}
+
 /** One playlist item per audio file. A dialogue scene shares one file across its lines. */
 export function playbackClips(segments: LessonSegment[]): PlaybackClip[] {
   const clips: PlaybackClip[] = [];
