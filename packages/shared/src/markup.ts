@@ -2,19 +2,38 @@ import { languageIds, type LanguageId } from "./languages.js";
 
 const TAG = /\[\[lang:([A-Za-z0-9-]+)\]\]|\[\[\/lang\]\]/g;
 
+/**
+ * Well-formed [[lang:xx-XX]] tags plus stray closers the model sometimes emits:
+ * [/lang], [[/de]], [[de]], [ / lang ].
+ */
+const LANGUAGE_TAG = /\[{1,2}\s*\/\s*(?:lang\b(?::[A-Za-z0-9-]+)?|[a-z]{2,8}(?:-[A-Za-z0-9]+)?)\s*\]{1,2}|\[{1,2}\s*lang\b(?::[A-Za-z0-9-]+)?\s*\]{1,2}|\[{2}\s*[a-z]{2,3}(?:-[A-Za-z0-9]+)?\s*\]{2}/gi;
+
 export type SpeechSpan = { language: LanguageId; text: string };
 
 function isLanguageId(value: string): value is LanguageId {
   return (languageIds as readonly string[]).includes(value);
 }
 
-/** Transcript text with pronunciation tags removed. */
+export function stripLanguageTags(text: string): string {
+  return text.replace(LANGUAGE_TAG, "");
+}
+
+/** Transcript text with pronunciation tags removed, including stray closers. */
 export function lessonDisplayText(text: string): string {
-  return text
-    .replace(/\[\[lang:[^\]]+\]\]/g, "")
-    .replace(/\[\[\/lang\]\]/g, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .trim();
+  return stripLanguageTags(text).replace(/[ \t]{2,}/g, " ").trim();
+}
+
+/** What the app stores and renders. Tags stay on the in-memory segment until audio is made. */
+export function displayLessonSegment<T extends { text: string; translation?: string | undefined; transliteration?: string | undefined }>(segment: T): T {
+  const text = lessonDisplayText(segment.text);
+  const translation = segment.translation === undefined ? undefined : lessonDisplayText(segment.translation);
+  const transliteration = segment.transliteration === undefined ? undefined : lessonDisplayText(segment.transliteration);
+  return {
+    ...segment,
+    text: text || segment.text,
+    ...(translation !== undefined ? { translation: translation || segment.translation } : {}),
+    ...(transliteration !== undefined ? { transliteration: transliteration || segment.transliteration } : {}),
+  };
 }
 
 /**
@@ -45,7 +64,9 @@ export function speechSpans(text: string, base: LanguageId): SpeechSpan[] {
     cursor = index + match[0].length;
   }
   pushSpan(spans, language, text.slice(cursor));
-  return foldPunctuation(spans.filter((span) => span.text.trim().length > 0));
+  return foldPunctuation(spans
+    .map((span) => ({ ...span, text: stripLanguageTags(span.text).replace(/[ \t]{2,}/g, " ") }))
+    .filter((span) => span.text.trim().length > 0));
 }
 
 function foldPunctuation(spans: SpeechSpan[]): SpeechSpan[] {

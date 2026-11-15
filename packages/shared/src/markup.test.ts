@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { lessonDisplayText, markupIssues, repairMarkup, speechSpans } from "./markup.js";
+import { displayLessonSegment, lessonDisplayText, markupIssues, repairMarkup, speechSpans } from "./markup.js";
 
 describe("pronunciation markup", () => {
   it("shows the line without tags", () => {
     expect(lessonDisplayText("Say [[lang:de-DE]]Guten Tag[[/lang]] please.")).toBe("Say Guten Tag please.");
+    expect(lessonDisplayText("Hello [/lang] [[/de]] [[de]] there")).toBe("Hello there");
+    expect(lessonDisplayText("Anna[/lang]!")).toBe("Anna!");
+    expect(speechSpans("Say [/lang] please.", "en-US")).toEqual([{ language: "en-US", text: "Say please." }]);
+    expect(displayLessonSegment({
+      text: "Say [[lang:de-DE]]Guten Tag[[/lang]] [/lang]",
+      translation: "[[de]]hello[[/de]]",
+    })).toEqual({ text: "Say Guten Tag", translation: "hello" });
   });
 
   it("keeps a target phrase inside a teaching-language line in the target language", () => {

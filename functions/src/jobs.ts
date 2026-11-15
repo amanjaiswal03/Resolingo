@@ -4,6 +4,7 @@ import {
   CefrLevelSchema,
   LanguageIdSchema,
   LessonTypeSchema,
+  displayLessonSegment,
   type GeneratedLesson,
   type LessonSegment,
 } from "@resolingo/shared";
@@ -137,7 +138,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       topic: content.topic,
       summary: content.summary,
       speakerNames: content.speakerNames,
-      segments: content.segments,
+      segments: content.segments.map((segment) => displayLessonSegment(segment)),
       status: "synthesizing_audio",
       progress: 40,
       updatedAt: FieldValue.serverTimestamp(),
@@ -181,7 +182,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       const reservations = withoutReservation(usage.reservations, payload.lessonId);
       const readyCount = Math.min(DAILY_LIMIT, Number(usage.readyCount ?? 0) + 1);
       transaction.update(lessonRef, {
-        segments,
+        segments: segments.map((segment) => displayLessonSegment(segment)),
         status: "ready",
         progress: 100,
         manifest: {
