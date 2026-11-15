@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type Lesson } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
 import { stopOwnedPlaylist } from "@/lesson/player-lifecycle";
-import { elapsedMs, formatClock, lessonTimeline, playbackClips, seekInTimeline, segmentAtClipTime } from "@/lesson/timeline";
+import { elapsedMs, formatClock, lessonTimeline, playbackClips, seekInTimeline, segmentAtClipTime, segmentStartInClip } from "@/lesson/timeline";
 import { Button } from "./Button";
 import { Body } from "./Typography";
 import { useTheme } from "@/theme/tokens";
@@ -78,15 +78,16 @@ export function LessonPlayer({ lesson, onComplete, onStart, onSegmentChange, jum
     if (!jumpTo || jumpTo.token === jumpToken.current) return;
     jumpToken.current = jumpTo.token;
     const index = playable.findIndex((clip) => clip.segmentIds.includes(jumpTo.id));
+    const clip = playable[index];
     const start = timeline.startsMs[index];
-    if (index < 0 || start == null) return;
+    if (!clip || index < 0 || start == null) return;
     completed.current = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- drop the scrub preview when an external jump is applied
     setScrubRatio(null);
     if (index !== indexRef.current) playlist.skipTo(index);
-    void playlist.seekTo(0);
+    void playlist.seekTo(segmentStartInClip(clip, jumpTo.id, timeline.durationsMs[index]) / 1_000);
     playlist.play();
-  }, [jumpTo, playable, playlist, timeline.startsMs]);
+  }, [jumpTo, playable, playlist, timeline.durationsMs, timeline.startsMs]);
   useEffect(() => {
     if (!status.isLoaded || status.duration <= 0) return;
     const durationMs = Math.round(status.duration * 1_000);

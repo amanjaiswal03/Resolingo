@@ -55,14 +55,25 @@ export type PlaybackClip = {
   segments: (LessonSegment & { audioUrl: string })[];
 };
 
+function lineWeights(clip: PlaybackClip): number[] {
+  return clip.segments.map((segment) => Math.max(1, segment.text.trim().length));
+}
+
+function sharedClipDuration(clip: PlaybackClip, durationMs: number | undefined, weights: number[]): number {
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  if (durationMs && durationMs > 0) return durationMs;
+  if (clip.durationMs && clip.durationMs > 0) return clip.durationMs;
+  return totalWeight;
+}
+
 /** Which line of a shared dialogue file is playing. Time is split by how long each line is. */
 export function segmentAtClipTime(clip: PlaybackClip, offsetMs: number, durationMs?: number): string {
   const segments = clip.segments;
   const only = segments[0];
   if (!only || segments.length === 1) return clip.id;
-  const weights = segments.map((segment) => Math.max(1, segment.text.trim().length));
+  const weights = lineWeights(clip);
+  const duration = sharedClipDuration(clip, durationMs, weights);
   const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
-  const duration = durationMs && durationMs > 0 ? durationMs : clip.durationMs && clip.durationMs > 0 ? clip.durationMs : totalWeight;
   const position = Math.min(Math.max(0, offsetMs), Math.max(0, duration - 0.001));
   let cursor = 0;
   for (let index = 0; index < segments.length; index += 1) {
@@ -70,6 +81,21 @@ export function segmentAtClipTime(clip: PlaybackClip, offsetMs: number, duration
     if (position < cursor) return segments[index]!.id;
   }
   return segments[segments.length - 1]!.id;
+}
+
+/** Where a line starts inside a shared dialogue file, using the same split as playback. */
+export function segmentStartInClip(clip: PlaybackClip, segmentId: string, durationMs?: number): number {
+  const segments = clip.segments;
+  if (segments.length <= 1) return 0;
+  const weights = lineWeights(clip);
+  const duration = sharedClipDuration(clip, durationMs, weights);
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  let cursor = 0;
+  for (let index = 0; index < segments.length; index += 1) {
+    if (segments[index]!.id === segmentId) return cursor;
+    cursor += (duration * weights[index]!) / totalWeight;
+  }
+  return 0;
 }
 
 /** One playlist item per audio file. A dialogue scene shares one file across its lines. */
