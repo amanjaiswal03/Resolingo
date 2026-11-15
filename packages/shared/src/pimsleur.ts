@@ -20,6 +20,8 @@ export const MAX_DIALOGUE_LINES = 6;
 /** One drilled phrase per dialogue turn. A 4-turn conversation is not cut down to 3. */
 export const MAX_PHRASES = MAX_DIALOGUE_LINES;
 export const MAX_BUILDUP_CHUNKS = 3;
+/** Model-chosen pieces for one line. Zero means the line is drilled whole, in recall only. */
+export const MAX_DRILL_CHUNKS = 6;
 /** Room for every turn's buildup, recall, spaced review, and the closing replay. */
 export const MAX_PIMSLEUR_SEGMENTS = 96;
 
@@ -71,6 +73,7 @@ export const FALLBACK_SPEAK_PROMPTS = [
 
 const MAX_SPEAK_PROMPTS = 12;
 const MAX_GLOSSES = 2;
+const INTERJECTIONS = new Set(["ah", "oh", "uh", "um", "hmm", "hm", "wow", "hey", "ach", "äh", "aeh", "ähm", "aehm", "na", "tja", "oy", "ooh", "oops"]);
 
 export type PimsleurLine = {
   speaker: "speakerA" | "speakerB";
@@ -129,6 +132,47 @@ export function buildupChunks(phrase: string): string[] {
   if (normalizeChunk(spoken[spoken.length - 1] ?? "") === normalizeChunk(full)) return spoken;
   if (spoken.length === 1) return [full];
   return [...spoken.slice(0, -1), full];
+}
+
+function nameList(names: SpeakerNames): string[] {
+  return [names.teacher, names.speakerA, names.speakerB].map((name) => name.trim()).filter(Boolean);
+}
+
+function bareWord(text: string): string {
+  return text.replace(/[^\p{L}\p{N}'’-]+/gu, "").toLocaleLowerCase();
+}
+
+/** A chunk that is only a speaker's name or a throwaway interjection. */
+export function isEmptyDrill(text: string, names: SpeakerNames): boolean {
+  const token = bareWord(text);
+  if (!token) return true;
+  if (nameList(names).some((name) => name.toLocaleLowerCase() === token)) return true;
+  return INTERJECTIONS.has(token);
+}
+
+/** Drop a leading or trailing "Anna," so the drill is the phrase, not the vocative. */
+export function stripVocatives(text: string, names: SpeakerNames): string {
+  let result = text.trim();
+  for (const name of nameList(names)) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    result = result.replace(new RegExp(`^${escaped}\\s*[,!:;.\\-—]+\\s*`, "iu"), "").trim();
+    result = result.replace(new RegExp(`\\s*[,!:;.\\-—]+\\s*${escaped}\\s*[!?.…]*$`, "iu"), "").trim();
+  }
+  return result || text.trim();
+}
+
+/** Target-language drill audio is not played twice in a row. Dialogue may repeat a line. */
+export function drillsAreUnique(segments: LessonSegment[]): boolean {
+  for (let index = 1; index < segments.length; index += 1) {
+    const previous = segments[index - 1];
+    const current = segments[index];
+    if (!previous || !current) continue;
+    if (previous.phase === "dialogue" || previous.phase === "closing") continue;
+    if (current.phase === "dialogue" || current.phase === "closing") continue;
+    if (previous.speaker === "teacher" || current.speaker === "teacher") continue;
+    if (previous.text === current.text && previous.language === current.language) return false;
+  }
+  return true;
 }
 
 /** Last word (or syllable) first, then a longer ending, then the whole phrase. */
@@ -461,17 +505,18 @@ export function arrangePimsleur(input: {
   });
 
   for (const phrase of phrases) {
+    const drilled = drillPlan(phrase, names);
+    if (!drilled) continue;
     drain();
     push({
       kind: "explanation",
       speaker: "teacher",
       phase: "breakdown",
       language: input.nativeLanguage,
-      text: explained(phrase, input.cues.listen),
+      text: explained(drilled.phrase, input.cues.listen),
       delivery: "clear",
     });
-    const chunks = alignChunks(buildupChunks(phrase.text), phrase);
-    if (chunks.length > 1) {
+    if (drilled.chunks.length > 0) {
       push({
         kind: "narration",
         speaker: "teacher",
@@ -480,19 +525,11 @@ export function arrangePimsleur(input: {
         text: input.cues.buildup,
         delivery: "clear",
       });
-      for (const chunk of chunks) {
-        const translation = chunkTranslation(chunk, phrase);
+      for (const chunk of drilled.chunks) {
+        const translation = chunkTranslation(chunk, drilled.phrase);
         const gloss = chunk.gloss ? linkedGloss(chunk.text, chunk.gloss, translation, phrase.language) : undefined;
-        const slots = 3 + (gloss ? 1 : 0);
+        const slots = 2 + (gloss ? 1 : 0);
         if (segments.length + slots > MAX_PIMSLEUR_SEGMENTS - reserved) break;
-        push({
-          kind: "drill",
-          speaker: phrase.speaker,
-          phase: "buildup",
-          language: phrase.language,
-          text: chunk.text,
-          delivery: "clear",
-        });
         if (gloss) {
           push({
             kind: "explanation",
@@ -525,7 +562,7 @@ export function arrangePimsleur(input: {
         });
       }
     }
-    if (recall(phrase)) reviews.push({ phrase, step: 0, dueAt: clock + REVIEW_INTERVALS_MS[0] });
+    if (recall(drilled.phrase)) reviews.push({ phrase: drilled.phrase, step: 0, dueAt: clock + REVIEW_INTERVALS_MS[0] });
   }
   drain();
 
@@ -586,22 +623,24 @@ function chunkTranslation(chunk: ChunkNote, phrase: PimsleurPhrase): string | un
   return undefined;
 }
 
-function alignChunks(spoken: string[], phrase: PimsleurPhrase): ChunkNote[] {
-  const notes = phrase.chunks ?? [];
-  return spoken.map((text, index) => {
-    const key = normalizeChunk(text);
-    const byText = notes.find((note) => note.text && normalizeChunk(presentChunk(note.text, phrase.text)) === key);
-    const byIndex = notes[index];
-    const indexed = byIndex && (!byIndex.text || normalizeChunk(presentChunk(byIndex.text, phrase.text)) === key)
-      ? byIndex
-      : undefined;
-    const source = byText ?? indexed;
-    return {
-      text,
-      ...(source?.translation ? { translation: source.translation } : {}),
-      ...(source?.gloss ? { gloss: source.gloss } : {}),
-    };
-  });
+/** The model's pieces, in the model's order. No automatic word-by-word split. */
+function drillPlan(phrase: PimsleurPhrase, names: SpeakerNames): { phrase: PimsleurPhrase; chunks: ChunkNote[] } | null {
+  const text = stripVocatives(phrase.text, names);
+  if (isEmptyDrill(text, names)) return null;
+  const translation = phrase.translation ? stripVocatives(phrase.translation, names) : undefined;
+  const drilled: PimsleurPhrase = {
+    ...phrase,
+    text,
+    ...(translation ? { translation } : {}),
+  };
+  const full = normalizeChunk(text);
+  const chunks = (phrase.chunks ?? [])
+    .map((note) => ({
+      ...note,
+      text: presentChunk(stripVocatives(note.text, names), text),
+    }))
+    .filter((note) => note.text && !isEmptyDrill(note.text, names) && normalizeChunk(note.text) !== full);
+  return { phrase: drilled, chunks };
 }
 
 function notesFrom(value: unknown, names: SpeakerNames): ChunkNote[] {
@@ -622,7 +661,7 @@ function notesFrom(value: unknown, names: SpeakerNames): ChunkNote[] {
       ...(translation ? { translation: translation.slice(0, 180) } : {}),
       ...(keepGloss && gloss ? { gloss: gloss.slice(0, 240) } : {}),
     });
-    if (notes.length >= MAX_BUILDUP_CHUNKS) break;
+    if (notes.length >= MAX_DRILL_CHUNKS) break;
   }
   return notes;
 }
