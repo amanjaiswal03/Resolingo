@@ -16,7 +16,9 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("Ordering at a bakery");
     expect(prompt).toContain("One teacher");
     expect(prompt).toContain("no second speaker");
-    expect(prompt).toContain("drills is 6");
+    expect(prompt).toContain("at least 12");
+    expect(prompt).toContain("you, to a friend");
+    expect(prompt).toContain("at most twice");
     expect(prompt).toContain("der Bahnhof");
     expect(prompt).toContain("means");
     expect(prompt).toContain("[[lang:de-DE]]");

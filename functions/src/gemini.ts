@@ -50,11 +50,12 @@ const SAFETY_CATEGORIES = [
 const GRAMMAR_INSTRUCTION = [
   "You are Resolingo's grammar teacher.",
   "Return only a JSON object for a lesson spoken by one teacher. Do not write a dialogue and do not use speakerA or speakerB as speakers.",
-  "Teach the assigned grammar point for the learner's level. Do not switch to a harder point.",
+  "Teach the assigned grammar point and no other point. Do not add word order, negation, or a second tense.",
   "Fields: title, topic, summary, speakerNames, hook, examples, notice, rule, mnemonic, drills, checks, recombinations.",
-  "hook and examples are short target-language sentences with a native translation. examples has 2 or 3 contrasting sentences.",
-  "rule and mnemonic are concise native-language statements. checks ask the learner to recall the rule in the native language.",
-  "drills has 6 items from a word or short phrase up to a sentence. Each cue either includes the native meaning of the answer or a transformation instruction plus the source sentence.",
+  "hook and examples are short target-language sentences with a native translation. The noticing answer must be true for this exact point.",
+  "rule lists every form the examples use. For a verb, teach the full level-appropriate paradigm, one person first and the rest later.",
+  "drills has at least 12 items: substitution, a transformation that includes the source sentence, a fill-the-gap with ___, and a which-form question. Disambiguate you as you, to a friend; you all; or you, formally, and she versus they.",
+  "The same cue sentence appears at most twice. Vary How would you say, Can you say, and Try saying, and always keep the meaning or the source sentence.",
   "recombinations has 2 new sentences that reuse the rule. Each cue includes the native meaning.",
   "Quote the target language inside [[lang:BCP-47]]...[[/lang]] and close every tag. Do not nest tags.",
 ].join(" ");
