@@ -9,6 +9,7 @@ import {
   buildupChunks,
   drillsAreUnique,
   shapePimsleurLesson,
+  recallPromptsCiteMeanings,
   scheduleReviewSlots,
   speakPromptsMatchAnswers,
   type LessonCues,
@@ -75,6 +76,7 @@ describe("Pimsleur arrangement", () => {
     expect(segments.some((segment) => segment.phase === "buildup" && segment.language === "de-DE")).toBe(false);
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
+    expect(recallPromptsCiteMeanings(segments)).toBe(true);
     const answers = lines.map((line) => segments.find((segment) => segment.phase === "answer" && segment.text === line.text));
     expect(answers.every(Boolean)).toBe(true);
     const pauses = segments.filter((segment) => segment.pauseAfterMs);
@@ -114,6 +116,37 @@ describe("Pimsleur arrangement", () => {
     const between = segments.slice(first + 1, second);
     expect(between.some((segment) => segment.text.includes("Straight ahead") || segment.text === "Geradeaus.")).toBe(true);
     expect(REVIEW_GAPS).toEqual([1, 3, 6]);
+  });
+});
+
+describe("recall prompts", () => {
+  const line = (text: string, extra: Partial<import("./schemas.js").LessonSegment> = {}) => ({
+    id: text,
+    kind: "drill" as const,
+    speaker: "speakerA" as const,
+    delivery: "clear" as const,
+    language: "de-DE" as const,
+    text,
+    ...extra,
+  });
+
+  it("requires the answer's meaning unless that exact line was just heard", () => {
+    const missing = [
+      line("How would you ask for that?", { speaker: "teacher", language: "en-US", phase: "recall", pauseAfterMs: 5000 }),
+      line("Wo ist der Bahnhof?", { phase: "answer", translation: "Where is the station?" }),
+    ];
+    expect(recallPromptsCiteMeanings(missing)).toBe(false);
+    const echoed = [
+      line("Wo ist der Bahnhof?"),
+      line("Say it out loud.", { speaker: "teacher", language: "en-US", phase: "recall", pauseAfterMs: 5000 }),
+      line("Wo ist der Bahnhof?", { phase: "answer", translation: "Where is the station?" }),
+    ];
+    expect(recallPromptsCiteMeanings(echoed)).toBe(true);
+    const cited = [
+      line("How would you say Where is the station?", { speaker: "teacher", language: "en-US", phase: "review", pauseAfterMs: 5000 }),
+      line("Wo ist der Bahnhof?", { phase: "review", translation: "Where is the station?" }),
+    ];
+    expect(recallPromptsCiteMeanings(cited)).toBe(true);
   });
 });
 
@@ -480,13 +513,18 @@ describe("model shaping", () => {
     expect(segments[fresh - 1]?.pauseAfterMs).toBeGreaterThan(0);
     expect(segments[fresh - 1]?.text.toLowerCase()).toContain("where is the hotel");
     const role = segments.findIndex((segment) => segment.phase === "roleplay" && segment.text === "Geradeaus.");
-    expect(segments[role - 1]?.phase).toBe("roleplay");
+    expect(segments[role - 1]?.text).toBe("Lukas asks you: Where is the station. Tell him: Straight ahead.");
     expect(segments[role - 1]?.pauseAfterMs).toBeGreaterThan(0);
     expect(segments[role - 2]?.text).toBe("Wo ist der Bahnhof?");
-    const repeats = segments.filter((segment) => segment.pauseAfterMs && !segment.text.includes("?"));
+    expect(segments[role]).toMatchObject({ speaker: "speakerB", text: "Geradeaus." });
+    expect(segments[role]?.text).not.toBe(segments[role - 2]?.text);
     const recalls = segments.filter((segment) => segment.phase === "review" && segment.pauseAfterMs);
-    expect(repeats.length).toBeGreaterThan(0);
     expect(recalls.length).toBeGreaterThan(0);
+    expect(recalls.every((segment) => {
+      const answer = segments[segments.indexOf(segment) + 1];
+      return answer?.translation && segment.text.toLowerCase().includes(answer.translation.replace(/[.!?？。]+$/u, "").trim().toLowerCase());
+    })).toBe(true);
+    expect(recallPromptsCiteMeanings(segments)).toBe(true);
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
     expect(segments.filter((segment) => segment.pauseAfterMs).every((segment) => segment.speaker === "teacher")).toBe(true);

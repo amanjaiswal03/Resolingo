@@ -339,23 +339,67 @@ function longestMeaning(prompt: string, meanings: string[]): string | undefined 
     .sort((left, right) => right.length - left.length)[0];
 }
 
+const RECALL_PHASES = new Set(["recall", "review", "warmup", "recombine", "roleplay"]);
+
+function cites(prompt: string, meaning: string): boolean {
+  return meaning.length > 0 && prompt.toLocaleLowerCase().includes(meaning.toLocaleLowerCase());
+}
+
+/** The segment before the prompt is that same target line, so "Say it out loud" has something to echo. */
+function justHeardTarget(segments: LessonSegment[], promptIndex: number, answer: LessonSegment): boolean {
+  const previous = segments[promptIndex - 1];
+  if (!previous || previous.language !== answer.language) return false;
+  return normalizeChunk(previous.text) === normalizeChunk(answer.text);
+}
+
+/**
+ * Every recall, review, warm-up, recombination, and role-play prompt names the
+ * answer's meaning. A cue with no meaning is kept only when that exact target
+ * line was the clip just before it.
+ */
+export function recallPromptsCiteMeanings(segments: LessonSegment[]): boolean {
+  for (let index = 0; index < segments.length; index += 1) {
+    const prompt = segments[index];
+    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher") continue;
+    if (!RECALL_PHASES.has(prompt.phase ?? "")) continue;
+    const answer = segments[index + 1];
+    if (!answer || answer.speaker === "teacher") return false;
+    const own = meaningOf(answer.translation);
+    if (cites(prompt.text, own)) continue;
+    if (prompt.phase !== "roleplay" && justHeardTarget(segments, index, answer)) continue;
+    return false;
+  }
+  return true;
+}
+
 /**
  * A paused prompt is followed by its answer. If the prompt cites a meaning,
- * it is that answer's meaning, never a longer line's translation. A plain
- * "Repeat after me" cites no meaning, which is how a brand-new line is echoed.
+ * the longest one is that answer's meaning, never a longer line's translation.
+ * A role-play cue may also mention what the other speaker asked.
  */
 export function speakPromptsMatchAnswers(segments: LessonSegment[]): boolean {
+  if (!recallPromptsCiteMeanings(segments)) return false;
   const known = segments.map((segment) => segment.translation).filter((translation): translation is string => Boolean(translation));
   for (let index = 0; index < segments.length; index += 1) {
     const prompt = segments[index];
     if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher") continue;
     const answer = segments[index + 1];
     if (!answer || answer.speaker === "teacher") return false;
+    if (prompt.phase === "roleplay") continue;
     const own = meaningOf(answer.translation);
     const longest = longestMeaning(prompt.text, known);
+    if (RECALL_PHASES.has(prompt.phase ?? "")) {
+      if (justHeardTarget(segments, index, answer) && !longest) continue;
+      if (!own || longest?.toLocaleLowerCase() !== own.toLocaleLowerCase()) return false;
+      continue;
+    }
     if (longest && longest.toLocaleLowerCase() !== own.toLocaleLowerCase()) return false;
   }
   return true;
+}
+
+function meaningPrompt(meaning: string): string {
+  return `How would you say ${meaning}?`;
 }
 
 function enforcePromptAnswers(segments: LessonSegment[]): LessonSegment[] {
@@ -367,8 +411,17 @@ function enforcePromptAnswers(segments: LessonSegment[]): LessonSegment[] {
     if (!answer || answer.speaker === "teacher") return segment;
     const own = meaningOf(answer.translation);
     const longest = longestMeaning(segment.text, known);
-    const matches = !longest || longest.toLocaleLowerCase() === own.toLocaleLowerCase();
-    return matches ? segment : { ...segment, text: "Repeat after me." };
+    const recall = RECALL_PHASES.has(segment.phase ?? "");
+    if (segment.phase === "roleplay") {
+      return cites(segment.text, own) ? segment : { ...segment, text: meaningPrompt(own) };
+    }
+    if (recall) {
+      if (justHeardTarget(segments, index, answer) && !longest) return segment;
+      if (own && longest?.toLocaleLowerCase() === own.toLocaleLowerCase()) return segment;
+      return own ? { ...segment, text: meaningPrompt(own) } : segment;
+    }
+    if (!longest || longest.toLocaleLowerCase() === own.toLocaleLowerCase()) return segment;
+    return { ...segment, text: own ? meaningPrompt(own) : "Repeat after me." };
   });
 }
 
@@ -508,19 +561,16 @@ export function arrangePimsleur(input: {
     phrase: PimsleurPhrase,
     promptPhase: string,
     answerPhase: string,
-    style: "repeat" | "meaning",
   ): boolean => {
-    if (segments.length + 2 > MAX_PIMSLEUR_SEGMENTS - reserved) return false;
-    const prompt = nextPrompt({
-      ...(style === "meaning" && phrase.translation ? { translation: phrase.translation } : {}),
-      name: partnerName(phrase.speaker),
-    });
+    const meaning = meaningOf(phrase.translation);
+    if (!meaning || segments.length + 2 > MAX_PIMSLEUR_SEGMENTS - reserved) return false;
+    const prompt = nextPrompt({ translation: meaning, name: partnerName(phrase.speaker) });
     const prompted = push({
       kind: "drill",
       speaker: "teacher",
       phase: promptPhase,
       language: input.nativeLanguage,
-      text: prompt,
+      text: cites(prompt, meaning) ? prompt : meaningPrompt(meaning),
       delivery: "curious",
     }, ANSWER_PAUSE_MS);
     if (!prompted) return false;
@@ -537,6 +587,8 @@ export function arrangePimsleur(input: {
   };
   const playRole = (phrasesLeft: number): void => {
     if (!role || !canAdd(3, phrasesLeft)) return;
+    const reply = meaningOf(role.response.translation);
+    if (!reply) return;
     const previous = segments[segments.length - 1];
     const repeated = previous
       && previous.speaker !== "teacher"
@@ -552,7 +604,29 @@ export function arrangePimsleur(input: {
         delivery: "warm",
       });
     }
-    ask(role.response, "roleplay", "roleplay", "meaning");
+    const asker = role.stimulus.speaker === "speakerA" ? names.speakerA : names.speakerB;
+    const pronoun = role.stimulus.speaker === "speakerA" ? "him" : "her";
+    const situation = meaningOf(role.stimulus.translation);
+    const prompt = input.nativeLanguage.startsWith("en") && situation
+      ? `${asker} asks you: ${situation}. Tell ${pronoun}: ${reply}.`
+      : `${asker}: ${situation ? `${situation}. ` : ""}${reply}.`;
+    push({
+      kind: "drill",
+      speaker: "teacher",
+      phase: "roleplay",
+      language: input.nativeLanguage,
+      text: prompt,
+      delivery: "curious",
+    }, ANSWER_PAUSE_MS);
+    push({
+      kind: "drill",
+      speaker: role.response.speaker,
+      phase: "roleplay",
+      language: role.response.language,
+      text: role.response.text,
+      ...(role.response.translation ? { translation: role.response.translation } : {}),
+      delivery: "clear",
+    });
   };
 
   push({
@@ -565,7 +639,7 @@ export function arrangePimsleur(input: {
   });
   for (const phrase of warmup) {
     if (!canAdd(2, plans.length)) break;
-    ask(phrase, "warmup", "warmup", "meaning");
+    ask(phrase, "warmup", "warmup");
   }
 
   for (const line of lines) {
@@ -651,15 +725,15 @@ export function arrangePimsleur(input: {
         });
       }
     }
-    ask(drilled.phrase, "recall", "answer", drilled.chunks.length > 0 ? "meaning" : "repeat");
+    ask(drilled.phrase, "recall", "answer");
     for (const slot of afterSlot.get(index) ?? []) {
       const earlier = plans[slot.item]?.phrase;
-      if (earlier && canAdd(2, phrasesLeft)) ask(earlier, "review", "review", "meaning");
+      if (earlier && canAdd(2, phrasesLeft)) ask(earlier, "review", "review");
     }
     const freshPhrase = fresh[usedFresh];
-    if (index >= 1 && freshPhrase && canAdd(2, phrasesLeft) && ask(freshPhrase, "recombine", "recombine", "meaning")) usedFresh += 1;
+    if (index >= 1 && freshPhrase && canAdd(2, phrasesLeft) && ask(freshPhrase, "recombine", "recombine")) usedFresh += 1;
     if (!mixedIn && mixed[0] && index >= 1 && canAdd(2, phrasesLeft)) {
-      mixedIn = ask(mixed[0], "review", "review", "meaning");
+      mixedIn = ask(mixed[0], "review", "review");
     }
     if (!playedRole && roleAt === index) {
       playRole(phrasesLeft);
@@ -669,11 +743,11 @@ export function arrangePimsleur(input: {
   for (const slot of ending) {
     const earlier = plans[slot.item]?.phrase;
     if (!earlier || !canAdd(2, 0)) break;
-    ask(earlier, "review", "review", "meaning");
+    ask(earlier, "review", "review");
   }
   const lastFresh = fresh[usedFresh];
-  if (lastFresh && canAdd(2, 0)) ask(lastFresh, "recombine", "recombine", "meaning");
-  if (!mixedIn && mixed[0] && canAdd(2, 0)) ask(mixed[0], "review", "review", "meaning");
+  if (lastFresh && canAdd(2, 0)) ask(lastFresh, "recombine", "recombine");
+  if (!mixedIn && mixed[0] && canAdd(2, 0)) ask(mixed[0], "review", "review");
   if (!playedRole && roleAt === plans.length) playRole(0);
 
   push({
