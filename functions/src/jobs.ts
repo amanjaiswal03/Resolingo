@@ -15,6 +15,7 @@ import { generateLessonContent } from "./gemini.js";
 import { sendUserPush } from "./push.js";
 import { withoutReservation } from "./quota.js";
 import { lessonAudioUnits } from "./speech.js";
+import { loadDueReviewPhrases } from "./reviews.js";
 import { synthesizeScene, synthesizeSegment } from "./tts.js";
 
 type JobPayload = { uid: string; lessonId: string };
@@ -131,6 +132,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       targetLanguage,
       level,
       recentTopics: await recentTopics(payload.uid, topicKey),
+      priorReviews: await loadDueReviewPhrases(payload.uid, targetLanguage, nativeLanguage),
     });
     validateLessonLanguages(content, nativeLanguage, targetLanguage);
     await lessonRef.update({

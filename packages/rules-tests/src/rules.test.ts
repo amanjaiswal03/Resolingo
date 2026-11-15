@@ -30,6 +30,7 @@ async function seed() {
       updatedAt: new Date(),
     });
     await setDoc(doc(context.firestore(), "users/alice/lessons/lesson-1"), { status: "ready", completed: false, updatedAt: new Date() });
+    await setDoc(doc(context.firestore(), "users/alice/reviewItems/item1"), { text: "Danke.", translation: "Thanks." });
   });
 }
 
@@ -47,6 +48,13 @@ describe("Firestore owner rules", () => {
     await assertFails(updateDoc(doc(own, "users/alice"), { status: "tampered", updatedAt: new Date() }));
     await assertFails(updateDoc(doc(own, "users/alice"), { unlimitedLessons: true }));
     await assertFails(updateDoc(doc(own, "users/alice"), { nickname: "Ali", unlimitedLessons: true, updatedAt: new Date() }));
+  });
+
+  it("keeps learned phrases server-only", async () => {
+    await seed();
+    const own = env.authenticatedContext("alice").firestore();
+    await assertFails(getDoc(doc(own, "users/alice/reviewItems/item1")));
+    await assertFails(setDoc(doc(own, "users/alice/reviewItems/item2"), { text: "Bitte." }));
   });
 
   it("allows completion while denying lesson status changes", async () => {

@@ -18,6 +18,7 @@ import {
   type GeneratedLesson,
   type LanguageId,
   type LessonType,
+  type PimsleurPhrase,
 } from "@resolingo/shared";
 import { logger } from "firebase-functions";
 import { DEFAULT_GEMINI_LESSON_MODEL, DEFAULT_GEMINI_LOCATION, GEMINI_LESSON_MODEL, GEMINI_LOCATION } from "./config.js";
@@ -29,6 +30,7 @@ const SYSTEM_INSTRUCTION = [
   "lines is an array of 4 to 6 dialogue turns. Each line has speaker (speakerA or speakerB), text, translation, and a BCP-47 language code.",
   "phrases has one item for every line. Each phrase has speaker, text, translation, language, note, and chunks.",
   "chunks is optional and varies by line: empty for a short or easy line, otherwise a few meaningful pieces from the end of the sentence, not every word. Never a name-only chunk such as Anna. Each chunk has text and the translation of that chunk alone. A gloss, when needed, contains the chunk in [[lang]] tags and says what it means. Never a bare translation.",
+  "recombinations is 0 to 2 new target sentences that combine earlier pieces, each with text and the translation of that new sentence. roleplay, when present, has stimulus (an earlier line), text (the learner's reply), and translation.",
   "cues has welcome, listen, afterDialogue, buildup, again, closing, and speak.",
   "speak is 6 to 8 different teaching-language lines that ask the learner to speak. Vary them. Use {translation} and {name} as placeholders. Do not repeat one sentence, and do not include the target-language answer.",
   "Also return speakerNames with teacher, speakerA, and speakerB. speakerA is male and speakerB is female. Each name is one Latin-script word of letters only, and the three names are different.",
@@ -137,6 +139,7 @@ export async function generateLessonContent(
     targetLanguage: LanguageId;
     level: CefrLevel;
     recentTopics: string[];
+    priorReviews?: PimsleurPhrase[];
   },
   client?: LessonModelClient,
 ): Promise<GeneratedLesson> {
@@ -173,6 +176,7 @@ export async function generateLessonContent(
     const shaped = shapePimsleurLesson(json, {
       nativeLanguage: input.nativeLanguage,
       targetLanguage: input.targetLanguage,
+      ...(input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
     });
     const parsed = GeneratedLessonSchema.safeParse(shaped ?? json);
     if (!parsed.success) {
