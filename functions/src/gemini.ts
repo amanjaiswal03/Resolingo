@@ -13,6 +13,8 @@ import {
   markupIssues,
   normalizeSpeakerNames,
   repairMarkup,
+  selectGrammarTopic,
+  shapeGrammarLesson,
   shapePimsleurLesson,
   type CefrLevel,
   type GeneratedLesson,
@@ -45,11 +47,24 @@ const SAFETY_CATEGORIES = [
   HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
 ] as const;
 
-export function lessonGenerationConfig(): GenerateContentConfig {
+const GRAMMAR_INSTRUCTION = [
+  "You are Resolingo's grammar teacher.",
+  "Return only a JSON object for a lesson spoken by one teacher. Do not write a dialogue and do not use speakerA or speakerB as speakers.",
+  "Teach the assigned grammar point and no other point. Do not add word order, negation, or a second tense.",
+  "Fields: title, topic, summary, speakerNames, hook, examples, notice, rule, mnemonic, drills, checks, recombinations.",
+  "hook and examples are short target-language sentences with a native translation. The noticing answer must be true for this exact point.",
+  "rule lists every form the examples use. For a verb, teach the full level-appropriate paradigm, one person first and the rest later.",
+  "drills has at least 12 items: substitution, a transformation that includes the source sentence, a fill-the-gap with ___, and a which-form question. Disambiguate you as you, to a friend; you all; or you, formally, and she versus they.",
+  "The same cue sentence appears at most twice. Vary How would you say, Can you say, and Try saying, and always keep the meaning or the source sentence.",
+  "recombinations has 2 new sentences that reuse the rule. Each cue includes the native meaning.",
+  "Quote the target language inside [[lang:BCP-47]]...[[/lang]] and close every tag. Do not nest tags.",
+].join(" ");
+
+export function lessonGenerationConfig(type: LessonType = "conversation"): GenerateContentConfig {
   // Vertex returns a generic HTTP 400 for responseSchema and responseJsonSchema
   // on gemini-3.5-flash-lite. JSON mode plus Zod is the check that accepts a response.
   return {
-    systemInstruction: SYSTEM_INSTRUCTION,
+    systemInstruction: type === "grammar" ? GRAMMAR_INSTRUCTION : SYSTEM_INSTRUCTION,
     responseMimeType: "application/json",
     safetySettings: SAFETY_CATEGORIES.map((category) => ({
       category,
@@ -145,14 +160,18 @@ export async function generateLessonContent(
 ): Promise<GeneratedLesson> {
   const model = geminiModel();
   const generator = createVertexLessonClient(client);
+  const grammarTopic = input.type === "grammar"
+    ? selectGrammarTopic({ language: input.targetLanguage, level: input.level, recentTopics: input.recentTopics })
+    : undefined;
   const prompt = lessonPrompt({
     type: input.type,
     nativeLanguage: languageById[input.nativeLanguage],
     targetLanguage: languageById[input.targetLanguage],
     level: input.level,
     recentTopics: input.recentTopics,
+    ...(grammarTopic ? { topic: grammarTopic } : {}),
   });
-  const config = lessonGenerationConfig();
+  const config = lessonGenerationConfig(input.type);
   let sawInvalid = false;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -173,11 +192,22 @@ export async function generateLessonContent(
       });
       continue;
     }
-    const shaped = shapePimsleurLesson(json, {
-      nativeLanguage: input.nativeLanguage,
-      targetLanguage: input.targetLanguage,
-      ...(input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
-    });
+    const reviews = (input.priorReviews ?? [])
+      .filter((phrase) => phrase.text.trim() && phrase.translation?.trim())
+      .map((phrase) => ({ text: phrase.text, translation: phrase.translation ?? "" }));
+    const shaped = input.type === "grammar"
+      ? shapeGrammarLesson(json, {
+        nativeLanguage: input.nativeLanguage,
+        targetLanguage: input.targetLanguage,
+        level: input.level,
+        topic: grammarTopic!,
+        ...(reviews.length > 0 ? { priorReviews: reviews } : {}),
+      })
+      : shapePimsleurLesson(json, {
+        nativeLanguage: input.nativeLanguage,
+        targetLanguage: input.targetLanguage,
+        ...(input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
+      });
     const parsed = GeneratedLessonSchema.safeParse(shaped ?? json);
     if (!parsed.success) {
       sawInvalid = true;
@@ -193,7 +223,7 @@ export async function generateLessonContent(
     }
     const topic = parsed.data.topic.trim().toLocaleLowerCase();
     const repeated = input.recentTopics.some((recent) => recent.trim().toLocaleLowerCase() === topic);
-    if (repeated) {
+    if (input.type !== "grammar" && repeated) {
       sawInvalid = true;
       continue;
     }

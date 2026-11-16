@@ -128,6 +128,36 @@ describe("Gemini lesson generation", () => {
     expect(model.contents).toHaveLength(1);
   });
 
+  it("shapes a grammar lesson as one teacher and names the next unused point", async () => {
+    const model = client([{ text: JSON.stringify({
+      title: "Sein in the present",
+      summary: "Say who someone is with the present tense of sein.",
+      hook: { text: "Ich bin müde.", translation: "I am tired." },
+      examples: [
+        { text: "Du bist müde.", translation: "You are tired." },
+        { text: "Wir sind müde.", translation: "We are tired." },
+      ],
+      notice: "The form changes with the person.",
+      rule: "Sein matches the person, and the verb stays the second idea.",
+      mnemonic: "bin, bist, ist, sind.",
+      drills: [
+        { kind: "word", cue: "How would you say I am?", answer: "Ich bin", translation: "I am." },
+        { kind: "word", cue: "How would you say you are?", answer: "Du bist", translation: "you are." },
+        { kind: "phrase", cue: "How would you say I am tired?", answer: "Ich bin müde.", translation: "I am tired." },
+        { kind: "sentence", cue: "How would you say We are ready?", answer: "Wir sind bereit.", translation: "We are ready." },
+      ],
+      checks: [{ cue: "Where does the verb go?", answer: "In second position." }],
+      recombinations: [{ cue: "How would you say I am ready?", answer: "Ich bin bereit.", translation: "I am ready." }],
+    }) }]);
+    const result = await generateLessonContent({ ...input, type: "grammar", recentTopics: ["Present tense of sein"] }, model);
+    expect(result.topic).toBe("Present tense of haben");
+    expect(result.ruleId).toBe("de-haben");
+    expect(result.segments.every((segment) => segment.speaker === "teacher")).toBe(true);
+    expect(model.contents[0]).toContain("Present tense of haben");
+    expect(model.contents[0]).toContain("no second speaker");
+    expect(lessonGenerationConfig("grammar").systemInstruction).not.toContain("lines is an array of 4 to 6");
+  });
+
   it("fails closed when both attempts are blocked or invalid", async () => {
     await expect(generateLessonContent(input, client([{ blocked: true }, { blocked: true }]))).rejects.toThrow("MODEL_OUTPUT_BLOCKED");
     await expect(generateLessonContent(input, client([{ text: "{}" }, { text: "nope" }]))).rejects.toThrow("MODEL_OUTPUT_INVALID");

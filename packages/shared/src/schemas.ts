@@ -59,6 +59,8 @@ export const SpeakerNamesField = z.preprocess((value) => normalizeSpeakerNames(v
 export const GeneratedLessonSchema = z.object({
   title: z.string().min(3).max(90),
   topic: z.string().min(3).max(160),
+  /** Catalog id for a grammar lesson, so later reviews can name the rule. */
+  ruleId: z.string().min(1).max(40).optional(),
   summary: z.string().min(5).max(280),
   speakerNames: SpeakerNamesField,
   segments: z.array(LessonSegmentSchema.omit({ audioPath: true, audioUrl: true, durationMs: true })).min(8).max(MAX_LESSON_SEGMENTS),
@@ -96,6 +98,7 @@ export const LessonSchema = z.object({
   quotaDate: z.string(),
   title: z.string().default("Preparing your lesson"),
   topic: z.string().default(""),
+  ruleId: z.string().min(1).max(40).optional(),
   summary: z.string().default(""),
   speakerNames: SpeakerNamesField,
   segments: z.array(LessonSegmentSchema).default([]),

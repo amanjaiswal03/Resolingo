@@ -138,6 +138,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
     await lessonRef.update({
       title: content.title,
       topic: content.topic,
+      ...(content.ruleId ? { ruleId: content.ruleId } : {}),
       summary: content.summary,
       speakerNames: content.speakerNames,
       segments: content.segments.map((segment) => displayLessonSegment(segment)),
