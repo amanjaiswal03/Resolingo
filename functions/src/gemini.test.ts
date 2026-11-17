@@ -175,7 +175,7 @@ describe("Gemini lesson generation", () => {
       situations: [
         { setup: "You're in a shoe shop. The clerk asks what you're looking for.", focus: "möchte", focusTranslation: "would like", usage: "Möchte is the polite would like.", answer: "Ich möchte ein Paar Schuhe kaufen.", translation: "I would like to buy a pair of shoes" },
         { setup: "A friend asks why you're going into town.", focus: "noch", focusTranslation: "still", answer: "Ich muss noch Schuhe kaufen.", translation: "I still need to buy shoes" },
-        { setup: "You're ordering online and you have to name what you need.", focus: "Ich brauche", focusTranslation: "I need", answer: "Ich brauche neue Schuhe.", translation: "I need new shoes" },
+        { setup: "You're ordering online and you have to name what you need.", focus: "Ich brauche", focusTranslation: "I need", words: [{ text: "neue", translation: "new" }], answer: "Ich brauche neue Schuhe.", translation: "I need new shoes" },
       ],
       roleplay: { setup: "You're at the counter.", answer: "Ich möchte ein Paar Schuhe kaufen.", translation: "I would like to buy a pair of shoes" },
     }) }]);

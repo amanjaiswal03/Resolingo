@@ -52,7 +52,7 @@ const PHRASE_INSTRUCTION = [
   "You are Resolingo's phrase teacher.",
   "Return only JSON with title, topic, summary, speakerNames, pattern, chunks, swaps, situations, and roleplay.",
   "One teacher speaks the lesson. Do not write a dialogue and do not change the learner's target sentence.",
-  "Teach a new word, with its article and a gloss, before the learner has to produce it.",
+  "Teach a new word, with its article and a gloss, before the learner has to produce it. Every content word in an answer that is not in the original sentence goes in focus or in words, and is glossed on its own. A translation of the whole sentence does not teach a new word. If the word is the same in the teaching language, its translation is that same word.",
   "swaps is two items. Each changes one slot. Include from, to, focus, focusTranslation, answer, and translation. focus is the new target word with its article. The answer is a different sentence, not a copy of the original.",
   "Do not use a blunt will as a shop line. If will appears, add usage saying it is direct and fine with friends.",
   "situations is three or four, and every answer is a different sentence from the others and from the original. A shop uses the polite möchte, or that language's would like, with usage in one line. A friend can be more direct. Online uses a third wording. Register alternatives belong in situations.",

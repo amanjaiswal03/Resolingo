@@ -31,8 +31,16 @@ const SWAP_FRAMES = [
 ] as const;
 
 const MAX_IDENTICAL_CUES = 2;
+/** A gloss longer than this is a whole sentence, not a new word. */
+const MAX_GLOSS_WORDS = 3;
 
-export type PhraseAlternative = { label: string; text: string; transliteration?: string };
+const QUICK_FRAMES = [
+  "Quick check. How would you say {translation}?",
+  "One more. Can you say {translation}?",
+  "And the line you came in with. Try saying {translation}.",
+] as const;
+
+export type PhraseAlternative = { label: string; text: string; transliteration?: string; words?: PhraseLine[] };
 export type PhraseLine = { text: string; translation: string };
 export type PhraseSwap = {
   from: string;
@@ -43,6 +51,8 @@ export type PhraseSwap = {
   focus: string;
   focusTranslation: string;
   usage?: string;
+  /** Other new words in the answer, each glossed on its own. */
+  words?: PhraseLine[];
 };
 export type PhraseSituation = {
   setup: string;
@@ -51,6 +61,7 @@ export type PhraseSituation = {
   focus: string;
   focusTranslation: string;
   usage?: string;
+  words?: PhraseLine[];
 };
 
 export type PhraseLessonContext = {
@@ -77,6 +88,7 @@ type Drill = {
   focus?: string;
   focusTranslation?: string;
   usage?: string;
+  words?: PhraseLine[];
   transliteration?: string;
 };
 
@@ -155,6 +167,22 @@ function gloss(text: string, translation: string, language: LanguageId): string 
   return `[[lang:${language}]]${meaningOf(text)}[[/lang]] means "${meaningOf(translation)}".`;
 }
 
+function contentWords(text: string): string[] {
+  return normalize(text).split(" ").filter((word) => word.length >= 3);
+}
+
+/** The words a gloss or same-word note actually teaches, ignoring a full-sentence translation. */
+function taughtWords(segment: LessonSegment): string[] {
+  const shown = lessonDisplayText(segment.text);
+  const sameWord = shown.match(/^(.+?)\s+is the same word\b/i);
+  const means = shown.match(/^(.+?)\s+means\s+["“]/i);
+  const span = (sameWord?.[1] ?? means?.[1] ?? "").trim();
+  if (!span) return [];
+  const words = contentWords(span);
+  if (words.length === 0 || words.length > MAX_GLOSS_WORDS) return [];
+  return words;
+}
+
 function produceCues(translation: string): string[] {
   const meaning = meaningOf(translation);
   return SPEAK_FRAMES.map((frame) => frame.replaceAll("{translation}", meaning));
@@ -185,6 +213,17 @@ function budget(level: CefrLevel): { chunks: number; swaps: number; situations: 
   return { chunks: 0, swaps: 2, situations: 3, reviews: 4 };
 }
 
+function readWords(value: unknown): PhraseLine[] {
+  const words: PhraseLine[] = [];
+  for (const record of linesOf(value)) {
+    const text = textOf(record.text);
+    const translation = textOf(record.translation);
+    if (!text || !translation || words.some((word) => same(word.text, text))) continue;
+    words.push({ text, translation });
+  }
+  return words;
+}
+
 function readChunks(value: unknown, core: string): PhraseLine[] {
   const chunks: PhraseLine[] = [];
   for (const record of linesOf(value)) {
@@ -210,9 +249,11 @@ function readSwaps(value: unknown, core: string): PhraseSwap[] {
     if (same(from, to) || same(answer, core) || same(focus, core)) continue;
     if (swaps.some((swap) => same(swap.answer, answer))) continue;
     const usage = textOf(record.usage);
+    const words = readWords(record.words);
     swaps.push({
       from, to, answer, translation, focus, focusTranslation,
       ...(usage ? { usage } : {}),
+      ...(words.length > 0 ? { words } : {}),
     });
   }
   return swaps;
@@ -229,9 +270,11 @@ function readSituations(value: unknown, core: string): PhraseSituation[] {
     if (!setup || !answer || !translation || !focus || !focusTranslation) continue;
     if (same(answer, core) || situations.some((item) => same(item.answer, answer))) continue;
     const usage = textOf(record.usage);
+    const words = readWords(record.words);
     situations.push({
       setup, answer, translation, focus, focusTranslation,
       ...(usage ? { usage } : {}),
+      ...(words.length > 0 ? { words } : {}),
     });
   }
   return situations;
@@ -280,12 +323,36 @@ export function focusesAreGlossedFirst(segments: readonly LessonSegment[], focus
   for (const focus of focuses) {
     const needle = normalize(focus);
     if (needle.length < 2) continue;
-    const glossAt = segments.findIndex((segment) => /means\s+["“]/i.test(segment.text) && normalize(lessonDisplayText(segment.text)).includes(needle));
+    const glossAt = segments.findIndex((segment) => {
+      const teaches = /means\s+["“]/i.test(segment.text) || /is the same word/i.test(segment.text);
+      return teaches && normalize(lessonDisplayText(segment.text)).includes(needle);
+    });
     const produceAt = segments.findIndex((segment, index) => {
       const previous = segments[index - 1];
       return (previous?.pauseAfterMs ?? 0) > 0 && normalize(segment.text).includes(needle);
     });
     if (produceAt >= 0 && (glossAt < 0 || glossAt > produceAt)) return false;
+  }
+  return true;
+}
+
+/**
+ * A content word in a required answer has to be in the core sentence or in an
+ * earlier short gloss. Translating the whole answer does not teach a new word.
+ */
+export function answerWordsAreGlossed(segments: readonly LessonSegment[], language: LanguageId, core: string): boolean {
+  const known = new Set(contentWords(core));
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    const previous = segments[index - 1];
+    if ((previous?.pauseAfterMs ?? 0) > 0 && segment?.language === language && segment.phase !== "warmup") {
+      for (const word of contentWords(segment.text)) {
+        if (!known.has(word)) return false;
+      }
+    }
+    if (segment) {
+      for (const word of taughtWords(segment)) known.add(word);
+    }
   }
   return true;
 }
@@ -310,6 +377,16 @@ function introFor(context: PhraseLessonContext, targetLabel: string): string {
     return `Part of that was already in ${targetLabel}. The whole sentence means "${meaning}". Let's learn it as one line.`;
   }
   return `You wanted to say "${meaning}". Here's how that sounds in ${targetLabel}.`;
+}
+
+function closingFor(situations: readonly PhraseSituation[]): string {
+  const clerk = situations.find((item) => /\b(clerk|shop)\b/i.test(item.setup));
+  const friend = situations.find((item) => /\bfriend\b/i.test(item.setup));
+  const lines = ["Nice work."];
+  if (clerk) lines.push(`With a clerk, use the line that means "${meaningOf(clerk.translation)}".`);
+  if (friend && friend !== clerk) lines.push(`With a friend, use the line that means "${meaningOf(friend.translation)}".`);
+  if (!clerk && !friend && situations[0]) lines.push(`Use the line that means "${meaningOf(situations[0].translation)}" when it fits.`);
+  return lines.join(" ");
 }
 
 export function shapePhraseLesson(
@@ -340,6 +417,7 @@ export function shapePhraseLesson(
       focus: alternative.text,
       focusTranslation: `${meaning}, ${alternative.label}`,
       usage: "A more formal way to say it.",
+      ...(alternative.words && alternative.words.length > 0 ? { words: alternative.words } : {}),
     });
     break;
   }
@@ -365,6 +443,7 @@ export function shapePhraseLesson(
       focus: swap.focus,
       focusTranslation: swap.focusTranslation,
       ...(swap.usage ? { usage: swap.usage } : {}),
+      ...(swap.words ? { words: swap.words } : {}),
     })),
     ...chosenSituations.map((situation) => ({
       kind: "situation" as const,
@@ -375,6 +454,7 @@ export function shapePhraseLesson(
       focus: situation.focus,
       focusTranslation: situation.focusTranslation,
       ...(situation.usage ? { usage: situation.usage } : {}),
+      ...(situation.words ? { words: situation.words } : {}),
     })),
     {
       kind: "roleplay" as const,
@@ -437,7 +517,10 @@ export function shapePhraseLesson(
   const teach = (word: string, translation: string, phase: string, repeat: boolean, usage?: string): void => {
     if (!word || !translation) return;
     push({ kind: "example", phase, language: context.targetLanguage, text: word, translation: meaningOf(translation), delivery: "clear" });
-    push({ kind: "explanation", phase, language: context.nativeLanguage, text: gloss(word, translation, context.targetLanguage), delivery: "clear" });
+    const note = same(word, translation)
+      ? `${meaningOf(word)} is the same word.`
+      : gloss(word, translation, context.targetLanguage);
+    push({ kind: "explanation", phase, language: context.nativeLanguage, text: note, delivery: "clear" });
     if (usage) push({ kind: "explanation", phase, language: context.nativeLanguage, text: usage, delivery: "clear" });
     if (!repeat || same(word, core)) return;
     ask({ answer: word, translation, cues: produceCues(translation) }, "focus", 1);
@@ -480,14 +563,21 @@ export function shapePhraseLesson(
     if (index === 0) return;
     if (drill.focus && drill.focusTranslation && !same(drill.focus, drill.answer)) {
       teach(drill.focus, drill.focusTranslation, drill.kind, true);
+      for (const word of drill.words ?? []) {
+        if (!same(word.text, drill.focus)) teach(word.text, word.translation, drill.kind, true);
+      }
       if (drill.kind === "situation") {
         push({ kind: "example", phase: drill.kind, language: context.targetLanguage, text: drill.answer, translation: drill.translation, delivery: "clear" });
         push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: gloss(drill.answer, drill.translation, context.targetLanguage), delivery: "clear" });
       }
       if (drill.usage) push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: drill.usage, delivery: "clear" });
     } else if (drill.focus && drill.focusTranslation) {
+      for (const word of drill.words ?? []) teach(word.text, word.translation, drill.kind, true);
       push({ kind: "example", phase: drill.kind, language: context.targetLanguage, text: drill.answer, translation: drill.translation, delivery: "clear" });
-      push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: gloss(drill.focus, drill.focusTranslation, context.targetLanguage), delivery: "clear" });
+      const sentenceNote = same(drill.focus, drill.focusTranslation)
+        ? `${meaningOf(drill.focus)} is the same word.`
+        : gloss(drill.focus, drill.focusTranslation, context.targetLanguage);
+      push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: sentenceNote, delivery: "clear" });
       if (drill.usage) push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: drill.usage, delivery: "clear" });
     }
     if (drill.setup) {
@@ -510,17 +600,33 @@ export function shapePhraseLesson(
     }
   });
 
-  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: "Keep these.", delivery: "clear" });
-  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: "The sentence.", delivery: "clear" });
+  const quickItems = [
+    swaps[0] ? { answer: swaps[0].answer, translation: swaps[0].translation } : null,
+    chosenSituations.find((item) => /\bfriend\b/i.test(item.setup))
+      ?? chosenSituations.find((item) => !same(item.answer, roleSituation.answer))
+      ?? null,
+    { answer: core, translation: meaning },
+  ].filter((item): item is { answer: string; translation: string } => Boolean(item));
+  quickItems.slice(0, 3).forEach((item, index) => {
+    const frame = QUICK_FRAMES[index] ?? QUICK_FRAMES[0];
+    ask({
+      answer: item.answer,
+      translation: item.translation,
+      cues: [frame.replaceAll("{translation}", meaningOf(item.translation))],
+    }, "quick", index);
+  });
+
+  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `The sentence you wanted is the one that means "${meaning}".`, delivery: "clear" });
   push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: core, translation: meaning, delivery: "clear" });
   const swapLine = swaps[0];
   if (swapLine) {
-    push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `Swap the thing you need. For ${swapLine.to}:`, delivery: "clear" });
+    push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `To change ${swapLine.from} to ${swapLine.to}, you say the new sentence like this.`, delivery: "clear" });
     push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: swapLine.answer, translation: meaningOf(swapLine.translation), delivery: "clear" });
   }
-  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: "With a clerk, sound polite.", delivery: "clear" });
-  push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: roleSituation.answer, translation: meaningOf(roleSituation.translation), delivery: "clear" });
-  push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: "Nice work. Use the polite line in a shop, and the first one with a friend.", delivery: "praise" });
+  const polite = chosenSituations.find((item) => /\b(clerk|shop)\b/i.test(item.setup)) ?? roleSituation;
+  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `With a clerk, the polite version means "${meaningOf(polite.translation)}", and it sounds like this.`, delivery: "clear" });
+  push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: polite.answer, translation: meaningOf(polite.translation), delivery: "clear" });
+  push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: closingFor(chosenSituations), delivery: "praise" });
 
   const focuses = [
     ...chunks.map((chunk) => chunk.text),
@@ -534,6 +640,7 @@ export function shapePhraseLesson(
     || !phraseLinesAreDistinct(segments)
     || !focusesAreGlossedFirst(segments, focuses)
     || !phraseAnswersStayVaried(segments, context.targetLanguage)
+    || !answerWordsAreGlossed(segments, context.targetLanguage, core)
     || segments.filter((segment) => segment.phase === "pattern").length > 1
   ) return null;
   const title = clip(textOf(source.title) || `Saying: ${meaning}`, 90);
