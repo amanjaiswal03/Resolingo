@@ -31,6 +31,7 @@ async function seed() {
     });
     await setDoc(doc(context.firestore(), "users/alice/lessons/lesson-1"), { status: "ready", completed: false, updatedAt: new Date() });
     await setDoc(doc(context.firestore(), "users/alice/reviewItems/item1"), { text: "Danke.", translation: "Thanks." });
+    await setDoc(doc(context.firestore(), "users/alice/phrases/phrase_ab12cd34"), { nativeText: "Thanks", translation: "Danke." });
   });
 }
 
@@ -48,6 +49,14 @@ describe("Firestore owner rules", () => {
     await assertFails(updateDoc(doc(own, "users/alice"), { status: "tampered", updatedAt: new Date() }));
     await assertFails(updateDoc(doc(own, "users/alice"), { unlimitedLessons: true }));
     await assertFails(updateDoc(doc(own, "users/alice"), { nickname: "Ali", unlimitedLessons: true, updatedAt: new Date() }));
+  });
+
+  it("lets the owner read a saved phrase and rejects client writes", async () => {
+    await seed();
+    const own = env.authenticatedContext("alice").firestore();
+    await assertSucceeds(getDoc(doc(own, "users/alice/phrases/phrase_ab12cd34")));
+    await assertFails(getDoc(doc(env.authenticatedContext("bob").firestore(), "users/alice/phrases/phrase_ab12cd34")));
+    await assertFails(setDoc(doc(own, "users/alice/phrases/phrase_ffff0000"), { nativeText: "Hi", translation: "Hallo." }));
   });
 
   it("keeps learned phrases server-only", async () => {
@@ -68,6 +77,16 @@ describe("Firestore owner rules", () => {
 describe("Storage owner rules", () => {
   it("allows owner audio reads, denies other users, and denies client writes", async () => {
     const path = "users/alice/lessons/lesson-1/segments/segment-1.mp3";
+    await env.withSecurityRulesDisabled(async (context) => {
+      await uploadBytes(ref(context.storage(), path), new Uint8Array([1, 2, 3]));
+    });
+    await assertSucceeds(getBytes(ref(env.authenticatedContext("alice").storage(), path)));
+    await assertFails(getBytes(ref(env.authenticatedContext("bob").storage(), path)));
+    await assertFails(uploadBytes(ref(env.authenticatedContext("alice").storage(), path), new Uint8Array([4])));
+  });
+
+  it("allows the owner to read a phrase preview and rejects client writes", async () => {
+    const path = "users/alice/phrases/phrase_ab12cd34/preview.wav";
     await env.withSecurityRulesDisabled(async (context) => {
       await uploadBytes(ref(context.storage(), path), new Uint8Array([1, 2, 3]));
     });

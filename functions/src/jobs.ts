@@ -122,10 +122,49 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
   const type = LessonTypeSchema.parse(lessonData.type);
   const nativeLanguage = LanguageIdSchema.parse(user.nativeLanguage);
   const targetLanguage = LanguageIdSchema.parse(user.targetLanguage);
-  const level = CefrLevelSchema.parse(user.level);
+  let level = CefrLevelSchema.parse(user.level);
   const topicKey = `${targetLanguage}-${type}`;
 
   try {
+    let phrase: {
+      phraseId: string;
+      nativeText: string;
+      translation: string;
+      transliteration?: string;
+      alternatives?: { label: string; text: string }[];
+      note?: string;
+      inputLanguage?: "native" | "target" | "mixed" | "unknown";
+    } | undefined;
+    if (type === "phrase") {
+      const phraseId = typeof lessonData.phraseId === "string" ? lessonData.phraseId : "";
+      const phraseSnap = await db.doc(`users/${payload.uid}/phrases/${phraseId}`).get();
+      const stored = phraseSnap.data();
+      const nativeText = typeof stored?.nativeText === "string" ? stored.nativeText : "";
+      const translation = typeof stored?.translation === "string" ? stored.translation : "";
+      if (!phraseId || !nativeText || !translation) throw new Error("PHRASE_NOT_FOUND");
+      const storedLevel = CefrLevelSchema.safeParse(stored?.level);
+      if (storedLevel.success) level = storedLevel.data;
+      const alternatives = Array.isArray(stored?.alternatives)
+        ? stored.alternatives.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const record = item as { label?: unknown; text?: unknown };
+          if (typeof record.label !== "string" || typeof record.text !== "string") return [];
+          return [{ label: record.label, text: record.text }];
+        })
+        : [];
+      const inputLanguage = stored?.inputLanguage === "target" || stored?.inputLanguage === "mixed" || stored?.inputLanguage === "unknown"
+        ? stored.inputLanguage
+        : "native";
+      phrase = {
+        phraseId,
+        nativeText,
+        translation,
+        ...(typeof stored?.transliteration === "string" && stored.transliteration ? { transliteration: stored.transliteration } : {}),
+        ...(alternatives.length > 0 ? { alternatives } : {}),
+        ...(typeof stored?.note === "string" && stored.note ? { note: stored.note } : {}),
+        inputLanguage,
+      };
+    }
     const content = await generateLessonContent({
       type,
       nativeLanguage,
@@ -133,6 +172,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       level,
       recentTopics: await recentTopics(payload.uid, topicKey),
       priorReviews: await loadDueReviewPhrases(payload.uid, targetLanguage, nativeLanguage),
+      ...(phrase ? { phrase } : {}),
     });
     validateLessonLanguages(content, nativeLanguage, targetLanguage);
     await lessonRef.update({
@@ -237,7 +277,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
 
 function isPermanentProviderError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("MODEL_OUTPUT") || message.includes("TTS_VOICE_UNAVAILABLE") || message.includes("TTS_VOICE_TIER_INVALID")) return true;
+  if (message.includes("PHRASE_NOT_FOUND") || message.includes("MODEL_OUTPUT") || message.includes("TTS_VOICE_UNAVAILABLE") || message.includes("TTS_VOICE_TIER_INVALID")) return true;
   const status = typeof error === "object" && error !== null && "status" in error
     ? Number((error as { status?: unknown }).status)
     : 0;
@@ -248,6 +288,7 @@ function providerFailureCode(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("TTS_VOICE_TIER_INVALID")) return "voice_tier_invalid";
   if (message.includes("TTS_VOICE_UNAVAILABLE")) return "voice_unavailable";
+  if (message.includes("PHRASE_NOT_FOUND")) return "phrase_not_found";
   if (message.includes("MODEL_OUTPUT_BLOCKED")) return "lesson_blocked";
   if (message.includes("MODEL_OUTPUT")) return "lesson_validation_failed";
   return "provider_failure";

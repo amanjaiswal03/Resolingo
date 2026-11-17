@@ -158,6 +158,44 @@ describe("Gemini lesson generation", () => {
     expect(lessonGenerationConfig("grammar").systemInstruction).not.toContain("lines is an array of 4 to 6");
   });
 
+  it("builds a teacher-only phrase lesson around the saved sentence", async () => {
+    const model = client([{ text: JSON.stringify({
+      title: "Buying a pair of shoes",
+      topic: "I need to buy a pair of shoes",
+      summary: "Practice asking for a pair of shoes and a few variations.",
+      chunks: [
+        { text: "Schuhe", translation: "shoes" },
+        { text: "ein Paar Schuhe", translation: "a pair of shoes" },
+      ],
+      swaps: [
+        { from: "a pair of shoes", to: "a jacket", answer: "Ich muss eine Jacke kaufen.", translation: "I need to buy a jacket" },
+        { from: "a pair of shoes", to: "tickets", answer: "Ich muss Tickets kaufen.", translation: "I need to buy tickets" },
+        { from: "I need to", to: "I want to", answer: "Ich will ein Paar Schuhe kaufen.", translation: "I want to buy a pair of shoes" },
+      ],
+      situations: [
+        { setup: "You're in a shop.", answer: "Ich muss ein Paar Schuhe kaufen.", translation: "I need to buy a pair of shoes" },
+      ],
+      roleplay: { setup: "The clerk asks what you need.", answer: "Ich muss ein Paar Schuhe kaufen.", translation: "I need to buy a pair of shoes" },
+    }) }]);
+    const result = await generateLessonContent({
+      ...input,
+      type: "phrase",
+      level: "A2",
+      phrase: {
+        phraseId: "phrase_ab12cd34",
+        nativeText: "I need to buy a pair of shoes",
+        translation: "Ich muss ein Paar Schuhe kaufen.",
+        inputLanguage: "native",
+      },
+    }, model);
+    expect(result.ruleId).toBe("phrase_ab12cd34");
+    expect(result.segments.every((segment) => segment.speaker === "teacher")).toBe(true);
+    expect(result.segments.some((segment) => segment.text.includes("Ich muss eine Jacke kaufen."))).toBe(true);
+    expect(model.contents[0]).toContain("Ich muss ein Paar Schuhe kaufen.");
+    expect(lessonGenerationConfig("phrase").responseSchema).toBeUndefined();
+    expect(lessonGenerationConfig("phrase").systemInstruction).toContain("Do not write a dialogue");
+  });
+
   it("fails closed when both attempts are blocked or invalid", async () => {
     await expect(generateLessonContent(input, client([{ blocked: true }, { blocked: true }]))).rejects.toThrow("MODEL_OUTPUT_BLOCKED");
     await expect(generateLessonContent(input, client([{ text: "{}" }, { text: "nope" }]))).rejects.toThrow("MODEL_OUTPUT_INVALID");

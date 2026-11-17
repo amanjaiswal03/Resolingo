@@ -15,6 +15,7 @@ import {
   repairMarkup,
   selectGrammarTopic,
   shapeGrammarLesson,
+  shapePhraseLesson,
   shapePimsleurLesson,
   type CefrLevel,
   type GeneratedLesson,
@@ -47,6 +48,16 @@ const SAFETY_CATEGORIES = [
   HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
 ] as const;
 
+const PHRASE_INSTRUCTION = [
+  "You are Resolingo's phrase teacher.",
+  "Return only JSON with title, topic, summary, speakerNames, chunks, swaps, situations, and roleplay.",
+  "One teacher speaks the lesson. Do not write a dialogue and do not change the learner's target sentence.",
+  "swaps change one slot each and the answer is a different sentence.",
+  "situations are short real places: a shop, online, a friend, and when asked a more formal place.",
+  "Keep personal names and place names as names.",
+  "Do not drill a literal idiom gloss.",
+].join(" ");
+
 const GRAMMAR_INSTRUCTION = [
   "You are Resolingo's grammar teacher.",
   "Return only a JSON object for a lesson spoken by one teacher. Do not write a dialogue and do not use speakerA or speakerB as speakers.",
@@ -64,7 +75,7 @@ export function lessonGenerationConfig(type: LessonType = "conversation"): Gener
   // Vertex returns a generic HTTP 400 for responseSchema and responseJsonSchema
   // on gemini-3.5-flash-lite. JSON mode plus Zod is the check that accepts a response.
   return {
-    systemInstruction: type === "grammar" ? GRAMMAR_INSTRUCTION : SYSTEM_INSTRUCTION,
+    systemInstruction: type === "grammar" ? GRAMMAR_INSTRUCTION : type === "phrase" ? PHRASE_INSTRUCTION : SYSTEM_INSTRUCTION,
     responseMimeType: "application/json",
     safetySettings: SAFETY_CATEGORIES.map((category) => ({
       category,
@@ -155,6 +166,15 @@ export async function generateLessonContent(
     level: CefrLevel;
     recentTopics: string[];
     priorReviews?: PimsleurPhrase[];
+    phrase?: {
+      phraseId: string;
+      nativeText: string;
+      translation: string;
+      transliteration?: string;
+      alternatives?: { label: string; text: string; transliteration?: string }[];
+      note?: string;
+      inputLanguage?: "native" | "target" | "mixed" | "unknown";
+    };
   },
   client?: LessonModelClient,
 ): Promise<GeneratedLesson> {
@@ -170,6 +190,15 @@ export async function generateLessonContent(
     level: input.level,
     recentTopics: input.recentTopics,
     ...(grammarTopic ? { topic: grammarTopic } : {}),
+    ...(input.phrase ? {
+      phrase: {
+        nativeText: input.phrase.nativeText,
+        translation: input.phrase.translation,
+        alternatives: input.phrase.alternatives ?? [],
+        ...(input.phrase.transliteration ? { transliteration: input.phrase.transliteration } : {}),
+        ...(input.phrase.note ? { note: input.phrase.note } : {}),
+      },
+    } : {}),
   });
   const config = lessonGenerationConfig(input.type);
   let sawInvalid = false;
@@ -203,7 +232,21 @@ export async function generateLessonContent(
         topic: grammarTopic!,
         ...(reviews.length > 0 ? { priorReviews: reviews } : {}),
       })
-      : shapePimsleurLesson(json, {
+      : input.type === "phrase"
+        ? shapePhraseLesson(json, {
+          phraseId: input.phrase?.phraseId ?? "",
+          nativeLanguage: input.nativeLanguage,
+          targetLanguage: input.targetLanguage,
+          level: input.level,
+          nativeText: input.phrase?.nativeText ?? "",
+          translation: input.phrase?.translation ?? "",
+          ...(input.phrase?.transliteration ? { transliteration: input.phrase.transliteration } : {}),
+          ...(input.phrase?.alternatives ? { alternatives: input.phrase.alternatives } : {}),
+          ...(input.phrase?.note ? { note: input.phrase.note } : {}),
+          ...(input.phrase?.inputLanguage ? { inputLanguage: input.phrase.inputLanguage } : {}),
+          ...(reviews.length > 0 ? { priorReviews: reviews } : {}),
+        })
+        : shapePimsleurLesson(json, {
         nativeLanguage: input.nativeLanguage,
         targetLanguage: input.targetLanguage,
         ...(input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
@@ -223,7 +266,7 @@ export async function generateLessonContent(
     }
     const topic = parsed.data.topic.trim().toLocaleLowerCase();
     const repeated = input.recentTopics.some((recent) => recent.trim().toLocaleLowerCase() === topic);
-    if (input.type !== "grammar" && repeated) {
+    if (input.type === "conversation" && repeated) {
       sawInvalid = true;
       continue;
     }

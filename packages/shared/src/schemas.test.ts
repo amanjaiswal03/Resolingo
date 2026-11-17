@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeLessonBlocks, CreateDailyLessonRequestSchema, InitializeProfileRequestSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, STALE_UNENQUEUED_AFTER_MS } from "./index.js";
+import { activeLessonBlocks, CreateDailyLessonRequestSchema, CreatePhraseLessonRequestSchema, InitializeProfileRequestSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, STALE_UNENQUEUED_AFTER_MS, TranslatePhraseRequestSchema } from "./index.js";
 
 describe("shared contracts", () => {
   it("contains the canonical 32-language catalog", () => {
@@ -21,6 +21,17 @@ describe("shared contracts", () => {
 
   it("rejects a non-UUID idempotency key", () => {
     expect(CreateDailyLessonRequestSchema.safeParse({ type: "grammar", idempotencyKey: "repeat" }).success).toBe(false);
+  });
+
+  it("keeps phrase lessons off the daily topic buttons and accepts a text lookup", () => {
+    expect(CreateDailyLessonRequestSchema.safeParse({ type: "phrase", idempotencyKey: "6f9619ff-8b86-4d01-b42d-00cf4fc964ff" }).success).toBe(false);
+    expect(TranslatePhraseRequestSchema.safeParse({ text: "I need shoes", audioBase64: "AAAA" }).success).toBe(false);
+    expect(TranslatePhraseRequestSchema.safeParse({ text: "x".repeat(281) }).success).toBe(false);
+    expect(TranslatePhraseRequestSchema.safeParse({ text: "I need to buy a pair of shoes" }).success).toBe(true);
+    expect(CreatePhraseLessonRequestSchema.safeParse({
+      phraseId: "phrase_ab12cd34",
+      idempotencyKey: "6f9619ff-8b86-4d01-b42d-00cf4fc964ff",
+    }).success).toBe(true);
   });
 
   it("drops unlimitedLessons from profile initialization so clients cannot grant it", () => {

@@ -5,6 +5,9 @@ import { Card } from "./Card";
 import { Body, Heading } from "./Typography";
 import { useTheme } from "@/theme/tokens";
 
+const kindLabel = { conversation: "Conversation", grammar: "Grammar", phrase: "Phrase" } as const;
+const kindMark = { conversation: "C", grammar: "G", phrase: "P" } as const;
+
 const statusLabel: Record<Lesson["status"], string> = {
   queued: "Queued", generating_content: "Writing lesson", synthesizing_audio: "Creating audio", ready: "Ready", failed: "Needs attention",
 };
@@ -15,8 +18,8 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={`${lesson.title}, ${statusLabel[lesson.status]}`} onPress={() => router.push(`/lesson/${lesson.id}`)}>
       <Card style={styles.card}>
-        <View style={[styles.badge, { backgroundColor: lesson.type === "grammar" ? theme.mint : theme.amber }]}><Body style={styles.badgeText}>{lesson.type === "grammar" ? "G" : "C"}</Body></View>
-        <View style={styles.copy}><Heading numberOfLines={2}>{lesson.title}</Heading><Body muted>{statusLabel[lesson.status]} · {lesson.type === "grammar" ? "Grammar" : "Conversation"}</Body></View>
+        <View style={[styles.badge, { backgroundColor: lesson.type === "grammar" ? theme.mint : lesson.type === "phrase" ? theme.coral : theme.amber }]}><Body style={styles.badgeText}>{kindMark[lesson.type]}</Body></View>
+        <View style={styles.copy}><Heading numberOfLines={2}>{lesson.title}</Heading><Body muted>{statusLabel[lesson.status]} · {kindLabel[lesson.type]}</Body></View>
         <Body muted>›</Body>
       </Card>
     </Pressable>

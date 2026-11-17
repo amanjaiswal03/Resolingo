@@ -304,6 +304,42 @@ async function spanPcm(input: {
   }
 }
 
+export async function synthesizePhrasePreview(input: {
+  uid: string;
+  phraseId: string;
+  text: string;
+  language: LanguageId;
+  level: string;
+}): Promise<string> {
+  const segment: LessonSegment = {
+    id: "preview",
+    kind: "example",
+    speaker: "teacher",
+    delivery: "clear",
+    language: input.language,
+    text: input.text,
+  };
+  const rendered = await synthesizeWithGemini({
+    segment,
+    speaker: "teacher",
+    language: input.language,
+    text: input.text,
+    delivery: "clear",
+    level: input.level,
+    targetLanguage: input.language,
+    cloud: () => synthesizeWithCloudTts({
+      speaker: "teacher",
+      language: input.language,
+      text: input.text,
+      level: input.level,
+      targetLanguage: input.language,
+    }),
+  });
+  const audioPath = `users/${input.uid}/phrases/${input.phraseId}/preview.${rendered.extension}`;
+  await copyCached(rendered.cachePath, audioPath);
+  return audioPath;
+}
+
 export async function synthesizeSegment(input: {
   uid: string;
   lessonId: string;
