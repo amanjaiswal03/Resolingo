@@ -16,6 +16,7 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("Ordering at a bakery");
     expect(prompt).toContain("One teacher");
     expect(prompt).toContain("no second speaker");
+    expect(prompt).toContain("Do not review phrases from earlier lessons");
     expect(prompt).toContain("at least 12");
     expect(prompt).toContain("you, to a friend");
     expect(prompt).toContain("at most twice");
@@ -37,6 +38,11 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("one item for every line");
     expect(prompt).toContain("speak is 6 to 8");
     expect(prompt).toContain("realistic conversation");
+    expect(prompt).toContain("Before we start, let's see what you remember from last time.");
+    expect(prompt).toContain("Do you remember how to say");
+    expect(prompt).toContain("Great, now on to today's conversation.");
+    expect(prompt).toContain("Here's one from a previous lesson.");
+    expect(prompt).toContain("The same lead-in is not used twice");
   });
 
   it("keeps a phrase lesson on the learner's sentence", () => {
@@ -58,6 +64,7 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("German möchte");
     expect(prompt).toContain("glossed on its own");
     expect(prompt).toContain("Do not turn that literal wording into an answer");
+    expect(prompt).toContain("Do not review phrases from earlier lessons");
     expect(prompt).toContain("formally");
   });
 

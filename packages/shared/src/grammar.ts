@@ -188,7 +188,6 @@ export type GrammarSource = {
   drills: Drill[];
   checks: RuleCheck[];
   recombinations: Drill[];
-  priorReviews: Example[];
 };
 
 function textOf(value: unknown): string {
@@ -331,7 +330,6 @@ export function parseGrammarSource(value: unknown, topic: GrammarTopic, level: C
     drills,
     checks: checks.length > 0 ? checks : [{ cue: "What is the pattern?", answer: mnemonic.slice(0, 180) }],
     recombinations,
-    priorReviews: [],
   };
 }
 
@@ -629,7 +627,6 @@ export function arrangeGrammarLesson(input: {
   source: GrammarSource;
   nativeLanguage: LanguageId;
   targetLanguage: LanguageId;
-  priorReviews?: Example[];
 }): LessonSegment[] {
   const segments: LessonSegment[] = [];
   const used = new Map<string, number>();
@@ -667,9 +664,6 @@ export function arrangeGrammarLesson(input: {
   const label = `${input.source.topic.title.charAt(0).toLocaleLowerCase()}${input.source.topic.title.slice(1)}`;
   const welcome = `Today we'll learn ${label}.`;
   push({ kind: "narration", phase: "intro", language: input.nativeLanguage, text: welcome, delivery: "warm" });
-  (input.priorReviews ?? []).slice(0, 2).forEach((review, index) => {
-    askMeaning("warmup", review.translation, { ...review, language: input.targetLanguage }, index + 3);
-  });
 
   push({ kind: "narration", phase: "hook", language: input.nativeLanguage, text: "Listen to one real sentence. This is why the pattern matters.", delivery: "warm" });
   push({ kind: "example", phase: "hook", language: input.targetLanguage, text: input.source.hook.text, translation: input.source.hook.translation, delivery: "clear" });
@@ -735,7 +729,6 @@ export function arrangeGrammarLesson(input: {
 function arrangeParadigm(paradigm: Paradigm, input: {
   nativeLanguage: LanguageId;
   targetLanguage: LanguageId;
-  priorReviews?: Example[];
 }): LessonSegment[] {
   const segments: LessonSegment[] = [];
   const used = new Map<string, number>();
@@ -771,10 +764,6 @@ function arrangeParadigm(paradigm: Paradigm, input: {
   };
 
   push({ kind: "narration", phase: "intro", language: input.nativeLanguage, text: paradigm.welcome, delivery: "warm" });
-  (input.priorReviews ?? []).slice(0, 2).forEach((review, index) => {
-    const translation = disambiguateTranslation(review.translation, review.text, input.targetLanguage);
-    ask("warmup", takeCue(produceCues(translation), used, index + 2), { text: review.text, translation, language: input.targetLanguage });
-  });
   push({ kind: "narration", phase: "hook", language: input.nativeLanguage, text: "Listen to one real sentence. This is why the pattern matters.", delivery: "warm" });
   show(paradigm.hook, "hook");
   paradigm.singularExamples.forEach((example) => show(example, "example"));
@@ -853,6 +842,7 @@ export function shapeGrammarLesson(value: unknown, context: {
   targetLanguage: LanguageId;
   level: CefrLevel;
   topic: GrammarTopic;
+  /** Ignored. Phrases from earlier lessons are recalled only in conversation lessons. */
   priorReviews?: Example[];
 }): { title: string; topic: string; ruleId: string; summary: string; speakerNames: SpeakerNames; segments: LessonSegment[] } | null {
   const paradigm = PARADIGMS[context.topic.id];
@@ -863,7 +853,6 @@ export function shapeGrammarLesson(value: unknown, context: {
     const segments = arrangeParadigm(paradigm, {
       nativeLanguage: context.nativeLanguage,
       targetLanguage: context.targetLanguage,
-      ...(context.priorReviews ? { priorReviews: context.priorReviews } : {}),
     });
     return {
       title: paradigm.title,
@@ -880,7 +869,6 @@ export function shapeGrammarLesson(value: unknown, context: {
     source,
     nativeLanguage: context.nativeLanguage,
     targetLanguage: context.targetLanguage,
-    ...(context.priorReviews ? { priorReviews: context.priorReviews } : {}),
   });
   if (segments.some((segment) => segment.speaker !== "teacher")) return null;
   return {

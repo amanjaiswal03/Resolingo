@@ -183,6 +183,14 @@ describe("phrase lessons", () => {
     expect(phraseLessonPace("B1")).toBe("moderate");
   });
 
+  it("leaves phrases from earlier lessons out, even when some are due", () => {
+    const lesson = lessonFor("A2", {
+      priorReviews: [{ text: "Danke.", translation: "Thanks." }],
+    });
+    expect(lesson).not.toBeNull();
+    expect(lesson!.segments.some((segment) => segment.text.includes("Danke") || segment.phase === "warmup")).toBe(false);
+  });
+
   it("does not drill an idiom's literal gloss, and it keeps a name", () => {
     const idiom = shapePhraseLesson({
       ...shoesModel,

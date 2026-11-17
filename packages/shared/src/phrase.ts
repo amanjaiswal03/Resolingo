@@ -76,6 +76,7 @@ export type PhraseLessonContext = {
   /** Literal gloss for an idiom. Spoken once. Never used as the line to drill. */
   note?: string;
   inputLanguage?: "native" | "target" | "mixed" | "unknown";
+  /** Ignored. Phrases from earlier lessons are recalled only in conversation lessons. */
   priorReviews?: PhraseLine[];
 };
 
@@ -529,9 +530,6 @@ export function shapePhraseLesson(
   const targetLabel = languageById[context.targetLanguage].label;
   const teacherName = normalizeSpeakerNames(source.speakerNames).teacher;
   push({ kind: "narration", phase: "intro", language: context.nativeLanguage, text: introFor(context, targetLabel), delivery: "warm" });
-  (context.priorReviews ?? []).slice(0, 2).forEach((review, index) => {
-    ask({ answer: review.text, translation: review.translation, cues: produceCues(review.translation) }, "warmup", index + 1);
-  });
   push({ kind: "narration", phase: "hook", language: context.nativeLanguage, text: "Listen once, then we'll build it and try it in a few places.", delivery: "warm" });
   push({
     kind: "example",
