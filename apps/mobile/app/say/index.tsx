@@ -3,7 +3,7 @@ import { Alert, Linking, Pressable, StyleSheet, TextInput, View } from "react-na
 import { useRouter } from "expo-router";
 import { requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio";
 import { File } from "expo-file-system";
-import { MAX_PHRASE_AUDIO_SECONDS, type Phrase } from "@resolingo/shared";
+import { languageById, MAX_PHRASE_AUDIO_SECONDS, type Phrase } from "@resolingo/shared";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Screen } from "@/components/Screen";
@@ -34,7 +34,7 @@ function clock(millis: number): string {
 type Phase = "idle" | "listening" | "transcribing";
 
 export default function SayScreen() {
-  const { user } = useSession();
+  const { user, profile } = useSession();
   const router = useRouter();
   const theme = useTheme();
   const [text, setText] = useState("");
@@ -172,7 +172,7 @@ export default function SayScreen() {
       <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()}><Body muted>Back</Body></Pressable>
       <View style={styles.header}>
         <Title>How would you say?</Title>
-        <Body muted>Type a sentence, or tap the microphone and say it. You can edit the words before translating.</Body>
+        <Body muted>Type a sentence, or tap the microphone and say it. You’ll hear it in {profile ? languageById[profile.targetLanguage].label : "your target language"}, then you can make a short lesson. You can edit the words before translating.</Body>
       </View>
       <TextInput
         value={text}
@@ -180,7 +180,7 @@ export default function SayScreen() {
         multiline
         editable={!busy}
         maxLength={280}
-        placeholder="How would you say I need to buy a pair of shoes?"
+        placeholder="I need to buy a pair of shoes."
         placeholderTextColor={theme.textMuted}
         style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
       />
