@@ -120,10 +120,13 @@ function asJson(text: string | undefined): unknown {
   return value;
 }
 
+export type LessonModelPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+export type LessonModelContents = string | { role?: "user"; parts: LessonModelPart[] };
+
 export type LessonModelClient = {
   generateContent(request: {
     model: string;
-    contents: string;
+    contents: LessonModelContents;
     config: GenerateContentConfig;
   }): Promise<Pick<GenerateContentResponse, "text" | "promptFeedback" | "candidates">>;
 };

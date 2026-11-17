@@ -23,7 +23,7 @@ function client(responses: Array<{ text?: string; blocked?: boolean }>): LessonM
   return {
     contents,
     generateContent: vi.fn(async (request) => {
-      contents.push(request.contents);
+      contents.push(typeof request.contents === "string" ? request.contents : JSON.stringify(request.contents));
       const next = responses[contents.length - 1] ?? { text: "" };
       if (next.blocked) {
         return { text: undefined, candidates: [{ finishReason: FinishReason.SAFETY }] };

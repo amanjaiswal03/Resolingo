@@ -1,14 +1,18 @@
 import { FinishReason, HarmBlockThreshold, HarmCategory } from "@google/genai";
+import { phraseIdFor } from "@resolingo/shared";
 import { describe, expect, it, vi } from "vitest";
-import { PhraseTranslationError, translatePhraseContent, translationConfig } from "./translate.js";
+import { PhraseTranslationError, transcribePhraseAudio, translatePhraseContent, translateSpokenPhrase, transcriptionPrompt, translationConfig } from "./translate.js";
 import type { LessonModelClient } from "./gemini.js";
 
-function client(responses: Array<{ text?: string; blocked?: boolean }>): LessonModelClient & { contents: string[] } {
+function client(responses: Array<{ text?: string; blocked?: boolean }>): LessonModelClient & { contents: string[]; systems: string[] } {
   const contents: string[] = [];
+  const systems: string[] = [];
   return {
     contents,
+    systems,
     generateContent: vi.fn(async (request) => {
-      contents.push(request.contents);
+      contents.push(typeof request.contents === "string" ? request.contents : JSON.stringify(request.contents));
+      systems.push(typeof request.config?.systemInstruction === "string" ? request.config.systemInstruction : "");
       const next = responses[contents.length - 1] ?? { text: "" };
       if (next.blocked) return { text: undefined, candidates: [{ finishReason: FinishReason.SAFETY }] };
       return { text: next.text ?? "", candidates: [{ finishReason: FinishReason.STOP }] };
@@ -95,5 +99,43 @@ describe("phrase translation", () => {
     }) }]);
     const result = await translatePhraseContent({ ...input, targetLanguage: "ja-JP" }, model);
     expect(result.transliteration).toBe("Kutsu o issoku kau hitsuyou ga arimasu.");
+  });
+
+  it("transcribes speech in the native language and can translate it in the same call", async () => {
+    const audioBase64 = Buffer.alloc(900, 7).toString("base64");
+    const heard = client([{ text: JSON.stringify({ ok: true, nativeText: "I need to buy a pair of shoes" }) }]);
+    const transcript = await transcribePhraseAudio({ audioBase64, mimeType: "audio/m4a", nativeLanguage: "en-US" }, heard);
+    expect(transcript).toBe("I need to buy a pair of shoes");
+    const sent = JSON.parse(heard.contents[0] ?? "{}") as { parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> };
+    expect(sent.parts[0]?.inlineData).toEqual({ mimeType: "audio/mp4", data: audioBase64 });
+    expect(sent.parts[1]?.text).toContain("English (US)");
+    expect(heard.systems[0]).toContain("transcribe");
+    expect(heard.systems[0]).not.toContain("alternatives");
+    expect(sent.parts[1]?.text).toContain(transcriptionPrompt("en-US").slice(0, 40));
+    expect(sent.parts[1]?.text).not.toContain(audioBase64);
+
+    const spoken = client([{ text: JSON.stringify(valid) }]);
+    const result = await translateSpokenPhrase({
+      audioBase64,
+      mimeType: "audio/m4a",
+      nativeLanguage: "en-US",
+      targetLanguage: "de-DE",
+      level: "A2",
+    }, spoken);
+    expect(result.nativeText).toBe("I need to buy a pair of shoes");
+    expect(result.translation).toBe("Ich muss ein Paar Schuhe kaufen.");
+    expect(result.phraseId).toBe(phraseIdFor("de-DE", "A2", transcript));
+  });
+
+  it("treats silent audio as nothing to store", async () => {
+    const audioBase64 = Buffer.alloc(900, 7).toString("base64");
+    const model = client([{ text: JSON.stringify({ ok: false, reason: "quiet room" }) }]);
+    const error = await transcribePhraseAudio({ audioBase64, mimeType: "audio/wav", nativeLanguage: "en-US" }, model).then(() => null, (caught: unknown) => caught);
+    expect(error).toBeInstanceOf(PhraseTranslationError);
+    expect(error).toMatchObject({ code: "silent", message: "PHRASE_SILENT" });
+    expect(String(error)).not.toContain("quiet room");
+    expect(String(error)).not.toContain(audioBase64);
+    const empty = client([{ text: JSON.stringify({ ok: true, nativeText: "..." }) }]);
+    await expect(transcribePhraseAudio({ audioBase64, mimeType: "audio/m4a", nativeLanguage: "en-US" }, empty)).rejects.toMatchObject({ code: "silent" });
   });
 });

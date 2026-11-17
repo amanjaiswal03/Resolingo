@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeLessonBlocks, CreateDailyLessonRequestSchema, CreatePhraseLessonRequestSchema, InitializeProfileRequestSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, STALE_UNENQUEUED_AFTER_MS, TranslatePhraseRequestSchema } from "./index.js";
+import { activeLessonBlocks, CreateDailyLessonRequestSchema, CreatePhraseLessonRequestSchema, InitializeProfileRequestSchema, isStaleUnenqueuedLesson, languageById, languages, LessonSegmentSchema, MAX_PHRASE_AUDIO_BYTES, phraseAudioByteLength, STALE_UNENQUEUED_AFTER_MS, TranslatePhraseRequestSchema } from "./index.js";
 
 describe("shared contracts", () => {
   it("contains the canonical 32-language catalog", () => {
@@ -28,6 +28,37 @@ describe("shared contracts", () => {
     expect(TranslatePhraseRequestSchema.safeParse({ text: "I need shoes", audioBase64: "AAAA" }).success).toBe(false);
     expect(TranslatePhraseRequestSchema.safeParse({ text: "x".repeat(281) }).success).toBe(false);
     expect(TranslatePhraseRequestSchema.safeParse({ text: "I need to buy a pair of shoes" }).success).toBe(true);
+    const spoken = Buffer.alloc(900, 7).toString("base64");
+    expect(phraseAudioByteLength(spoken)).toBe(900);
+    expect(TranslatePhraseRequestSchema.safeParse({
+      mode: "transcribe",
+      audioBase64: spoken,
+      mimeType: "audio/m4a",
+      durationMs: 2_000,
+    }).success).toBe(true);
+    expect(TranslatePhraseRequestSchema.safeParse({
+      mode: "transcribe",
+      audioBase64: spoken,
+      mimeType: "audio/webm",
+      durationMs: 2_000,
+    }).success).toBe(false);
+    const oversized = Buffer.alloc(MAX_PHRASE_AUDIO_BYTES + 1, 1).toString("base64");
+    const tooBig = TranslatePhraseRequestSchema.safeParse({
+      mode: "transcribe",
+      audioBase64: oversized,
+      mimeType: "audio/mp4",
+      durationMs: 2_000,
+    });
+    expect(tooBig.success).toBe(false);
+    if (!tooBig.success) expect(tooBig.error.issues.some((issue) => issue.message === "That recording is too long.")).toBe(true);
+    const silent = TranslatePhraseRequestSchema.safeParse({
+      mode: "transcribe",
+      audioBase64: Buffer.alloc(20, 1).toString("base64"),
+      mimeType: "audio/m4a",
+      durationMs: 2_000,
+    });
+    expect(silent.success).toBe(false);
+    if (!silent.success) expect(silent.error.issues.some((issue) => issue.message === "Didn't catch that. Try again.")).toBe(true);
     expect(CreatePhraseLessonRequestSchema.safeParse({
       phraseId: "phrase_ab12cd34",
       idempotencyKey: "6f9619ff-8b86-4d01-b42d-00cf4fc964ff",
