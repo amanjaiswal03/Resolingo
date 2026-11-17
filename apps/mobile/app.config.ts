@@ -31,7 +31,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       supportsTablet: true,
       usesAppleSignIn: true,
       ...(googleInfoPlist ? { googleServicesFile: googleInfoPlist } : {}),
-      infoPlist: { UIBackgroundModes: ["audio", "remote-notification"] },
+      infoPlist: {
+        UIBackgroundModes: ["audio", "remote-notification"],
+        NSMicrophoneUsageDescription: "Resolingo uses the microphone so you can say a sentence in your language and get it translated.",
+      },
     },
     android: {
       package: identifier,
@@ -40,13 +43,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         foregroundImage: "./assets/resolingo-icon.png",
         backgroundColor: "#08152F",
       },
-      permissions: ["POST_NOTIFICATIONS"],
+      permissions: ["POST_NOTIFICATIONS", "RECORD_AUDIO"],
     },
     plugins: [
       "expo-dev-client",
       "expo-router",
       ["expo-splash-screen", { image: "./assets/resolingo-icon.png", imageWidth: 180, resizeMode: "contain", backgroundColor: "#08152F", dark: { backgroundColor: "#08152F" } }],
-      ["expo-audio", { enableBackgroundPlayback: true, recordAudioAndroid: false, microphonePermission: false }],
+      ["expo-audio", {
+        enableBackgroundPlayback: true,
+        recordAudioAndroid: true,
+        microphonePermission: "Resolingo uses the microphone so you can say a sentence in your language and get it translated.",
+      }],
       ["expo-notifications", { color: "#FF775F", defaultChannel: "lessons" }],
       "expo-apple-authentication",
       "expo-secure-store",

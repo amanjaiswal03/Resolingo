@@ -24,7 +24,11 @@ export const api = {
     note?: string;
     audioPath?: string;
     lessonId?: string;
-  }>("translatePhrase", { text }),
+  }>("translatePhrase", { mode: "translate", text }),
+  transcribePhrase: (audio: { audioBase64: string; mimeType: "audio/m4a" | "audio/mp4" | "audio/aac" | "audio/wav"; durationMs: number }) => call<unknown, {
+    mode: "transcribe";
+    nativeText: string;
+  }>("translatePhrase", { mode: "transcribe", ...audio }),
   createPhraseLesson: (phraseId: string, idempotencyKey: string) => call<unknown, { lessonId: string }>("createPhraseLesson", { phraseId, idempotencyKey }),
   retryFailedLesson: (lessonId: string) => call("retryFailedLesson", { lessonId }),
   registerPushDevice: (data: { expoPushToken: string; nativePushToken?: string; platform: "ios" | "android" }) => call("registerPushDevice", data),

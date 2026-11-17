@@ -123,16 +123,50 @@ export const CreateDailyLessonRequestSchema = z.object({
   type: z.enum(["conversation", "grammar"]),
   idempotencyKey: z.string().uuid(),
 });
+export const PHRASE_AUDIO_MIME_TYPES = ["audio/m4a", "audio/mp4", "audio/aac", "audio/wav"] as const;
+export const MAX_PHRASE_AUDIO_BYTES = 1_000_000;
+export const MAX_PHRASE_AUDIO_SECONDS = 15;
+const MIN_PHRASE_AUDIO_BYTES = 800;
+const MIN_PHRASE_AUDIO_MS = 300;
+
+/** Decoded size of a base64 payload, ignoring whitespace. */
+export function phraseAudioByteLength(audioBase64: string): number {
+  const cleaned = audioBase64.replace(/\s/gu, "");
+  if (cleaned.length === 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(cleaned) || cleaned.length % 4 !== 0) return Number.POSITIVE_INFINITY;
+  const padding = cleaned.endsWith("==") ? 2 : cleaned.endsWith("=") ? 1 : 0;
+  return Math.floor((cleaned.length * 3) / 4) - padding;
+}
+
 export const TranslatePhraseRequestSchema = z.object({
-  text: z.string().trim().min(1).max(280),
-  /** Reserved so speech can be added later. Sending it now is rejected. */
-  audioBase64: z.string().min(1).optional(),
-  mimeType: z.enum(["audio/m4a", "audio/mp4", "audio/wav"]).optional(),
+  mode: z.enum(["translate", "transcribe"]).default("translate"),
+  text: z.string().trim().max(280).optional(),
+  audioBase64: z.string().min(1).max(2_000_000).optional(),
+  mimeType: z.string().optional(),
+  durationMs: z.number().int().min(1).max(MAX_PHRASE_AUDIO_SECONDS * 1000, "Keep it under 15 seconds.").optional(),
 }).strict().superRefine((value, context) => {
-  if (value.audioBase64 || value.mimeType) {
-    context.addIssue({ code: z.ZodIssueCode.custom, message: "Speech input is not available yet.", path: ["audioBase64"] });
+  if (value.audioBase64) {
+    if (!value.mimeType || !(PHRASE_AUDIO_MIME_TYPES as readonly string[]).includes(value.mimeType)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "That recording format is not supported.", path: ["mimeType"] });
+    }
+    const bytes = phraseAudioByteLength(value.audioBase64);
+    if (!Number.isFinite(bytes)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "That recording could not be read.", path: ["audioBase64"] });
+    } else if (bytes > MAX_PHRASE_AUDIO_BYTES) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "That recording is too long.", path: ["audioBase64"] });
+    } else if (bytes < MIN_PHRASE_AUDIO_BYTES || (value.durationMs !== undefined && value.durationMs < MIN_PHRASE_AUDIO_MS)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Didn't catch that. Try again.", path: ["audioBase64"] });
+    }
+    if (value.durationMs === undefined) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Keep it under 15 seconds.", path: ["durationMs"] });
+    }
+    return;
   }
-  if (!/[\p{L}]/u.test(value.text)) {
+  if (value.mode === "transcribe" || value.mimeType || value.durationMs !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Record a short sentence.", path: ["audioBase64"] });
+    return;
+  }
+  const text = value.text ?? "";
+  if (!text || !/[\p{L}]/u.test(text)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Type a sentence.", path: ["text"] });
   }
 });

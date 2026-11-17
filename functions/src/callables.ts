@@ -1,4 +1,4 @@
-import { FieldValue, Timestamp, type DocumentData, type Transaction } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type DocumentData, type DocumentReference, type Transaction } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import {
@@ -26,7 +26,7 @@ import { abandonUnenqueuedLesson, enqueueLesson } from "./jobs.js";
 import { nextReminderAt, localDate, assertTimezone } from "./time.js";
 import { tokenHash } from "./push.js";
 import { dailyReservationLimit, reserveLesson, withoutReservation } from "./quota.js";
-import { PhraseTranslationError, translatePhraseContent, type PhraseTranslation } from "./translate.js";
+import { PhraseTranslationError, transcribePhraseAudio, translatePhraseContent, translateSpokenPhrase, type PhraseTranslation } from "./translate.js";
 import { synthesizePhrasePreview } from "./tts.js";
 import type { ZodError } from "zod";
 
@@ -195,8 +195,17 @@ export const createDailyLesson = onCall(callableOptions, async (request) => {
 });
 
 function translateRequestError(error: ZodError): HttpsError {
-  if (error.issues.some((issue) => issue.message === "Speech input is not available yet.")) {
-    return new HttpsError("invalid-argument", "Speech input is not available yet.");
+  const spoken = error.issues.find((issue) => (
+    issue.message === "That recording is too long."
+    || issue.message === "That recording format is not supported."
+    || issue.message === "That recording could not be read."
+    || issue.message === "Didn't catch that. Try again."
+    || issue.message === "Keep it under 15 seconds."
+    || issue.message === "Record a short sentence."
+  ));
+  if (spoken) return new HttpsError("invalid-argument", spoken.message);
+  if (error.issues.some((issue) => issue.code === "too_big" && issue.path.includes("audioBase64"))) {
+    return new HttpsError("invalid-argument", "That recording is too long.");
   }
   if (error.issues.some((issue) => issue.code === "too_big")) {
     return new HttpsError("invalid-argument", "Keep it to one short sentence.");
@@ -205,6 +214,9 @@ function translateRequestError(error: ZodError): HttpsError {
 }
 
 function translationFailure(error: unknown): HttpsError {
+  if (error instanceof PhraseTranslationError && error.code === "silent") {
+    return new HttpsError("invalid-argument", "Didn't catch that. Try again.");
+  }
   if (error instanceof PhraseTranslationError && (error.code === "rejected" || error.code === "blocked")) {
     return new HttpsError("invalid-argument", "That doesn't look like a sentence to translate.");
   }
@@ -281,6 +293,27 @@ async function attachPreview(uid: string, phrase: StoredPhrase, level: string, l
   }
 }
 
+async function assertPhraseQuota(uid: string, profile: DocumentData): Promise<{ usageRef: DocumentReference; limit: number }> {
+  const usageRef = db.doc(`users/${uid}/dailyUsage/${localDate(profile.timezone as string)}`);
+  const usage = (await usageRef.get()).data() ?? {};
+  const limit = phraseLookupLimit(profile.unlimitedLessons);
+  if (Number(usage.phraseLookups ?? 0) >= limit) {
+    throw new HttpsError("resource-exhausted", "You've reached today's phrase lookups.");
+  }
+  return { usageRef, limit };
+}
+
+async function chargePhraseLookup(usageRef: DocumentReference, limit: number): Promise<void> {
+  const charged = await db.runTransaction(async (transaction) => {
+    const current = await transaction.get(usageRef);
+    const count = Number(current.data()?.phraseLookups ?? 0);
+    if (count >= limit) return false;
+    transaction.set(usageRef, { phraseLookups: count + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    return true;
+  });
+  if (!charged) throw new HttpsError("resource-exhausted", "You've reached today's phrase lookups.");
+}
+
 export const translatePhrase = onCall({ ...callableOptions, timeoutSeconds: 120 }, async (request) => {
   const uid = requireUid(request);
   const parsed = TranslatePhraseRequestSchema.safeParse(request.data);
@@ -292,25 +325,52 @@ export const translatePhrase = onCall({ ...callableOptions, timeoutSeconds: 120 
   const nativeLanguage = LanguageIdSchema.parse(profile.nativeLanguage);
   const targetLanguage = LanguageIdSchema.parse(profile.targetLanguage);
   const level = CefrLevelSchema.parse(profile.level);
-  const phraseId = phraseIdFor(targetLanguage, level, parsed.data.text);
-  const phraseRef = db.doc(`users/${uid}/phrases/${phraseId}`);
-  const existing = storedPhrase(phraseId, (await phraseRef.get()).data());
-  if (existing) return phraseResponse(await attachPreview(uid, existing, level, targetLanguage));
-
-  const quotaDate = localDate(profile.timezone as string);
-  const usageRef = db.doc(`users/${uid}/dailyUsage/${quotaDate}`);
-  const usage = (await usageRef.get()).data() ?? {};
-  const limit = phraseLookupLimit(profile.unlimitedLessons);
-  if (Number(usage.phraseLookups ?? 0) >= limit) {
-    throw new HttpsError("resource-exhausted", "You've reached today's phrase lookups.");
+  const audio = parsed.data.audioBase64 && parsed.data.mimeType
+    ? { audioBase64: parsed.data.audioBase64, mimeType: parsed.data.mimeType }
+    : null;
+  if (audio && parsed.data.mode === "transcribe") {
+    const quota = await assertPhraseQuota(uid, profile);
+    let nativeText: string;
+    try {
+      nativeText = await transcribePhraseAudio({ ...audio, nativeLanguage });
+    } catch (error) {
+      throw translationFailure(error);
+    }
+    await chargePhraseLookup(quota.usageRef, quota.limit);
+    return { mode: "transcribe" as const, nativeText };
   }
 
   let translated: PhraseTranslation;
-  try {
-    translated = await translatePhraseContent({ text: parsed.data.text, nativeLanguage, targetLanguage, level });
-  } catch (error) {
-    throw translationFailure(error);
+  let phraseId: string;
+  let phraseRef: DocumentReference;
+  if (audio) {
+    await assertPhraseQuota(uid, profile);
+    try {
+      translated = await translateSpokenPhrase({ ...audio, nativeLanguage, targetLanguage, level });
+    } catch (error) {
+      throw translationFailure(error);
+    }
+    phraseId = translated.phraseId;
+    phraseRef = db.doc(`users/${uid}/phrases/${phraseId}`);
+    const existing = storedPhrase(phraseId, (await phraseRef.get()).data());
+    if (existing) return phraseResponse(await attachPreview(uid, existing, level, targetLanguage));
+  } else {
+    const text = parsed.data.text ?? "";
+    phraseId = phraseIdFor(targetLanguage, level, text);
+    phraseRef = db.doc(`users/${uid}/phrases/${phraseId}`);
+    const existing = storedPhrase(phraseId, (await phraseRef.get()).data());
+    if (existing) return phraseResponse(await attachPreview(uid, existing, level, targetLanguage));
+    await assertPhraseQuota(uid, profile);
+    try {
+      translated = await translatePhraseContent({ text, nativeLanguage, targetLanguage, level });
+    } catch (error) {
+      throw translationFailure(error);
+    }
   }
+
+  const quotaDate = localDate(profile.timezone as string);
+  const usageRef = db.doc(`users/${uid}/dailyUsage/${quotaDate}`);
+  const limit = phraseLookupLimit(profile.unlimitedLessons);
 
   const outcome = await db.runTransaction(async (transaction) => {
     const [currentPhrase, currentUsage] = await Promise.all([transaction.get(phraseRef), transaction.get(usageRef)]);
