@@ -18,6 +18,8 @@ import { report, track } from "@/services/telemetry";
 import { useSession } from "@/session/SessionProvider";
 import { useTheme } from "@/theme/tokens";
 
+type DailyLessonType = Exclude<LessonType, "phrase">;
+
 function dateInZone(zone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts();
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
@@ -29,7 +31,7 @@ export default function HomeScreen() {
   const { lessons, loading } = useLessons();
   const router = useRouter();
   const theme = useTheme();
-  const [starting, setStarting] = useState<LessonType | null>(null);
+  const [starting, setStarting] = useState<DailyLessonType | null>(null);
   useEffect(() => {
     if (!profile?.reminderEnabled) return;
     void registerForPush();
@@ -41,7 +43,7 @@ export default function HomeScreen() {
   const unlimited = profile?.unlimitedLessons === true;
   const active = lessons.find((lesson) => ["queued", "generating_content", "synthesizing_audio"].includes(lesson.status));
   const startDisabled = Boolean(starting || active) || dailyCapBlocksStart(used, unlimited);
-  const start = async (type: LessonType) => {
+  const start = async (type: DailyLessonType) => {
     setStarting(type);
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -63,6 +65,9 @@ export default function HomeScreen() {
         </Pressable>
         <Pressable disabled={startDisabled} onPress={() => void start("grammar")} accessibilityRole="button" accessibilityLabel="Start a grammar lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
           <Card style={[styles.lessonCard, { backgroundColor: theme.mint }]}><Body style={styles.eyebrow}>GRAMMAR</Body><Title style={styles.dark}>Understand one useful pattern clearly.</Title><Body style={styles.darkMuted}>{starting === "grammar" ? "Starting…" : "8–12 minutes · One narrator"}</Body></Card>
+        </Pressable>
+        <Pressable onPress={() => router.push("/say")} accessibilityRole="button" accessibilityLabel="How would you say">
+          <Card style={[styles.lessonCard, { backgroundColor: theme.coral }]}><Body style={styles.eyebrow}>HOW WOULD YOU SAY?</Body><Title style={styles.dark}>Ask for a sentence, then practice it.</Title><Body style={styles.darkMuted}>Type it · One narrator</Body></Card>
         </Pressable>
       </View>
       {lessons.length ? <View style={styles.recent}><Heading>Recent lessons</Heading>{lessons.slice(0, 3).map((lesson) => <LessonRow key={lesson.id} lesson={lesson} />)}</View> : null}

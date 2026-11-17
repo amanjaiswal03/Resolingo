@@ -2,6 +2,7 @@ export * from "./active-lesson.js";
 export * from "./grammar.js";
 export * from "./languages.js";
 export * from "./markup.js";
+export * from "./phrase.js";
 export * from "./pimsleur.js";
 export * from "./review.js";
 export * from "./schemas.js";

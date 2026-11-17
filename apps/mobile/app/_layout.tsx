@@ -47,6 +47,8 @@ function Navigation() {
         <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
         <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
         <Stack.Screen name="lesson/[id]" options={{ presentation: "card" }} />
+        <Stack.Screen name="say/index" options={{ presentation: "card" }} />
+        <Stack.Screen name="say/[id]" options={{ presentation: "card" }} />
       </Stack>
     </View>
   );

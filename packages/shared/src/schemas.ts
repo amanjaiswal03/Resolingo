@@ -2,7 +2,7 @@ import { z } from "zod";
 import { LanguageIdSchema } from "./languages.js";
 import { normalizeSpeakerNames } from "./speakers.js";
 
-export const LessonTypeSchema = z.enum(["conversation", "grammar"]);
+export const LessonTypeSchema = z.enum(["conversation", "grammar", "phrase"]);
 export type LessonType = z.infer<typeof LessonTypeSchema>;
 
 export const LessonStatusSchema = z.enum([
@@ -99,6 +99,10 @@ export const LessonSchema = z.object({
   title: z.string().default("Preparing your lesson"),
   topic: z.string().default(""),
   ruleId: z.string().min(1).max(40).optional(),
+  /** Set when the lesson was built from a saved "How would you say?" phrase. */
+  phraseId: z.string().min(1).max(40).optional(),
+  nativeText: z.string().min(1).max(280).optional(),
+  translation: z.string().min(1).max(280).optional(),
   summary: z.string().default(""),
   speakerNames: SpeakerNamesField,
   segments: z.array(LessonSegmentSchema).default([]),
@@ -116,9 +120,49 @@ export const InitializeProfileRequestSchema = UserProfileSchema.omit({
   unlimitedLessons: true,
 });
 export const CreateDailyLessonRequestSchema = z.object({
-  type: LessonTypeSchema,
+  type: z.enum(["conversation", "grammar"]),
   idempotencyKey: z.string().uuid(),
 });
+export const TranslatePhraseRequestSchema = z.object({
+  text: z.string().trim().min(1).max(280),
+  /** Reserved so speech can be added later. Sending it now is rejected. */
+  audioBase64: z.string().min(1).optional(),
+  mimeType: z.enum(["audio/m4a", "audio/mp4", "audio/wav"]).optional(),
+}).strict().superRefine((value, context) => {
+  if (value.audioBase64 || value.mimeType) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Speech input is not available yet.", path: ["audioBase64"] });
+  }
+  if (!/[\p{L}]/u.test(value.text)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Type a sentence.", path: ["text"] });
+  }
+});
+export const CreatePhraseLessonRequestSchema = z.object({
+  phraseId: z.string().regex(/^phrase_[0-9a-f]{8}$/),
+  idempotencyKey: z.string().uuid(),
+});
+export const PhraseAlternativeSchema = z.object({
+  label: z.string().min(1).max(40),
+  text: z.string().min(1).max(280),
+  transliteration: z.string().max(280).optional(),
+});
+export const PhraseInputLanguageSchema = z.enum(["native", "target", "mixed", "unknown"]);
+export const PhraseSchema = z.object({
+  id: z.string().regex(/^phrase_[0-9a-f]{8}$/),
+  nativeText: z.string().min(1).max(280),
+  translation: z.string().min(1).max(280),
+  transliteration: z.string().max(280).optional(),
+  alternatives: z.array(PhraseAlternativeSchema).max(2).default([]),
+  inputLanguage: PhraseInputLanguageSchema,
+  note: z.string().max(280).optional(),
+  audioPath: z.string().min(1).optional(),
+  lessonId: z.string().min(1).optional(),
+  targetLanguage: LanguageIdSchema,
+  nativeLanguage: LanguageIdSchema,
+  level: CefrLevelSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type Phrase = z.infer<typeof PhraseSchema>;
 export const LessonIdRequestSchema = z.object({ lessonId: z.string().min(1) });
 export const RegisterPushDeviceRequestSchema = z.object({
   expoPushToken: z.string().min(1),

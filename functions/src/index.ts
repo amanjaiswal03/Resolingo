@@ -6,11 +6,13 @@ import { recordLessonReviews } from "./reviews.js";
 
 export {
   createDailyLesson,
+  createPhraseLesson,
   deleteAccount,
   initializeProfile,
   registerPushDevice,
   retryFailedLesson,
   setTelemetryConsent,
+  translatePhrase,
   updateReminder,
 } from "./callables.js";
 export { cleanupAbandonedJobs, dispatchReminders, processPushReceipts, recoverUnenqueuedLessons } from "./schedules.js";

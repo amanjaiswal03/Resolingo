@@ -45,6 +45,11 @@ service cloud.firestore {
         allow read: if owns(userId);
         allow write: if false;
       }
+
+      match /phrases/{phraseId} {
+        allow read: if owns(userId);
+        allow write: if false;
+      }
     }
 
     match /{document=**} {

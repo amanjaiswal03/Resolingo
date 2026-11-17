@@ -39,6 +39,28 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("realistic conversation");
   });
 
+  it("keeps a phrase lesson on the learner's sentence", () => {
+    const prompt = lessonPrompt({
+      type: "phrase",
+      nativeLanguage: languageById["en-US"],
+      targetLanguage: languageById["de-DE"],
+      level: "A2",
+      recentTopics: [],
+      phrase: {
+        nativeText: "I need to buy a pair of shoes",
+        translation: "Ich muss ein Paar Schuhe kaufen.",
+        alternatives: [{ label: "formally", text: "Ich hätte gern ein Paar Schuhe." }],
+        note: "Literally, that is cats and dogs.",
+      },
+    });
+    expect(prompt).toContain("Ich muss ein Paar Schuhe kaufen.");
+    expect(prompt).toContain("not a copy");
+    expect(prompt).toContain("German möchte");
+    expect(prompt).toContain("glossed on its own");
+    expect(prompt).toContain("Do not turn that literal wording into an answer");
+    expect(prompt).toContain("formally");
+  });
+
   it("requires transliteration for configured writing systems", () => {
     const prompt = lessonPrompt({
       type: "conversation",

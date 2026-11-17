@@ -158,6 +158,46 @@ describe("Gemini lesson generation", () => {
     expect(lessonGenerationConfig("grammar").systemInstruction).not.toContain("lines is an array of 4 to 6");
   });
 
+  it("builds a teacher-only phrase lesson around the saved sentence", async () => {
+    const model = client([{ text: JSON.stringify({
+      title: "Buying a pair of shoes",
+      topic: "I need to buy a pair of shoes",
+      summary: "Practice asking for a pair of shoes and a few variations.",
+      chunks: [
+        { text: "Schuhe", translation: "shoes" },
+        { text: "ein Paar Schuhe", translation: "a pair of shoes" },
+      ],
+      pattern: "After muss or möchte, the other verb goes to the end.",
+      swaps: [
+        { from: "shoes", to: "a jacket", focus: "eine Jacke", focusTranslation: "a jacket", answer: "Ich muss eine Jacke kaufen.", translation: "I need to buy a jacket" },
+        { from: "shoes", to: "tickets", focus: "Tickets", focusTranslation: "tickets", answer: "Ich muss Tickets kaufen.", translation: "I need to buy tickets" },
+      ],
+      situations: [
+        { setup: "You're in a shoe shop. The clerk asks what you're looking for.", focus: "möchte", focusTranslation: "would like", usage: "Möchte is the polite would like.", answer: "Ich möchte ein Paar Schuhe kaufen.", translation: "I would like to buy a pair of shoes" },
+        { setup: "A friend asks why you're going into town.", focus: "noch", focusTranslation: "still", answer: "Ich muss noch Schuhe kaufen.", translation: "I still need to buy shoes" },
+        { setup: "You're ordering online and you have to name what you need.", focus: "Ich brauche", focusTranslation: "I need", words: [{ text: "neue", translation: "new" }], answer: "Ich brauche neue Schuhe.", translation: "I need new shoes" },
+      ],
+      roleplay: { setup: "You're at the counter.", answer: "Ich möchte ein Paar Schuhe kaufen.", translation: "I would like to buy a pair of shoes" },
+    }) }]);
+    const result = await generateLessonContent({
+      ...input,
+      type: "phrase",
+      level: "A2",
+      phrase: {
+        phraseId: "phrase_ab12cd34",
+        nativeText: "I need to buy a pair of shoes",
+        translation: "Ich muss ein Paar Schuhe kaufen.",
+        inputLanguage: "native",
+      },
+    }, model);
+    expect(result.ruleId).toBe("phrase_ab12cd34");
+    expect(result.segments.every((segment) => segment.speaker === "teacher")).toBe(true);
+    expect(result.segments.some((segment) => segment.text.includes("Ich muss eine Jacke kaufen."))).toBe(true);
+    expect(model.contents[0]).toContain("Ich muss ein Paar Schuhe kaufen.");
+    expect(lessonGenerationConfig("phrase").responseSchema).toBeUndefined();
+    expect(lessonGenerationConfig("phrase").systemInstruction).toContain("Do not write a dialogue");
+  });
+
   it("fails closed when both attempts are blocked or invalid", async () => {
     await expect(generateLessonContent(input, client([{ blocked: true }, { blocked: true }]))).rejects.toThrow("MODEL_OUTPUT_BLOCKED");
     await expect(generateLessonContent(input, client([{ text: "{}" }, { text: "nope" }]))).rejects.toThrow("MODEL_OUTPUT_INVALID");

@@ -84,7 +84,7 @@ export async function recordLessonReviews(uid: string, lessonId: string): Promis
     return;
   }
   const now = Date.now();
-  const ruleId = lesson.type === "grammar" && typeof lesson.ruleId === "string" ? lesson.ruleId.trim() : "";
+  const ruleId = (lesson.type === "grammar" || lesson.type === "phrase") && typeof lesson.ruleId === "string" ? lesson.ruleId.trim() : "";
   const collection = db.collection(`users/${uid}/reviewItems`);
   const refs = seen.map((phrase) => collection.doc(reviewItemId(target.data, phrase.text)));
   const existing = await db.getAll(...refs);
