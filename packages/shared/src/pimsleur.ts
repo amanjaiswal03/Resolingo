@@ -341,6 +341,108 @@ function longestMeaning(prompt: string, meanings: string[]): string | undefined 
 
 const RECALL_PHASES = new Set(["recall", "review", "warmup", "recombine", "roleplay"]);
 
+/** Narrator lines that open a block of phrases from earlier lessons. */
+const PRIOR_LEAD_INS = [
+  "Before we start, let's see what you remember from last time.",
+  "Let's take a moment to recall something you learned earlier.",
+  "We'll start by checking what stuck from last time.",
+  "A moment to remember something from an earlier lesson.",
+] as const;
+
+/** The question that follows a lead-in. Each lesson uses a wording once. */
+const PRIOR_REMEMBER = [
+  "Do you remember how to say {translation}?",
+  "Can you recall how to say {translation}?",
+  "See if you remember how to say {translation}.",
+  "Do you still remember how to say {translation}?",
+] as const;
+
+/** One line that both bridges back and asks for a phrase mixed in later. */
+const PRIOR_BRIDGES = [
+  "Here's one from a previous lesson. Do you remember how to say {translation}?",
+  "Let's pull in one from an earlier lesson. Do you remember how to say {translation}?",
+  "One from a previous lesson, before we continue. Do you remember how to say {translation}?",
+  "From an earlier lesson, before we go on. Do you remember how to say {translation}?",
+] as const;
+
+const PRIOR_RETURNS = [
+  "Great, now on to today's conversation.",
+  "Nice. Now on to today's conversation.",
+  "Good. Let's get into today's conversation.",
+  "All right. On to today's conversation.",
+] as const;
+
+function linePicker(options: readonly string[], seed: number): () => string {
+  const used = new Set<string>();
+  let cursor = Math.abs(seed) % options.length;
+  return () => {
+    for (let hop = 0; hop < options.length; hop += 1) {
+      const line = options[(cursor + hop) % options.length] ?? options[0]!;
+      const key = line.toLocaleLowerCase();
+      if (used.has(key)) continue;
+      used.add(key);
+      cursor = (cursor + hop + 1) % options.length;
+      return line;
+    }
+    return options[cursor] ?? options[0]!;
+  };
+}
+
+function fillMeaning(template: string, meaning: string): string {
+  const spoken = /^I\b/u.test(meaning) ? meaning : `${meaning.charAt(0).toLocaleLowerCase()}${meaning.slice(1)}`;
+  return template.replaceAll("{translation}", spoken);
+}
+
+/**
+ * A phrase carried from an earlier lesson is announced before the learner is
+ * asked for it. The warm-up block has one lead-in, and a phrase mixed in
+ * later has its own bridge. The same line is not used twice.
+ */
+export function priorReviewsAreIntroduced(segments: LessonSegment[], priorTexts: readonly string[]): boolean {
+  const wanted = new Set(priorTexts.map((text) => normalizeChunk(text)).filter(Boolean));
+  if (wanted.size === 0) return true;
+  const dialogueAt = segments.findIndex((segment) => segment.phase === "dialogue");
+  let opened = false;
+  let found = 0;
+  const spoken = new Set<string>();
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (!segment || segment.speaker === "teacher" || !wanted.has(normalizeChunk(segment.text))) continue;
+    found += 1;
+    const prompt = segments[index - 1];
+    const meaning = meaningOf(segment.translation);
+    if (!prompt || prompt.speaker !== "teacher" || !prompt.pauseAfterMs) return false;
+    if (!meaning || !cites(prompt.text, meaning)) return false;
+    if (!/remember how to say|recall how to say/i.test(prompt.text)) return false;
+    const beforeDialogue = dialogueAt < 0 || index < dialogueAt;
+    if (beforeDialogue && !opened) {
+      const lead = segments[index - 2];
+      if (!lead || lead.speaker !== "teacher" || lead.pauseAfterMs) return false;
+      if (!/remember|recall|earlier|last time/i.test(lead.text)) return false;
+      const leadKey = lead.text.trim().toLocaleLowerCase();
+      if (spoken.has(leadKey)) return false;
+      spoken.add(leadKey);
+      opened = true;
+    }
+    if (!beforeDialogue && !/previous lesson|earlier lesson/i.test(prompt.text)) return false;
+    const promptKey = prompt.text.trim().toLocaleLowerCase();
+    if (spoken.has(promptKey)) return false;
+    spoken.add(promptKey);
+  }
+  if (found !== wanted.size) return false;
+  if (!opened) return false;
+  let lastWarmup = -1;
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index];
+    if (!segment || (dialogueAt >= 0 && index >= dialogueAt)) break;
+    if (wanted.has(normalizeChunk(segment.text))) lastWarmup = index;
+  }
+  if (lastWarmup < 0 || dialogueAt < 0) return false;
+  return segments.slice(lastWarmup + 1, dialogueAt).some((segment) => (
+    segment.speaker === "teacher" && /today's conversation/i.test(segment.text)
+  ));
+}
+
 function cites(prompt: string, meaning: string): boolean {
   return meaning.length > 0 && prompt.toLocaleLowerCase().includes(meaning.toLocaleLowerCase());
 }
@@ -561,10 +663,11 @@ export function arrangePimsleur(input: {
     phrase: PimsleurPhrase,
     promptPhase: string,
     answerPhase: string,
+    promptText?: string,
   ): boolean => {
     const meaning = meaningOf(phrase.translation);
     if (!meaning || segments.length + 2 > MAX_PIMSLEUR_SEGMENTS - reserved) return false;
-    const prompt = nextPrompt({ translation: meaning, name: partnerName(phrase.speaker) });
+    const prompt = promptText ?? nextPrompt({ translation: meaning, name: partnerName(phrase.speaker) });
     const prompted = push({
       kind: "drill",
       speaker: "teacher",
@@ -584,6 +687,16 @@ export function arrangePimsleur(input: {
       delivery: "clear",
     });
     return true;
+  };
+  const nextLead = linePicker(PRIOR_LEAD_INS, input.seed ?? 0);
+  const nextReturn = linePicker(PRIOR_RETURNS, (input.seed ?? 0) + 1);
+  const nextRemember = linePicker(PRIOR_REMEMBER, (input.seed ?? 0) + 2);
+  const nextBridge = linePicker(PRIOR_BRIDGES, (input.seed ?? 0) + 3);
+  const recallPrior = (phrase: PimsleurPhrase, phase: string, bridge: boolean): boolean => {
+    const meaning = meaningOf(phrase.translation);
+    if (!meaning) return false;
+    const template = bridge ? nextBridge() : nextRemember();
+    return ask(phrase, phase, phase, fillMeaning(template, meaning));
   };
   const playRole = (phrasesLeft: number): void => {
     if (!role || !canAdd(3, phrasesLeft)) return;
@@ -637,9 +750,24 @@ export function arrangePimsleur(input: {
     text: input.cues.welcome,
     delivery: "warm",
   });
-  for (const phrase of warmup) {
-    if (!canAdd(2, plans.length)) break;
-    ask(phrase, "warmup", "warmup");
+  if (warmup.length > 0 && canAdd(warmup.length * 2 + 2, plans.length)) {
+    push({
+      kind: "narration",
+      speaker: "teacher",
+      phase: "warmup",
+      language: input.nativeLanguage,
+      text: nextLead(),
+      delivery: "warm",
+    });
+    for (const phrase of warmup) recallPrior(phrase, "warmup", false);
+    push({
+      kind: "narration",
+      speaker: "teacher",
+      phase: "warmup",
+      language: input.nativeLanguage,
+      text: nextReturn(),
+      delivery: "warm",
+    });
   }
 
   for (const line of lines) {
@@ -733,7 +861,7 @@ export function arrangePimsleur(input: {
     const freshPhrase = fresh[usedFresh];
     if (index >= 1 && freshPhrase && canAdd(2, phrasesLeft) && ask(freshPhrase, "recombine", "recombine")) usedFresh += 1;
     if (!mixedIn && mixed[0] && index >= 1 && canAdd(2, phrasesLeft)) {
-      mixedIn = ask(mixed[0], "review", "review");
+      mixedIn = recallPrior(mixed[0], "review", true);
     }
     if (!playedRole && roleAt === index) {
       playRole(phrasesLeft);
@@ -747,7 +875,7 @@ export function arrangePimsleur(input: {
   }
   const lastFresh = fresh[usedFresh];
   if (lastFresh && canAdd(2, 0)) ask(lastFresh, "recombine", "recombine");
-  if (!mixedIn && mixed[0] && canAdd(2, 0)) ask(mixed[0], "review", "review");
+  if (!mixedIn && mixed[0] && canAdd(2, 0)) mixedIn = recallPrior(mixed[0], "review", true);
   if (!playedRole && roleAt === plans.length) playRole(0);
 
   push({

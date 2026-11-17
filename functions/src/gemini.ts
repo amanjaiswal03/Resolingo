@@ -225,16 +225,12 @@ export async function generateLessonContent(
       });
       continue;
     }
-    const reviews = (input.priorReviews ?? [])
-      .filter((phrase) => phrase.text.trim() && phrase.translation?.trim())
-      .map((phrase) => ({ text: phrase.text, translation: phrase.translation ?? "" }));
     const shaped = input.type === "grammar"
       ? shapeGrammarLesson(json, {
         nativeLanguage: input.nativeLanguage,
         targetLanguage: input.targetLanguage,
         level: input.level,
         topic: grammarTopic!,
-        ...(reviews.length > 0 ? { priorReviews: reviews } : {}),
       })
       : input.type === "phrase"
         ? shapePhraseLesson(json, {
@@ -248,12 +244,11 @@ export async function generateLessonContent(
           ...(input.phrase?.alternatives ? { alternatives: input.phrase.alternatives } : {}),
           ...(input.phrase?.note ? { note: input.phrase.note } : {}),
           ...(input.phrase?.inputLanguage ? { inputLanguage: input.phrase.inputLanguage } : {}),
-          ...(reviews.length > 0 ? { priorReviews: reviews } : {}),
         })
         : shapePimsleurLesson(json, {
         nativeLanguage: input.nativeLanguage,
         targetLanguage: input.targetLanguage,
-        ...(input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
+        ...(input.type === "conversation" && input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
       });
     const parsed = GeneratedLessonSchema.safeParse(shaped ?? json);
     if (!parsed.success) {

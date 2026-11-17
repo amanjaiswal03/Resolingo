@@ -171,7 +171,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       targetLanguage,
       level,
       recentTopics: await recentTopics(payload.uid, topicKey),
-      priorReviews: await loadDueReviewPhrases(payload.uid, targetLanguage, nativeLanguage),
+      ...(type === "conversation" ? { priorReviews: await loadDueReviewPhrases(payload.uid, targetLanguage, nativeLanguage) } : {}),
       ...(phrase ? { phrase } : {}),
     });
     validateLessonLanguages(content, nativeLanguage, targetLanguage);

@@ -111,6 +111,9 @@ describe("grammar lessons", () => {
     const parsed = lessonFor("de-sein");
     const script = scriptOf(parsed.segments);
     const spoken = script.toLocaleLowerCase();
+    expect(script).not.toContain("Danke");
+    expect(script).not.toContain("Thanks");
+    expect(parsed.segments.some((segment) => segment.phase === "warmup")).toBe(false);
     expect(parsed.topic).toBe("Present tense of sein");
     expect(parsed.ruleId).toBe("de-sein");
     expect(parsed.segments.every((segment) => segment.speaker === "teacher")).toBe(true);

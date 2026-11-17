@@ -8,6 +8,7 @@ import {
   backwardChunks,
   buildupChunks,
   drillsAreUnique,
+  priorReviewsAreIntroduced,
   shapePimsleurLesson,
   recallPromptsCiteMeanings,
   scheduleReviewSlots,
@@ -499,12 +500,31 @@ describe("model shaping", () => {
     }, {
       nativeLanguage: "en-US",
       targetLanguage: "de-DE",
-      priorReviews: [{ speaker: "speakerA", text: "Einen Kaffee, bitte.", translation: "A coffee, please.", language: "de-DE" }],
+      priorReviews: [
+        { speaker: "speakerA", text: "Einen Kaffee, bitte.", translation: "A coffee, please.", language: "de-DE" },
+        { speaker: "speakerA", text: "Die Rechnung, bitte.", translation: "The bill, please.", language: "de-DE" },
+        { speaker: "speakerB", text: "Wo ist die Toilette?", translation: "Where is the toilet?", language: "de-DE" },
+      ],
     });
     const segments = shaped?.segments ?? [];
+    const priorTexts = ["Einen Kaffee, bitte.", "Die Rechnung, bitte.", "Wo ist die Toilette?"];
     const warmup = segments.findIndex((segment) => segment.phase === "warmup" && segment.pauseAfterMs);
+    expect(segments[warmup - 1]?.text).toMatch(/remember|recall|earlier|last time/i);
+    expect(segments[warmup]?.text.toLowerCase()).toContain("a coffee, please");
     expect(segments[warmup + 1]).toMatchObject({ text: "Einen Kaffee, bitte.", phase: "warmup" });
-    expect(warmup).toBeLessThan(segments.findIndex((segment) => segment.phase === "dialogue"));
+    expect(segments[warmup + 1]?.speaker).not.toBe("teacher");
+    const dialogueAt = segments.findIndex((segment) => segment.phase === "dialogue");
+    expect(warmup).toBeLessThan(dialogueAt);
+    expect(segments.slice(warmup, dialogueAt).some((segment) => /today's conversation/i.test(segment.text))).toBe(true);
+    const mixed = segments.findIndex((segment) => segment.text === "Wo ist die Toilette?");
+    expect(mixed).toBeGreaterThan(dialogueAt);
+    expect(segments[mixed - 1]?.text).toMatch(/previous lesson|earlier lesson/i);
+    expect(segments[mixed - 1]?.text.toLowerCase()).toContain("where is the toilet");
+    expect(priorReviewsAreIntroduced(segments, priorTexts)).toBe(true);
+    const introductions = segments
+      .filter((segment) => segment.speaker === "teacher" && /remember|recall|previous lesson|earlier lesson|today's conversation/i.test(segment.text))
+      .map((segment) => segment.text.trim().toLocaleLowerCase());
+    expect(new Set(introductions).size).toBe(introductions.length);
     const first = segments.findIndex((segment) => segment.phase === "answer" && segment.text === "Wo ist der Bahnhof?");
     const again = segments.findIndex((segment, index) => index > first && segment.phase === "review" && segment.text === "Wo ist der Bahnhof?");
     expect(again).toBeGreaterThan(first);

@@ -149,11 +149,18 @@ describe("Gemini lesson generation", () => {
       checks: [{ cue: "Where does the verb go?", answer: "In second position." }],
       recombinations: [{ cue: "How would you say I am ready?", answer: "Ich bin bereit.", translation: "I am ready." }],
     }) }]);
-    const result = await generateLessonContent({ ...input, type: "grammar", recentTopics: ["Present tense of sein"] }, model);
+    const result = await generateLessonContent({
+      ...input,
+      type: "grammar",
+      recentTopics: ["Present tense of sein"],
+      priorReviews: [{ speaker: "speakerA", text: "Danke.", translation: "Thanks.", language: "de-DE" }],
+    }, model);
     expect(result.topic).toBe("Present tense of haben");
     expect(result.ruleId).toBe("de-haben");
     expect(result.segments.every((segment) => segment.speaker === "teacher")).toBe(true);
+    expect(result.segments.some((segment) => segment.text.includes("Danke") || segment.phase === "warmup")).toBe(false);
     expect(model.contents[0]).toContain("Present tense of haben");
+    expect(model.contents[0]).toContain("Do not review phrases from earlier lessons");
     expect(model.contents[0]).toContain("no second speaker");
     expect(lessonGenerationConfig("grammar").systemInstruction).not.toContain("lines is an array of 4 to 6");
   });
@@ -183,6 +190,7 @@ describe("Gemini lesson generation", () => {
       ...input,
       type: "phrase",
       level: "A2",
+      priorReviews: [{ speaker: "speakerA", text: "Danke.", translation: "Thanks.", language: "de-DE" }],
       phrase: {
         phraseId: "phrase_ab12cd34",
         nativeText: "I need to buy a pair of shoes",
@@ -192,6 +200,7 @@ describe("Gemini lesson generation", () => {
     }, model);
     expect(result.ruleId).toBe("phrase_ab12cd34");
     expect(result.segments.every((segment) => segment.speaker === "teacher")).toBe(true);
+    expect(result.segments.some((segment) => segment.text.includes("Danke") || segment.phase === "warmup")).toBe(false);
     expect(result.segments.some((segment) => segment.text.includes("Ich muss eine Jacke kaufen."))).toBe(true);
     expect(model.contents[0]).toContain("Ich muss ein Paar Schuhe kaufen.");
     expect(lessonGenerationConfig("phrase").responseSchema).toBeUndefined();
