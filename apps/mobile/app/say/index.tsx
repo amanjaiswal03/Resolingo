@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Alert, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
-import type { Phrase } from "@resolingo/shared";
+import { languageById, type Phrase } from "@resolingo/shared";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Screen } from "@/components/Screen";
@@ -19,7 +19,7 @@ function messageOf(error: unknown): string {
 }
 
 export default function SayScreen() {
-  const { user } = useSession();
+  const { user, profile } = useSession();
   const router = useRouter();
   const theme = useTheme();
   const [text, setText] = useState("");
@@ -47,14 +47,14 @@ export default function SayScreen() {
       <Pressable accessibilityRole="button" accessibilityLabel="Back" onPress={() => router.back()}><Body muted>Back</Body></Pressable>
       <View style={styles.header}>
         <Title>How would you say?</Title>
-        <Body muted>Type a sentence in your language. You’ll hear it, then you can make a short lesson.</Body>
+        <Body muted>Type a sentence in your language. You’ll hear it in {profile ? languageById[profile.targetLanguage].label : "your target language"}, then you can make a short lesson.</Body>
       </View>
       <TextInput
         value={text}
         onChangeText={setText}
         multiline
         maxLength={280}
-        placeholder="How would you say I need to buy a pair of shoes?"
+        placeholder="I need to buy a pair of shoes."
         placeholderTextColor={theme.textMuted}
         style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
       />
