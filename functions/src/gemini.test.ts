@@ -167,15 +167,17 @@ describe("Gemini lesson generation", () => {
         { text: "Schuhe", translation: "shoes" },
         { text: "ein Paar Schuhe", translation: "a pair of shoes" },
       ],
+      pattern: "After muss or möchte, the other verb goes to the end.",
       swaps: [
-        { from: "a pair of shoes", to: "a jacket", answer: "Ich muss eine Jacke kaufen.", translation: "I need to buy a jacket" },
-        { from: "a pair of shoes", to: "tickets", answer: "Ich muss Tickets kaufen.", translation: "I need to buy tickets" },
-        { from: "I need to", to: "I want to", answer: "Ich will ein Paar Schuhe kaufen.", translation: "I want to buy a pair of shoes" },
+        { from: "shoes", to: "a jacket", focus: "eine Jacke", focusTranslation: "a jacket", answer: "Ich muss eine Jacke kaufen.", translation: "I need to buy a jacket" },
+        { from: "shoes", to: "tickets", focus: "Tickets", focusTranslation: "tickets", answer: "Ich muss Tickets kaufen.", translation: "I need to buy tickets" },
       ],
       situations: [
-        { setup: "You're in a shop.", answer: "Ich muss ein Paar Schuhe kaufen.", translation: "I need to buy a pair of shoes" },
+        { setup: "You're in a shoe shop. The clerk asks what you're looking for.", focus: "möchte", focusTranslation: "would like", usage: "Möchte is the polite would like.", answer: "Ich möchte ein Paar Schuhe kaufen.", translation: "I would like to buy a pair of shoes" },
+        { setup: "A friend asks why you're going into town.", focus: "noch", focusTranslation: "still", answer: "Ich muss noch Schuhe kaufen.", translation: "I still need to buy shoes" },
+        { setup: "You're ordering online and you have to name what you need.", focus: "Ich brauche", focusTranslation: "I need", answer: "Ich brauche neue Schuhe.", translation: "I need new shoes" },
       ],
-      roleplay: { setup: "The clerk asks what you need.", answer: "Ich muss ein Paar Schuhe kaufen.", translation: "I need to buy a pair of shoes" },
+      roleplay: { setup: "You're at the counter.", answer: "Ich möchte ein Paar Schuhe kaufen.", translation: "I would like to buy a pair of shoes" },
     }) }]);
     const result = await generateLessonContent({
       ...input,

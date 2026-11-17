@@ -2,14 +2,16 @@ import type { LanguageId } from "./languages.js";
 import type { CefrLevel, LessonSegment } from "./schemas.js";
 import { MAX_LESSON_SEGMENTS } from "./schemas.js";
 import { languageById } from "./languages.js";
-import { repairMarkup } from "./markup.js";
-import { ANSWER_PAUSE_MS, scheduleReviewSlots } from "./pimsleur.js";
+import { lessonDisplayText, repairMarkup } from "./markup.js";
+import { ANSWER_PAUSE_MS, REVIEW_GAPS } from "./pimsleur.js";
 import { normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 
 /** Lookups kept on the profile. Older ones are deleted on the next save. */
 export const MAX_STORED_PHRASES = 100;
 export const PHRASE_LOOKUP_LIMIT = 30;
 export const PHRASE_LOOKUP_UNLIMITED = 100;
+/** The same target sentence is modeled and asked only a handful of times. */
+export const MAX_IDENTICAL_PHRASE_ANSWERS = 5;
 
 const SPEAK_FRAMES = [
   "How would you say {translation}?",
@@ -19,22 +21,37 @@ const SPEAK_FRAMES = [
   "Your turn: {translation}.",
   "Say it out loud: {translation}.",
   "Now you say it: {translation}.",
-  "What would you say for {translation}?",
+] as const;
+
+const SWAP_FRAMES = [
+  "Now, instead of {from}, {to}. How would you say {translation}?",
+  "This time it's {to}, not {from}. Can you say {translation}?",
+  "Same idea, but {to}. Try saying {translation}.",
+  "Keep the sentence, and use {to}. Your turn: {translation}.",
 ] as const;
 
 const MAX_IDENTICAL_CUES = 2;
 
-const SITUATIONS = [
-  "You're in a shop. Someone asks what you need.",
-  "You're ordering online and you have to say what you need.",
-  "A friend asks what your plan is.",
-  "You're somewhere a little more formal, and you still need the same thing.",
-] as const;
-
 export type PhraseAlternative = { label: string; text: string; transliteration?: string };
 export type PhraseLine = { text: string; translation: string };
-export type PhraseSwap = { from: string; to: string; source?: string; answer: string; translation: string };
-export type PhraseSituation = { setup: string; answer: string; translation: string };
+export type PhraseSwap = {
+  from: string;
+  to: string;
+  answer: string;
+  translation: string;
+  /** New target word, with its article, taught before the sentence. */
+  focus: string;
+  focusTranslation: string;
+  usage?: string;
+};
+export type PhraseSituation = {
+  setup: string;
+  answer: string;
+  translation: string;
+  focus: string;
+  focusTranslation: string;
+  usage?: string;
+};
 
 export type PhraseLessonContext = {
   phraseId: string;
@@ -57,6 +74,9 @@ type Drill = {
   translation: string;
   cues: string[];
   setup?: string;
+  focus?: string;
+  focusTranslation?: string;
+  usage?: string;
   transliteration?: string;
 };
 
@@ -140,21 +160,12 @@ function produceCues(translation: string): string[] {
   return SPEAK_FRAMES.map((frame) => frame.replaceAll("{translation}", meaning));
 }
 
-function sentence(value: string): string {
-  const trimmed = value.trim();
-  return /[.!?？。]$/u.test(trimmed) ? trimmed : `${trimmed}.`;
-}
-
-function sceneCues(setup: string, translation: string): string[] {
-  const meaning = meaningOf(translation);
-  return [
-    `${setup} How would you say ${meaning}?`,
-    `${setup} Can you say ${meaning}?`,
-    `${setup} Try saying ${meaning}.`,
-    `${setup} Your turn: ${meaning}.`,
-    `${setup} Say it out loud: ${meaning}.`,
-    `${setup} Now you say it: ${meaning}.`,
-  ];
+function swapCues(swap: PhraseSwap): string[] {
+  const meaning = meaningOf(swap.translation);
+  return SWAP_FRAMES.map((frame) => frame
+    .replaceAll("{from}", swap.from)
+    .replaceAll("{to}", swap.to)
+    .replaceAll("{translation}", meaning));
 }
 
 function takeCue(candidates: string[], used: Map<string, number>, start: number): string | null {
@@ -169,9 +180,9 @@ function takeCue(candidates: string[], used: Map<string, number>, start: number)
 }
 
 function budget(level: CefrLevel): { chunks: number; swaps: number; situations: number; reviews: number } {
-  if (level === "A1") return { chunks: 3, swaps: 2, situations: 2, reviews: 4 };
-  if (level === "A2") return { chunks: 3, swaps: 3, situations: 3, reviews: 12 };
-  return { chunks: 0, swaps: 3, situations: 4, reviews: 8 };
+  if (level === "A1") return { chunks: 3, swaps: 2, situations: 2, reviews: 3 };
+  if (level === "A2") return { chunks: 3, swaps: 2, situations: 3, reviews: 4 };
+  return { chunks: 0, swaps: 2, situations: 3, reviews: 4 };
 }
 
 function readChunks(value: unknown, core: string): PhraseLine[] {
@@ -193,34 +204,37 @@ function readSwaps(value: unknown, core: string): PhraseSwap[] {
     const translation = textOf(record.translation);
     const from = textOf(record.from);
     const to = textOf(record.to);
-    if (!answer || !translation || !from || !to || same(from, to) || same(answer, core)) continue;
+    const focus = textOf(record.focus);
+    const focusTranslation = textOf(record.focusTranslation);
+    if (!answer || !translation || !from || !to || !focus || !focusTranslation) continue;
+    if (same(from, to) || same(answer, core) || same(focus, core)) continue;
     if (swaps.some((swap) => same(swap.answer, answer))) continue;
-    const source = textOf(record.source);
-    swaps.push({ from, to, answer, translation, ...(source ? { source } : {}) });
+    const usage = textOf(record.usage);
+    swaps.push({
+      from, to, answer, translation, focus, focusTranslation,
+      ...(usage ? { usage } : {}),
+    });
   }
   return swaps;
 }
 
-function readSituations(value: unknown): PhraseSituation[] {
+function readSituations(value: unknown, core: string): PhraseSituation[] {
   const situations: PhraseSituation[] = [];
   for (const record of linesOf(value)) {
     const setup = textOf(record.setup);
     const answer = textOf(record.answer);
     const translation = textOf(record.translation);
-    if (!setup || !answer || !translation) continue;
-    situations.push({ setup, answer, translation });
+    const focus = textOf(record.focus);
+    const focusTranslation = textOf(record.focusTranslation);
+    if (!setup || !answer || !translation || !focus || !focusTranslation) continue;
+    if (same(answer, core) || situations.some((item) => same(item.answer, answer))) continue;
+    const usage = textOf(record.usage);
+    situations.push({
+      setup, answer, translation, focus, focusTranslation,
+      ...(usage ? { usage } : {}),
+    });
   }
   return situations;
-}
-
-function readRoleplay(value: unknown, core: string, meaning: string): PhraseSituation | null {
-  const record = asRecord(value);
-  if (!record) return null;
-  const setup = textOf(record.setup);
-  const answer = textOf(record.answer) || core;
-  const translation = textOf(record.translation) || meaning;
-  if (!setup || !answer || !translation || same(answer, textOf(record.note))) return null;
-  return { setup, answer, translation };
 }
 
 function isLiteral(answer: string, note: string | undefined): boolean {
@@ -229,8 +243,8 @@ function isLiteral(answer: string, note: string | undefined): boolean {
 }
 
 /**
- * A paused prompt has to name the meaning, or name the slot it is changing.
- * A bare "Say it out loud" is not enough, because the learner cannot know which line.
+ * A paused prompt has to name the meaning the learner should say.
+ * A bare "Say it out loud" is not enough.
  */
 export function phrasePromptsAreClear(segments: LessonSegment[]): boolean {
   for (let index = 0; index < segments.length; index += 1) {
@@ -239,11 +253,50 @@ export function phrasePromptsAreClear(segments: LessonSegment[]): boolean {
     const answer = segments[index + 1];
     if (!answer || prompt.speaker !== "teacher" || answer.speaker !== "teacher") return false;
     const meaning = meaningOf(answer.translation ?? "");
-    const cites = meaning.length >= 2 && prompt.text.toLocaleLowerCase().includes(meaning.toLocaleLowerCase());
-    const changes = /\b(change|swap|make it|instead)\b/i.test(prompt.text)
-      && prompt.text.includes(":")
-      && !same(prompt.text, answer.text);
-    if (!cites && !changes) return false;
+    if (meaning.length < 2 || !prompt.text.toLocaleLowerCase().includes(meaning.toLocaleLowerCase())) return false;
+  }
+  return true;
+}
+
+/** Consecutive lines must not repeat, and a setup must not be glued onto the next prompt. */
+export function phraseLinesAreDistinct(segments: readonly LessonSegment[]): boolean {
+  for (let index = 1; index < segments.length; index += 1) {
+    const previous = lessonDisplayText(segments[index - 1]?.text ?? "");
+    const current = lessonDisplayText(segments[index]?.text ?? "");
+    if (!previous || !current || same(previous, current)) return false;
+    const gloss = /means\s+["“]/i.test(previous) || /means\s+["“]/i.test(current);
+    if (gloss) continue;
+    const left = previous.toLocaleLowerCase();
+    const right = current.toLocaleLowerCase();
+    const shorter = left.length <= right.length ? left : right;
+    const longer = left.length <= right.length ? right : left;
+    if (shorter.length >= 24 && longer.startsWith(shorter)) return false;
+  }
+  return true;
+}
+
+/** A new word is glossed before any pause that asks the learner to say a line containing it. */
+export function focusesAreGlossedFirst(segments: readonly LessonSegment[], focuses: readonly string[]): boolean {
+  for (const focus of focuses) {
+    const needle = normalize(focus);
+    if (needle.length < 2) continue;
+    const glossAt = segments.findIndex((segment) => /means\s+["“]/i.test(segment.text) && normalize(lessonDisplayText(segment.text)).includes(needle));
+    const produceAt = segments.findIndex((segment, index) => {
+      const previous = segments[index - 1];
+      return (previous?.pauseAfterMs ?? 0) > 0 && normalize(segment.text).includes(needle);
+    });
+    if (produceAt >= 0 && (glossAt < 0 || glossAt > produceAt)) return false;
+  }
+  return true;
+}
+
+export function phraseAnswersStayVaried(segments: readonly LessonSegment[], language: LanguageId): boolean {
+  const counts = new Map<string, number>();
+  for (const segment of segments) {
+    if (segment.language !== language) continue;
+    const key = normalize(segment.text);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+    if ((counts.get(key) ?? 0) > MAX_IDENTICAL_PHRASE_ANSWERS) return false;
   }
   return true;
 }
@@ -269,84 +322,87 @@ export function shapePhraseLesson(
   const source = asRecord(value) ?? {};
   const limits = budget(context.level);
   const note = textOf(context.note);
+  const pattern = textOf(source.pattern).split(/(?<=[.!?])\s+/u)[0]?.trim() ?? "";
   const chunks = context.level === "A1" || context.level === "A2"
     ? readChunks(source.chunks, core).slice(0, limits.chunks)
     : [];
   const swaps = readSwaps(source.swaps, core).filter((swap) => !isLiteral(swap.answer, note)).slice(0, limits.swaps);
   if (swaps.length < limits.swaps) return null;
-  const givenSituations = readSituations(source.situations).filter((item) => !isLiteral(item.answer, note));
-  const situations = [...givenSituations];
-  for (const setup of SITUATIONS) {
-    if (situations.length >= limits.situations) break;
-    if (situations.some((item) => same(item.setup, setup))) continue;
-    situations.push({ setup, answer: core, translation: meaning });
+  const chosenSituations = readSituations(source.situations, core).filter((item) => !isLiteral(item.answer, note)).slice(0, limits.situations);
+  if (chosenSituations.length < limits.situations) return null;
+  for (const alternative of context.alternatives ?? []) {
+    if (chosenSituations.some((item) => same(item.answer, alternative.text)) || same(alternative.text, core)) continue;
+    if (isLiteral(alternative.text, note)) continue;
+    chosenSituations.push({
+      setup: "You want to sound a bit more formal.",
+      answer: alternative.text,
+      translation: `${meaning}, ${alternative.label}`,
+      focus: alternative.text,
+      focusTranslation: `${meaning}, ${alternative.label}`,
+      usage: "A more formal way to say it.",
+    });
+    break;
   }
-  if (situations.length < limits.situations) return null;
-  const roleplay = readRoleplay(source.roleplay, core, meaning)
-    ?? {
-      setup: "You're in a shop. The person there asks what you need. Tell them.",
+  const roleRecord = asRecord(source.roleplay);
+  const roleSetup = textOf(roleRecord?.setup) || chosenSituations[0]!.setup;
+  const requestedRole = textOf(roleRecord?.answer);
+  const roleSituation = chosenSituations.find((item) => same(item.answer, requestedRole)) ?? chosenSituations[0]!;
+  if (isLiteral(roleSituation.answer, note) || same(roleSituation.answer, core)) return null;
+
+  const drills: Drill[] = [
+    {
+      kind: "phrase",
       answer: core,
       translation: meaning,
-    };
-  if (isLiteral(roleplay.answer, note)) return null;
-
-  const drills: Drill[] = [];
-  for (const chunk of chunks) {
-    drills.push({
-      kind: "chunk",
-      answer: chunk.text,
-      translation: chunk.translation,
-      cues: produceCues(chunk.translation),
-    });
-  }
-  drills.push({
-    kind: "phrase",
-    answer: core,
-    translation: meaning,
-    cues: produceCues(meaning),
-    ...(context.transliteration ? { transliteration: context.transliteration } : {}),
-  });
-  for (const swap of swaps) {
-    const sourceLine = swap.source && !same(swap.source, swap.answer) ? swap.source : core;
-    const clear = meaningOf(swap.translation);
-    drills.push({
-      kind: "swap",
+      cues: produceCues(meaning),
+      ...(context.transliteration ? { transliteration: context.transliteration } : {}),
+    },
+    ...swaps.map((swap) => ({
+      kind: "swap" as const,
       answer: swap.answer,
-      translation: clear,
-      cues: [
-        `Change ${swap.from} to ${swap.to}: ${sentence(sourceLine)} The meaning is ${clear}.`,
-        `Now make it ${swap.to}: ${sentence(sourceLine)} The meaning is ${clear}.`,
-        `Swap ${swap.from} for ${swap.to}: ${sentence(sourceLine)} The meaning is ${clear}.`,
-        ...produceCues(clear),
-      ],
-    });
-  }
-  for (const situation of situations) {
-    const clear = meaningOf(situation.translation);
-    drills.push({
-      kind: "situation",
+      translation: meaningOf(swap.translation),
+      cues: swapCues(swap),
+      focus: swap.focus,
+      focusTranslation: swap.focusTranslation,
+      ...(swap.usage ? { usage: swap.usage } : {}),
+    })),
+    ...chosenSituations.map((situation) => ({
+      kind: "situation" as const,
       setup: situation.setup,
       answer: situation.answer,
-      translation: clear,
-      cues: sceneCues(situation.setup, clear),
-    });
-  }
-  const roleMeaning = meaningOf(roleplay.translation);
-  drills.push({
-    kind: "roleplay",
-    setup: roleplay.setup,
-    answer: roleplay.answer,
-    translation: roleMeaning,
-    cues: sceneCues(roleplay.setup, roleMeaning),
-  });
+      translation: meaningOf(situation.translation),
+      cues: produceCues(situation.translation),
+      focus: situation.focus,
+      focusTranslation: situation.focusTranslation,
+      ...(situation.usage ? { usage: situation.usage } : {}),
+    })),
+    {
+      kind: "roleplay" as const,
+      setup: roleSetup,
+      answer: roleSituation.answer,
+      translation: meaningOf(roleSituation.translation),
+      cues: produceCues(roleSituation.translation),
+    },
+  ];
 
   const segments: LessonSegment[] = [];
   const used = new Map<string, number>();
+  const spoken = new Map<string, number>();
   let ordinal = 0;
+  const heard = (text: string): number => spoken.get(normalize(text)) ?? 0;
+  const canSay = (text: string): boolean => heard(text) < MAX_IDENTICAL_PHRASE_ANSWERS;
+  const mark = (text: string): void => {
+    const key = normalize(text);
+    spoken.set(key, (spoken.get(key) ?? 0) + 1);
+  };
   const push = (segment: Omit<LessonSegment, "id" | "speaker" | "delivery"> & { delivery?: LessonSegment["delivery"] }, pauseMs = 0): boolean => {
     if (segments.length >= MAX_LESSON_SEGMENTS) return false;
     const text = repairMarkup(segment.text).trim();
-    if (!text || segments.at(-1)?.text === text) return true;
+    if (!text) return false;
+    const previous = lessonDisplayText(segments.at(-1)?.text ?? "");
+    const shown = lessonDisplayText(text);
+    if (previous && same(previous, shown)) return false;
+    if (segment.language === context.targetLanguage && !canSay(text)) return false;
     ordinal += 1;
     segments.push({
       id: `seg_${String(ordinal).padStart(2, "0")}`,
@@ -356,15 +412,18 @@ export function shapePhraseLesson(
       text,
       ...(pauseMs > 0 ? { pauseAfterMs: pauseMs } : {}),
     });
+    if (segment.language === context.targetLanguage) mark(text);
     return true;
   };
-  const ask = (drill: Drill, phase: string, salt: number): void => {
-    if (segments.length + 2 > MAX_LESSON_SEGMENTS - 6) return;
+  const ask = (drill: Pick<Drill, "answer" | "translation" | "cues" | "transliteration">, phase: string, salt: number): void => {
+    if (!canSay(drill.answer) || segments.length + 2 > MAX_LESSON_SEGMENTS - 8) return;
+    if (phase === "review" && heard(drill.answer) >= 3) return;
     const cue = takeCue(drill.cues, used, salt);
     if (!cue) return;
-    const answerPhase = phase === "practice" ? "answer" : phase === "chunk" ? "chunk" : phase;
+    const answerPhase = phase === "practice" ? "answer" : phase;
+    const before = segments.length;
     push({ kind: "drill", phase, language: context.nativeLanguage, text: cue, delivery: "curious" }, ANSWER_PAUSE_MS);
-    push({
+    const placed = push({
       kind: "drill",
       phase: answerPhase,
       language: context.targetLanguage,
@@ -373,20 +432,24 @@ export function shapePhraseLesson(
       ...(drill.transliteration ? { transliteration: drill.transliteration } : {}),
       delivery: "clear",
     });
+    if (!placed && segments.length > before) segments.pop();
+  };
+  const teach = (word: string, translation: string, phase: string, repeat: boolean, usage?: string): void => {
+    if (!word || !translation) return;
+    push({ kind: "example", phase, language: context.targetLanguage, text: word, translation: meaningOf(translation), delivery: "clear" });
+    push({ kind: "explanation", phase, language: context.nativeLanguage, text: gloss(word, translation, context.targetLanguage), delivery: "clear" });
+    if (usage) push({ kind: "explanation", phase, language: context.nativeLanguage, text: usage, delivery: "clear" });
+    if (!repeat || same(word, core)) return;
+    ask({ answer: word, translation, cues: produceCues(translation) }, "focus", 1);
   };
 
   const targetLabel = languageById[context.targetLanguage].label;
   const teacherName = normalizeSpeakerNames(source.speakerNames).teacher;
   push({ kind: "narration", phase: "intro", language: context.nativeLanguage, text: introFor(context, targetLabel), delivery: "warm" });
   (context.priorReviews ?? []).slice(0, 2).forEach((review, index) => {
-    ask({
-      kind: "phrase",
-      answer: review.text,
-      translation: review.translation,
-      cues: produceCues(review.translation),
-    }, "warmup", index + 1);
+    ask({ answer: review.text, translation: review.translation, cues: produceCues(review.translation) }, "warmup", index + 1);
   });
-  push({ kind: "narration", phase: "hook", language: context.nativeLanguage, text: "Listen once, then we'll build it up and try it in a few places.", delivery: "warm" });
+  push({ kind: "narration", phase: "hook", language: context.nativeLanguage, text: "Listen once, then we'll build it and try it in a few places.", delivery: "warm" });
   push({
     kind: "example",
     phase: "hook",
@@ -403,76 +466,76 @@ export function shapePhraseLesson(
   }
   if (chunks.length > 0) {
     push({ kind: "narration", phase: "chunk", language: context.nativeLanguage, text: "We'll take it in pieces, starting from the end.", delivery: "warm" });
-  } else {
-    const formal = (context.alternatives ?? []).find((item) => /formal/i.test(item.label) && !same(item.text, core) && !isLiteral(item.text, note));
-    push({
-      kind: "narration",
-      phase: "register",
-      language: context.nativeLanguage,
-      text: formal
-        ? `With a friend, the line you just heard is enough. When you want to sound more formal, use the other wording.`
-        : "The same sentence works with a friend and in a shop. You don't need a different verb for that.",
-      delivery: "clear",
-    });
-    if (formal) {
-      push({
-        kind: "example",
-        phase: "register",
-        language: context.targetLanguage,
-        text: formal.text,
-        translation: `${meaning}, formally`,
-        ...(formal.transliteration ? { transliteration: formal.transliteration } : {}),
-        delivery: "clear",
-      });
-      push({ kind: "explanation", phase: "register", language: context.nativeLanguage, text: gloss(formal.text, `${meaning}, formally`, context.targetLanguage), delivery: "clear" });
-    }
+    chunks.forEach((chunk) => teach(chunk.text, chunk.translation, "chunk", true));
   }
+  if (pattern) {
+    push({ kind: "explanation", phase: "pattern", language: context.nativeLanguage, text: pattern, delivery: "clear" });
+  }
+  const phraseDrill = drills[0]!;
+  ask(phraseDrill, "practice", 0);
 
-  const reviewable = drills.flatMap((drill, index) => drill.kind === "chunk" ? [] : [index]);
-  const slots = scheduleReviewSlots(reviewable.length, limits.reviews);
-  const after = new Map<number, number[]>();
-  for (const slot of slots) {
-    const source = reviewable[slot.item];
-    const boundary = reviewable[slot.afterItem];
-    if (source === undefined || boundary === undefined) continue;
-    after.set(boundary, [...(after.get(boundary) ?? []), source]);
-  }
+  const reviewed = new Set<number>();
+  let reviewCount = 0;
   drills.forEach((drill, index) => {
+    if (index === 0) return;
+    if (drill.focus && drill.focusTranslation && !same(drill.focus, drill.answer)) {
+      teach(drill.focus, drill.focusTranslation, drill.kind, true);
+      if (drill.kind === "situation") {
+        push({ kind: "example", phase: drill.kind, language: context.targetLanguage, text: drill.answer, translation: drill.translation, delivery: "clear" });
+        push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: gloss(drill.answer, drill.translation, context.targetLanguage), delivery: "clear" });
+      }
+      if (drill.usage) push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: drill.usage, delivery: "clear" });
+    } else if (drill.focus && drill.focusTranslation) {
+      push({ kind: "example", phase: drill.kind, language: context.targetLanguage, text: drill.answer, translation: drill.translation, delivery: "clear" });
+      push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: gloss(drill.focus, drill.focusTranslation, context.targetLanguage), delivery: "clear" });
+      if (drill.usage) push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: drill.usage, delivery: "clear" });
+    }
     if (drill.setup) {
       push({ kind: "narration", phase: drill.kind, language: context.nativeLanguage, text: drill.setup, delivery: "warm" });
     }
-    if (drill.kind === "chunk") {
-      push({ kind: "example", phase: "chunk", language: context.targetLanguage, text: drill.answer, translation: meaningOf(drill.translation), delivery: "clear" });
-      push({ kind: "explanation", phase: "chunk", language: context.nativeLanguage, text: gloss(drill.answer, drill.translation, context.targetLanguage), delivery: "clear" });
-    }
-    const phase = drill.kind === "roleplay" ? "roleplay" : drill.kind === "chunk" ? "chunk" : "practice";
-    ask(drill, phase, drill.kind === "swap" ? 0 : index);
-    for (const earlier of after.get(index) ?? []) {
+    const phase = drill.kind === "roleplay" ? "roleplay" : "practice";
+    ask(drill, phase, drill.kind === "swap" ? index - 1 : index);
+    if (reviewCount >= limits.reviews) return;
+    for (const gap of REVIEW_GAPS) {
+      const earlier = index - gap;
+      if (earlier < 0 || reviewed.has(earlier)) continue;
       const item = drills[earlier];
-      if (item && item.kind !== "chunk") ask(item, "review", index + earlier + 3);
+      if (!item || same(item.answer, drill.answer)) continue;
+      const before = segments.length;
+      ask(item, "review", index + earlier + 2);
+      if (segments.length === before) continue;
+      reviewed.add(earlier);
+      reviewCount += 1;
+      break;
     }
   });
 
-  push({
-    kind: "recap",
-    phase: "summary",
-    language: context.nativeLanguage,
-    text: `The line to keep is the one for "${meaning}". You can change a piece of it, and you can use it when someone asks what you need.`,
-    delivery: "clear",
-  });
+  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: "Keep these.", delivery: "clear" });
+  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: "The sentence.", delivery: "clear" });
   push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: core, translation: meaning, delivery: "clear" });
-  const quick = [
-    drills.find((drill) => drill.kind === "phrase"),
-    drills.find((drill) => drill.kind === "swap"),
-    drills.find((drill) => drill.kind === "situation"),
-  ].filter((drill): drill is Drill => Boolean(drill));
-  quick.slice(0, 3).forEach((drill, index) => ask({
-    ...drill,
-    cues: produceCues(drill.translation).map((cue) => `Quick check. ${cue}`),
-  }, "review", index));
-  push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: "Nice work. The next time you need this, say the whole sentence out loud. That's how it sticks.", delivery: "praise" });
+  const swapLine = swaps[0];
+  if (swapLine) {
+    push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `Swap the thing you need. For ${swapLine.to}:`, delivery: "clear" });
+    push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: swapLine.answer, translation: meaningOf(swapLine.translation), delivery: "clear" });
+  }
+  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: "With a clerk, sound polite.", delivery: "clear" });
+  push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: roleSituation.answer, translation: meaningOf(roleSituation.translation), delivery: "clear" });
+  push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: "Nice work. Use the polite line in a shop, and the first one with a friend.", delivery: "praise" });
 
-  if (segments.length < 8 || segments.some((segment) => segment.speaker !== "teacher")) return null;
+  const focuses = [
+    ...chunks.map((chunk) => chunk.text),
+    ...swaps.map((swap) => swap.focus),
+    ...chosenSituations.map((situation) => situation.focus),
+  ];
+  if (
+    segments.length < 8
+    || segments.some((segment) => segment.speaker !== "teacher")
+    || !phrasePromptsAreClear(segments)
+    || !phraseLinesAreDistinct(segments)
+    || !focusesAreGlossedFirst(segments, focuses)
+    || !phraseAnswersStayVaried(segments, context.targetLanguage)
+    || segments.filter((segment) => segment.phase === "pattern").length > 1
+  ) return null;
   const title = clip(textOf(source.title) || `Saying: ${meaning}`, 90);
   const topic = clip(textOf(source.topic) || meaning, 160);
   const summary = clip(textOf(source.summary) || `Practice how to say "${meaning}" and a few variations.`, 280);
@@ -486,4 +549,3 @@ export function shapePhraseLesson(
     segments,
   };
 }
-

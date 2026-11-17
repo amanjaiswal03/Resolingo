@@ -55,6 +55,7 @@ describe("lesson prompts", () => {
     });
     expect(prompt).toContain("Ich muss ein Paar Schuhe kaufen.");
     expect(prompt).toContain("not a copy");
+    expect(prompt).toContain("German möchte");
     expect(prompt).toContain("Do not turn that literal wording into an answer");
     expect(prompt).toContain("formally");
   });

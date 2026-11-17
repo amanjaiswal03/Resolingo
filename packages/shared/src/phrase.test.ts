@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { displayLessonSegment, lessonDisplayText } from "./markup.js";
 import {
+  focusesAreGlossedFirst,
+  phraseAnswersStayVaried,
   phraseIdFor,
   phraseIdsToPrune,
   phraseLessonPace,
+  phraseLinesAreDistinct,
   phraseLookupLimit,
   phrasePromptsAreClear,
   shapePhraseLesson,
@@ -27,25 +30,25 @@ const shoesModel = {
   topic: "I need to buy a pair of shoes",
   summary: "Learn how to say you need to buy a pair of shoes, then change the details.",
   speakerNames: { teacher: "Mira" },
+  pattern: "After muss, möchte, or will, the other verb goes to the end, so kaufen is at the end.",
   chunks: [
     { text: "Schuhe", translation: "shoes" },
     { text: "ein Paar Schuhe", translation: "a pair of shoes" },
     { text: "ein Paar Schuhe kaufen", translation: "to buy a pair of shoes" },
   ],
   swaps: [
-    { from: "a pair of shoes", to: "a jacket", source: "Ich muss ein Paar Schuhe kaufen.", answer: "Ich muss eine Jacke kaufen.", translation: "I need to buy a jacket" },
-    { from: "a pair of shoes", to: "tickets", source: "Ich muss ein Paar Schuhe kaufen.", answer: "Ich muss Tickets kaufen.", translation: "I need to buy tickets" },
-    { from: "I need to", to: "I want to", source: "Ich muss ein Paar Schuhe kaufen.", answer: "Ich will ein Paar Schuhe kaufen.", translation: "I want to buy a pair of shoes" },
+    { from: "shoes", to: "a jacket", focus: "eine Jacke", focusTranslation: "a jacket", answer: "Ich muss eine Jacke kaufen.", translation: "I need to buy a jacket" },
+    { from: "shoes", to: "tickets", focus: "Tickets", focusTranslation: "tickets", answer: "Ich muss Tickets kaufen.", translation: "I need to buy tickets" },
   ],
   situations: [
-    { setup: "You're in a shoe shop. The clerk asks what you're looking for.", answer: "Ich muss ein Paar Schuhe kaufen.", translation: "I need to buy a pair of shoes" },
-    { setup: "You're ordering online and the page asks what you need.", answer: "Ich muss ein Paar Schuhe kaufen.", translation: "I need to buy a pair of shoes" },
-    { setup: "A friend asks why you're going into town.", answer: "Ich muss ein Paar Schuhe kaufen.", translation: "I need to buy a pair of shoes" },
+    { setup: "You're in a shoe shop. The clerk asks what you're looking for.", focus: "möchte", focusTranslation: "would like", usage: "Möchte is the polite would like. Will is blunter, fine with a friend, not the first choice with a clerk.", answer: "Ich möchte ein Paar Schuhe kaufen.", translation: "I would like to buy a pair of shoes" },
+    { setup: "A friend asks why you're going into town.", focus: "noch", focusTranslation: "still", answer: "Ich muss noch Schuhe kaufen.", translation: "I still need to buy shoes" },
+    { setup: "You're ordering online and you have to name what you need.", focus: "Ich brauche", focusTranslation: "I need", answer: "Ich brauche neue Schuhe.", translation: "I need new shoes" },
   ],
   roleplay: {
-    setup: "You're in a shop. The clerk asks what you need. Tell them.",
-    answer: "Ich muss ein Paar Schuhe kaufen.",
-    translation: "I need to buy a pair of shoes",
+    setup: "You're at the counter. The clerk is waiting.",
+    answer: "Ich möchte ein Paar Schuhe kaufen.",
+    translation: "I would like to buy a pair of shoes",
   },
 };
 
@@ -82,28 +85,27 @@ describe("phrase lessons", () => {
   it("teaches the shoes phrase with one teacher and a bounded script", () => {
     expect(lesson.ruleId).toBe(shoes.phraseId);
     expect(lesson.segments.length).toBeGreaterThanOrEqual(50);
-    expect(lesson.segments.length).toBeLessThanOrEqual(70);
+    expect(lesson.segments.length).toBeLessThanOrEqual(80);
     expect(lesson.segments.length).toBeLessThanOrEqual(120);
     expect(lesson.segments.every((segment) => segment.speaker === "teacher")).toBe(true);
     expect(phrasePromptsAreClear(lesson.segments)).toBe(true);
-    for (let index = 1; index < lesson.segments.length; index += 1) {
-      expect(lesson.segments[index]?.text).not.toBe(lesson.segments[index - 1]?.text);
-    }
+    expect(phraseLinesAreDistinct(lesson.segments)).toBe(true);
+    expect(phraseAnswersStayVaried(lesson.segments, "de-DE")).toBe(true);
   });
 
-  it("names the meaning in every recall and never copies the original swap", () => {
+  it("glosses a new swap word before the learner has to produce it", () => {
+    expect(focusesAreGlossedFirst(lesson.segments, ["eine Jacke", "Tickets", "möchte", "noch", "Ich brauche"])).toBe(true);
     const pauses = lesson.segments.filter((segment) => (segment.pauseAfterMs ?? 0) > 0);
-    const counts = new Map<string, number>();
-    for (const pause of pauses) counts.set(pause.text, (counts.get(pause.text) ?? 0) + 1);
-    expect(Math.max(...counts.values())).toBeLessThanOrEqual(2);
-    expect(pauses.some((pause) => pause.text.startsWith("How would you say"))).toBe(true);
-    expect(pauses.some((pause) => pause.text.startsWith("Can you say"))).toBe(true);
-    expect(pauses.some((pause) => pause.text.includes("Change a pair of shoes to a jacket"))).toBe(true);
+    const jacketCue = pauses.find((pause) => pause.text.includes("instead of shoes, a jacket"));
+    expect(jacketCue?.text).toBe("Now, instead of shoes, a jacket. How would you say I need to buy a jacket?");
+    expect(pauses.some((pause) => pause.text.includes("Ich muss ein Paar Schuhe kaufen"))).toBe(false);
     const answers = lesson.segments.filter((segment) => segment.language === "de-DE").map((segment) => segment.text);
     expect(answers).toContain("Ich muss eine Jacke kaufen.");
     expect(answers).toContain("Ich muss Tickets kaufen.");
-    expect(answers).toContain("Ich will ein Paar Schuhe kaufen.");
-    expect(answers.filter((text) => text === "Ich muss ein Paar Schuhe kaufen.")).not.toContain("Ich muss eine Jacke kaufen.");
+    expect(answers).not.toContain("Ich will ein Paar Schuhe kaufen.");
+    const coreCount = answers.filter((text) => text === "Ich muss ein Paar Schuhe kaufen.").length;
+    expect(coreCount).toBeGreaterThan(0);
+    expect(coreCount).toBeLessThanOrEqual(5);
   });
 
   it("strips language tags for display and keeps a gloss for speech", () => {
@@ -116,18 +118,32 @@ describe("phrase lessons", () => {
     }
   });
 
-  it("uses three situations, one role-play, and a three-line quick fire", () => {
-    const setups = lesson.segments.filter((segment) => segment.phase === "situation" && segment.language === "en-US" && !segment.pauseAfterMs);
+  it("uses three different situation lines, one pattern note, and a concrete recap", () => {
+    const setups = lesson.segments.filter((segment) => segment.phase === "situation" && segment.kind === "narration");
     expect(setups.map((segment) => segment.text)).toEqual([
       "You're in a shoe shop. The clerk asks what you're looking for.",
-      "You're ordering online and the page asks what you need.",
       "A friend asks why you're going into town.",
+      "You're ordering online and you have to name what you need.",
+    ]);
+    const situationAnswers = lesson.segments.filter((segment) => segment.phase === "answer" && segment.language === "de-DE").map((segment) => segment.text);
+    expect(new Set([
+      "Ich möchte ein Paar Schuhe kaufen.",
+      "Ich muss noch Schuhe kaufen.",
+      "Ich brauche neue Schuhe.",
+    ]).size).toBe(3);
+    for (const line of ["Ich möchte ein Paar Schuhe kaufen.", "Ich muss noch Schuhe kaufen.", "Ich brauche neue Schuhe."]) {
+      expect(situationAnswers).toContain(line);
+    }
+    expect(lesson.segments.filter((segment) => segment.phase === "pattern")).toHaveLength(1);
+    expect(lesson.segments.some((segment) => segment.text.includes("the other verb goes to the end"))).toBe(true);
+    const summary = lesson.segments.filter((segment) => segment.phase === "summary" && segment.language === "de-DE").map((segment) => segment.text);
+    expect(summary).toEqual([
+      "Ich muss ein Paar Schuhe kaufen.",
+      "Ich muss eine Jacke kaufen.",
+      "Ich möchte ein Paar Schuhe kaufen.",
     ]);
     const roleplay = lesson.segments.filter((segment) => segment.phase === "roleplay" && segment.language === "de-DE");
-    expect(roleplay).toHaveLength(1);
-    const summaryAt = lesson.segments.findIndex((segment) => segment.phase === "summary");
-    const quick = lesson.segments.slice(summaryAt).filter((segment) => segment.phase === "review" && segment.language === "de-DE");
-    expect(quick).toHaveLength(3);
+    expect(roleplay.map((segment) => segment.text)).toEqual(["Ich möchte ein Paar Schuhe kaufen."]);
   });
 
   it("keeps A1 shorter, with chunks, and B1 on the whole phrase plus a formal alternative", () => {
@@ -150,9 +166,8 @@ describe("phrase lessons", () => {
     const idiom = shapePhraseLesson({
       ...shoesModel,
       swaps: [
-        { from: "pouring", to: "starting", answer: "Es fängt an zu regnen.", translation: "It's starting to rain" },
-        { from: "the rain", to: "the weather", answer: "Das Wetter ist schlecht.", translation: "The weather is bad" },
-        { from: "today", to: "tonight", answer: "Es regnet heute Nacht in Strömen.", translation: "It's raining cats and dogs tonight" },
+        { from: "pouring", to: "starting", focus: "fängt an", focusTranslation: "is starting", answer: "Es fängt an zu regnen.", translation: "It's starting to rain" },
+        { from: "the rain", to: "the weather", focus: "das Wetter", focusTranslation: "the weather", answer: "Das Wetter ist schlecht.", translation: "The weather is bad" },
       ],
     }, {
       ...shoes,
@@ -169,9 +184,8 @@ describe("phrase lessons", () => {
     const named = shapePhraseLesson({
       ...shoesModel,
       swaps: [
-        { from: "the station", to: "the café", answer: "Ich muss Anna im Café treffen.", translation: "I need to meet Anna at the café" },
-        { from: "Anna", to: "Lukas", answer: "Ich muss Lukas am Bahnhof treffen.", translation: "I need to meet Lukas at the station" },
-        { from: "I need to", to: "I want to", answer: "Ich will Anna am Bahnhof treffen.", translation: "I want to meet Anna at the station" },
+        { from: "the station", to: "the café", focus: "im Café", focusTranslation: "at the café", answer: "Ich muss Anna im Café treffen.", translation: "I need to meet Anna at the café" },
+        { from: "Anna", to: "Lukas", focus: "Lukas", focusTranslation: "Lukas", answer: "Ich muss Lukas am Bahnhof treffen.", translation: "I need to meet Lukas at the station" },
       ],
     }, {
       ...shoes,
@@ -198,6 +212,30 @@ describe("phrase lessons", () => {
       ],
     }, shoes);
     expect(rejected).toBeNull();
+  });
+
+  it("rejects a repeated setup and a sentence said too many times", () => {
+    const setup = "You're in a shoe shop. The clerk asks what you're looking for.";
+    const prompt = `${setup} How would you say I need to buy a pair of shoes?`;
+    const repeated = [
+      { id: "seg_01", speaker: "teacher" as const, kind: "narration" as const, phase: "situation", language: "en-US" as const, text: setup, delivery: "warm" as const },
+      { id: "seg_02", speaker: "teacher" as const, kind: "drill" as const, phase: "situation", language: "en-US" as const, text: prompt, delivery: "curious" as const, pauseAfterMs: 5000 },
+    ];
+    expect(phraseLinesAreDistinct(repeated)).toBe(false);
+    const copies = Array.from({ length: 6 }, (_, index) => ({
+      id: `seg_${index}`,
+      speaker: "teacher" as const,
+      kind: "example" as const,
+      phase: "answer",
+      language: "de-DE" as const,
+      text: "Ich muss ein Paar Schuhe kaufen.",
+      translation: "I need to buy a pair of shoes",
+      delivery: "clear" as const,
+    }));
+    expect(phraseAnswersStayVaried(copies, "de-DE")).toBe(false);
+    const situationLines = lesson.segments.filter((segment) => segment.phase === "answer" && segment.language === "de-DE").map((segment) => segment.text);
+    const distinct = situationLines.filter((text) => text !== "Ich muss ein Paar Schuhe kaufen.");
+    expect(new Set(distinct).size).toBe(distinct.length);
   });
 
   it("remembers the full lines and not the chunks", () => {

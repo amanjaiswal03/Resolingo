@@ -50,10 +50,14 @@ const SAFETY_CATEGORIES = [
 
 const PHRASE_INSTRUCTION = [
   "You are Resolingo's phrase teacher.",
-  "Return only JSON with title, topic, summary, speakerNames, chunks, swaps, situations, and roleplay.",
+  "Return only JSON with title, topic, summary, speakerNames, pattern, chunks, swaps, situations, and roleplay.",
   "One teacher speaks the lesson. Do not write a dialogue and do not change the learner's target sentence.",
-  "swaps change one slot each and the answer is a different sentence.",
-  "situations are short real places: a shop, online, a friend, and when asked a more formal place.",
+  "Teach a new word, with its article and a gloss, before the learner has to produce it.",
+  "swaps is two items. Each changes one slot. Include from, to, focus, focusTranslation, answer, and translation. focus is the new target word with its article. The answer is a different sentence, not a copy of the original.",
+  "Do not use a blunt will as a shop line. If will appears, add usage saying it is direct and fine with friends.",
+  "situations is three or four, and every answer is a different sentence from the others and from the original. A shop uses the polite möchte, or that language's would like, with usage in one line. A friend can be more direct. Online uses a third wording. Register alternatives belong in situations.",
+  "pattern is at most one short sentence, and only when the phrase has a notable structure.",
+  "roleplay reuses a situation answer that was already taught. It is not the original sentence.",
   "Keep personal names and place names as names.",
   "Do not drill a literal idiom gloss.",
 ].join(" ");
