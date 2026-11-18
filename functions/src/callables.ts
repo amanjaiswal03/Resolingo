@@ -27,7 +27,9 @@ import { abandonUnenqueuedLesson, enqueueLesson } from "./jobs.js";
 import { nextReminderAt, localDate, assertTimezone } from "./time.js";
 import { tokenHash } from "./push.js";
 import { dailyReservationLimit, reserveLesson, withoutReservation } from "./quota.js";
+import { transcribeWithSpeechToText } from "./stt.js";
 import { PhraseTranslationError, transcribePhraseAudio, translatePhraseContent, translateSpokenPhrase, type PhraseTranslation } from "./translate.js";
+import { vertexProjectId } from "./gemini.js";
 import { synthesizePhrasePreview } from "./tts.js";
 import type { ZodError } from "zod";
 
@@ -333,7 +335,13 @@ export const translatePhrase = onCall({ ...callableOptions, timeoutSeconds: 120 
     const quota = await assertPhraseQuota(uid, profile);
     let nativeText: string;
     try {
-      nativeText = await transcribePhraseAudio({ ...audio, nativeLanguage });
+      try {
+        nativeText = await transcribeWithSpeechToText({ ...audio, nativeLanguage, projectId: vertexProjectId() });
+      } catch (error) {
+        if (error instanceof PhraseTranslationError) throw error;
+        logger.warn("speech_to_text_fallback", { message: error instanceof Error ? error.message : "stt_failed" });
+        nativeText = await transcribePhraseAudio({ ...audio, nativeLanguage });
+      }
     } catch (error) {
       throw translationFailure(error);
     }
