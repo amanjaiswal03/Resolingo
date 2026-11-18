@@ -11,6 +11,7 @@ import { Body, Heading, Title } from "@/components/Typography";
 import { api } from "@/services/api";
 import { subscribePhrases } from "@/services/phrases";
 import { SPEECH_RECORDING } from "@/say/speech-recording";
+import { initialVoiceActivity, stepVoiceActivity, type VadStop } from "@/say/voice-activity";
 import { useSession } from "@/session/SessionProvider";
 import { useTheme } from "@/theme/tokens";
 
@@ -31,6 +32,13 @@ function clock(millis: number): string {
   return `0:${String(seconds).padStart(2, "0")}`;
 }
 
+function levelRatio(db: number | undefined): number {
+  if (db == null || !Number.isFinite(db)) return 0.12;
+  const floor = -60;
+  const clamped = Math.min(0, Math.max(floor, db));
+  return (clamped - floor) / (0 - floor);
+}
+
 type Phase = "idle" | "listening" | "transcribing";
 
 export default function SayScreen() {
@@ -45,6 +53,7 @@ export default function SayScreen() {
   const finishing = useRef(false);
   const cancelRequested = useRef(false);
   const sawRecording = useRef(false);
+  const activity = useRef(initialVoiceActivity());
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
   const recorder = useAudioRecorder(SPEECH_RECORDING);
   const recording = useAudioRecorderState(recorder, 200);
@@ -59,25 +68,24 @@ export default function SayScreen() {
     poll.current = null;
   };
 
-  const finishRecording = async () => {
+  const finishRecording = async (reason: "user" | "cancel" | VadStop) => {
     if (finishing.current || phaseRef.current !== "listening") return;
     finishing.current = true;
-    const cancelled = cancelRequested.current;
+    const cancelled = reason === "cancel" || cancelRequested.current;
+    const heardSpeech = activity.current.heardSpeech;
+    const sawLevel = activity.current.sawLevel;
     const durationMs = Math.min(MAX_PHRASE_AUDIO_SECONDS * 1000, Math.round(recorder.getStatus().durationMillis || 0));
-    setPhaseBoth(cancelled ? "idle" : "transcribing");
+    const missed = !cancelled && (reason === "no-speech" || (sawLevel && !heardSpeech));
+    setPhaseBoth(cancelled || missed ? "idle" : "transcribing");
     let uri = recorder.uri ?? recorder.getStatus().url;
     try {
       await recorder.stop().catch(() => undefined);
       uri = recorder.uri ?? recorder.getStatus().url ?? uri;
-      if (!uri) {
-        if (!cancelled) Alert.alert("Didn't catch that", "Try saying the sentence again.");
-        return;
-      }
       if (cancelled) {
         discard(uri);
         return;
       }
-      if (durationMs < 300) {
+      if (!uri || missed || durationMs < 300) {
         discard(uri);
         Alert.alert("Didn't catch that", "Try saying the sentence again.");
         return;
@@ -94,6 +102,7 @@ export default function SayScreen() {
       finishing.current = false;
       cancelRequested.current = false;
       sawRecording.current = false;
+      activity.current = initialVoiceActivity();
       setPhaseBoth("idle");
       await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => undefined);
     }
@@ -128,6 +137,7 @@ export default function SayScreen() {
       await recorder.prepareToRecordAsync();
       sawRecording.current = false;
       cancelRequested.current = false;
+      activity.current = initialVoiceActivity();
       setPhaseBoth("listening");
       recorder.record({ forDuration: MAX_PHRASE_AUDIO_SECONDS });
       stopPoll();
@@ -135,8 +145,17 @@ export default function SayScreen() {
         if (phaseRef.current !== "listening" || finishing.current) return;
         const status = recorder.getStatus();
         if (status.isRecording) sawRecording.current = true;
-        const capped = status.durationMillis >= MAX_PHRASE_AUDIO_SECONDS * 1000;
-        if (capped || (sawRecording.current && !status.isRecording)) void finishRecording();
+        const stepped = stepVoiceActivity(activity.current, {
+          durationMs: status.durationMillis,
+          meteringDb: typeof status.metering === "number" ? status.metering : null,
+          capMs: MAX_PHRASE_AUDIO_SECONDS * 1000,
+        });
+        activity.current = stepped.state;
+        if (stepped.stop) {
+          void finishRecording(stepped.stop);
+          return;
+        }
+        if (sawRecording.current && !status.isRecording) void finishRecording(activity.current.heardSpeech ? "cap" : "no-speech");
       }, 200);
     } catch (error) {
       stopPoll();
@@ -148,7 +167,7 @@ export default function SayScreen() {
 
   const cancelRecording = () => {
     cancelRequested.current = true;
-    void finishRecording();
+    void finishRecording("cancel");
   };
 
   const submit = async () => {
@@ -189,15 +208,22 @@ export default function SayScreen() {
           accessibilityRole="button"
           accessibilityLabel={listening ? "Stop recording" : "Start recording"}
           disabled={phase === "transcribing" || submitting}
-          onPress={() => { if (listening) void finishRecording(); else void startRecording(); }}
+          onPress={() => { if (listening) void finishRecording("user"); else void startRecording(); }}
           style={({ pressed }) => [styles.mic, { backgroundColor: listening ? theme.danger : theme.primary, opacity: phase === "transcribing" || submitting ? 0.5 : pressed ? 0.75 : 1 }]}
         >
           <Body style={{ color: listening ? theme.background : theme.onPrimary }}>{listening ? "Stop" : "Speak"}</Body>
         </Pressable>
         <View style={styles.micCopy}>
           {listening ? <Body>Listening… {clock(recording.durationMillis)}</Body> : null}
+          {listening ? (
+            <View accessibilityElementsHidden style={styles.level}>
+              {[0.55, 0.8, 1, 0.8, 0.55].map((shape, index) => (
+                <View key={index} style={[styles.levelBar, { backgroundColor: theme.primary, height: 6 + levelRatio(recording.metering) * 22 * shape }]} />
+              ))}
+            </View>
+          ) : null}
           {phase === "transcribing" ? <Body>Transcribing…</Body> : null}
-          {phase === "idle" ? <Body muted>Up to {MAX_PHRASE_AUDIO_SECONDS} seconds. Tap again to stop.</Body> : null}
+          {phase === "idle" ? <Body muted>It stops when you pause. You can also tap Stop. Up to {MAX_PHRASE_AUDIO_SECONDS} seconds.</Body> : null}
           {listening ? (
             <Pressable accessibilityRole="button" accessibilityLabel="Cancel recording" onPress={cancelRecording}>
               <Body muted>Cancel</Body>
@@ -225,4 +251,6 @@ const styles = StyleSheet.create({
   micRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   mic: { minHeight: 52, minWidth: 88, borderRadius: 18, alignItems: "center", justifyContent: "center", paddingHorizontal: 16 },
   micCopy: { flex: 1, gap: 4 },
+  level: { flexDirection: "row", alignItems: "flex-end", gap: 4, height: 28 },
+  levelBar: { width: 5, borderRadius: 3 },
 });

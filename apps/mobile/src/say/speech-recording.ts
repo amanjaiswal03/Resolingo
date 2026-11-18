@@ -1,6 +1,10 @@
 import { AudioQuality, IOSOutputFormat, type RecordingOptions } from "expo-audio";
 
-/** Speech is intelligible at a low AAC bitrate, which stays under the upload cap. */
+/**
+ * 16 kHz mono AAC in an m4a container. Cloud Speech-to-Text V2 auto-decoding
+ * accepts both M4A AAC and MP4 AAC, which covers this iOS file and the Android
+ * MPEG-4 AAC file, so the recording does not need a second format.
+ */
 export const SPEECH_RECORDING: RecordingOptions = {
   extension: ".m4a",
   sampleRate: 16000,
