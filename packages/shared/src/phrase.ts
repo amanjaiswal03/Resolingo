@@ -174,7 +174,7 @@ function contentWords(text: string): string[] {
 
 /** New content words in an alternative, grouped into short glosses of at most three words. */
 function novelFocuses(answer: string, core: string): string[] {
-  const known = new Set(contentWords(core));
+  const known = new Set(spokenWords(core));
   const tokens = answer
     .split(/\s+/u)
     .map((token) => token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
@@ -188,7 +188,7 @@ function novelFocuses(answer: string, core: string): string[] {
   };
   for (const token of tokens) {
     const key = normalize(token);
-    if (key.length < 3 || known.has(key)) {
+    if (key.length < 2 || known.has(key)) {
       flush();
       continue;
     }
@@ -201,7 +201,7 @@ function novelFocuses(answer: string, core: string): string[] {
 
 function shortWordGlosses(words: PhraseLine[] | undefined): PhraseLine[] {
   return (words ?? []).filter((word) => {
-    const count = contentWords(word.text).length;
+    const count = spokenWords(word.text).length;
     return word.text.trim().length > 0 && word.translation.trim().length > 0 && count > 0 && count <= MAX_GLOSS_WORDS;
   });
 }
@@ -234,22 +234,53 @@ function taughtWords(segment: LessonSegment): string[] {
   const means = shown.match(/^(.+?)\s+means\s+["“]/i);
   const span = (sameWord?.[1] ?? means?.[1] ?? "").trim();
   if (!span) return [];
-  const words = contentWords(span);
+  const words = spokenWords(span);
   if (words.length === 0 || words.length > MAX_GLOSS_WORDS) return [];
   return words;
 }
 
-function produceCues(translation: string): string[] {
+/** Every spoken token, including short pronouns and function words such as es, du, and zu. */
+function spokenWords(text: string): string[] {
+  return normalize(text).split(" ").filter((word) => word.length >= 2);
+}
+
+/**
+ * A situation has to keep the target phrase. It matches when it reuses a long
+ * word from the core sentence, or the same stem (hören/hörst, kaufen/kauft).
+ */
+function sharesCorePattern(answer: string, core: string): boolean {
+  const keys = spokenWords(core).filter((word) => word.length >= 4).flatMap((word) => {
+    const stemmed = word.replace(/(en|st)$/u, "");
+    return stemmed.length >= 3 && stemmed !== word ? [word, stemmed] : [word];
+  });
+  const words = spokenWords(answer);
+  if (keys.length === 0) return words.some((word) => spokenWords(core).includes(word));
+  return keys.some((key) => words.some((word) => word === key || (key.length >= 3 && word.startsWith(key))));
+}
+
+function formatCue(frame: string, translation: string, extra: { from?: string; to?: string } = {}): string {
   const meaning = meaningOf(translation);
-  return SPEAK_FRAMES.map((frame) => frame.replaceAll("{translation}", meaning));
+  let template = frame;
+  if (/^can\b/i.test(meaning)) {
+    template = template.replaceAll("Can you say {translation}?", "Your turn: {translation}.");
+    template = template.replaceAll("Can you say {translation}", "Your turn: {translation}");
+  }
+  let cue = template
+    .replaceAll("{translation}", meaning)
+    .replaceAll("{from}", extra.from ?? "")
+    .replaceAll("{to}", extra.to ?? "");
+  if (/[?？]\s*$/u.test(translation.trim()) && !/[?？]\s*$/u.test(cue)) {
+    cue = cue.replace(/[.!]\s*$/u, "?");
+  }
+  return cue;
+}
+
+function produceCues(translation: string): string[] {
+  return SPEAK_FRAMES.map((frame) => formatCue(frame, translation));
 }
 
 function swapCues(swap: PhraseSwap): string[] {
-  const meaning = meaningOf(swap.translation);
-  return SWAP_FRAMES.map((frame) => frame
-    .replaceAll("{from}", swap.from)
-    .replaceAll("{to}", swap.to)
-    .replaceAll("{translation}", meaning));
+  return SWAP_FRAMES.map((frame) => formatCue(frame, swap.translation, { from: swap.from, to: swap.to }));
 }
 
 function takeCue(candidates: string[], used: Map<string, number>, start: number): string | null {
@@ -397,12 +428,12 @@ export function focusesAreGlossedFirst(segments: readonly LessonSegment[], focus
  * earlier short gloss. Translating the whole answer does not teach a new word.
  */
 export function answerWordsAreGlossed(segments: readonly LessonSegment[], language: LanguageId, core: string): boolean {
-  const known = new Set(contentWords(core));
+  const known = new Set(spokenWords(core));
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index];
     const previous = segments[index - 1];
     if ((previous?.pauseAfterMs ?? 0) > 0 && segment?.language === language && segment.phase !== "warmup") {
-      for (const word of contentWords(segment.text)) {
+      for (const word of spokenWords(segment.text)) {
         if (!known.has(word)) return false;
       }
     }
@@ -435,14 +466,35 @@ function introFor(context: PhraseLessonContext, targetLabel: string): string {
   return `You wanted to say "${meaning}". Here's how that sounds in ${targetLabel}.`;
 }
 
-function closingFor(situations: readonly PhraseSituation[]): string {
+function closingFor(meaning: string, situations: readonly PhraseSituation[]): string {
   const clerk = situations.find((item) => /\b(clerk|shop)\b/i.test(item.setup));
   const friend = situations.find((item) => /\bfriend\b/i.test(item.setup));
   const lines = ["Nice work."];
   if (clerk) lines.push(`With a clerk, use the line that means "${meaningOf(clerk.translation)}".`);
   if (friend && friend !== clerk) lines.push(`With a friend, use the line that means "${meaningOf(friend.translation)}".`);
-  if (!clerk && !friend && situations[0]) lines.push(`Use the line that means "${meaningOf(situations[0].translation)}" when it fits.`);
+  lines.push(`The line you came in with means "${meaning}".`);
   return lines.join(" ");
+}
+
+/** A focus plus its extra words. More than two is too many new glosses before one line. */
+function glossLoad(focus: string, words?: PhraseLine[]): number {
+  const items = [focus, ...(words ?? []).map((word) => word.text)].map((item) => item.trim()).filter((item) => item.length > 0);
+  const unique: string[] = [];
+  for (const item of items) {
+    if (!unique.some((kept) => same(kept, item))) unique.push(item);
+  }
+  return unique.length;
+}
+
+/** At most two new-word glosses between turns where the learner speaks. */
+function glossesStaySparse(segments: readonly LessonSegment[]): boolean {
+  let fresh = 0;
+  for (const segment of segments) {
+    if ((segment.pauseAfterMs ?? 0) > 0 && fresh > 2) return false;
+    if ((segment.pauseAfterMs ?? 0) > 0) fresh = 0;
+    if (taughtWords(segment).length > 0) fresh += 1;
+  }
+  return fresh <= 2;
 }
 
 export type PhraseShapeReason =
@@ -456,6 +508,8 @@ export type PhraseShapeReason =
   | "focus_unglossed"
   | "answers_repeated"
   | "answer_words_unglossed"
+  | "situation_off_pattern"
+  | "glosses_bunched"
   | "pattern_repeated"
   | "title_short";
 
@@ -492,16 +546,18 @@ export function shapePhraseLesson(
     : [];
   const swaps = readSwaps(source.swaps, core).filter((swap) => !isLiteral(swap.answer, note)).slice(0, limits.swaps);
   if (swaps.length < limits.swaps) return reject("swaps_short");
-  const chosenSituations = readSituations(source.situations, core).filter((item) => !isLiteral(item.answer, note)).slice(0, limits.situations);
-  if (chosenSituations.length < limits.situations) return reject("situations_short");
+  const read = readSituations(source.situations, core).filter((item) => !isLiteral(item.answer, note));
+  const onPattern = read.filter((item) => sharesCorePattern(item.answer, core));
+  if (onPattern.length < limits.situations) return reject(read.length >= limits.situations ? "situation_off_pattern" : "situations_short");
+  const chosenSituations = onPattern.slice(0, limits.situations);
   for (const alternative of context.alternatives ?? []) {
     if (chosenSituations.some((item) => same(item.answer, alternative.text)) || same(alternative.text, core)) continue;
-    if (isLiteral(alternative.text, note)) continue;
+    if (isLiteral(alternative.text, note) || !sharesCorePattern(alternative.text, core)) continue;
     const glossed = registerGloss(alternative, core);
     chosenSituations.push({
       setup: "You want to sound a bit more formal.",
       answer: alternative.text,
-      translation: meaning,
+      translation: context.nativeText,
       focus: glossed.focus,
       focusTranslation: glossed.focusTranslation,
       usage: "A more formal way to say it.",
@@ -514,19 +570,22 @@ export function shapePhraseLesson(
   const requestedRole = textOf(roleRecord?.answer);
   const roleSituation = chosenSituations.find((item) => same(item.answer, requestedRole)) ?? chosenSituations[0]!;
   if (isLiteral(roleSituation.answer, note) || same(roleSituation.answer, core)) return reject("roleplay_invalid");
+  if (swaps.some((swap) => glossLoad(swap.focus, swap.words) > 2) || chosenSituations.some((item) => glossLoad(item.focus, item.words) > 2)) {
+    return reject("glosses_bunched");
+  }
 
   const drills: Drill[] = [
     {
       kind: "phrase",
       answer: core,
-      translation: meaning,
-      cues: produceCues(meaning),
+      translation: context.nativeText,
+      cues: produceCues(context.nativeText),
       ...(context.transliteration ? { transliteration: context.transliteration } : {}),
     },
     ...swaps.map((swap) => ({
       kind: "swap" as const,
       answer: swap.answer,
-      translation: meaningOf(swap.translation),
+      translation: swap.translation,
       cues: swapCues(swap),
       focus: swap.focus,
       focusTranslation: swap.focusTranslation,
@@ -537,7 +596,7 @@ export function shapePhraseLesson(
       kind: "situation" as const,
       setup: situation.setup,
       answer: situation.answer,
-      translation: meaningOf(situation.translation),
+      translation: situation.translation,
       cues: produceCues(situation.translation),
       focus: situation.focus,
       focusTranslation: situation.focusTranslation,
@@ -548,7 +607,7 @@ export function shapePhraseLesson(
       kind: "roleplay" as const,
       setup: roleSetup,
       answer: roleSituation.answer,
-      translation: meaningOf(roleSituation.translation),
+      translation: roleSituation.translation,
       cues: produceCues(roleSituation.translation),
     },
   ];
@@ -596,7 +655,7 @@ export function shapePhraseLesson(
       phase: answerPhase,
       language: context.targetLanguage,
       text: drill.answer,
-      translation: meaningOf(drill.translation),
+      translation: drill.translation,
       ...(drill.transliteration ? { transliteration: drill.transliteration } : {}),
       delivery: "clear",
     });
@@ -623,7 +682,7 @@ export function shapePhraseLesson(
     phase: "hook",
     language: context.targetLanguage,
     text: core,
-    translation: meaning,
+      translation: context.nativeText,
     ...(context.transliteration ? { transliteration: context.transliteration } : {}),
     delivery: "clear",
   });
@@ -690,14 +749,14 @@ export function shapePhraseLesson(
     chosenSituations.find((item) => /\bfriend\b/i.test(item.setup))
       ?? chosenSituations.find((item) => !same(item.answer, roleSituation.answer))
       ?? null,
-    { answer: core, translation: meaning },
+    { answer: core, translation: context.nativeText },
   ].filter((item): item is { answer: string; translation: string } => Boolean(item));
   quickItems.slice(0, 3).forEach((item, index) => {
     const frame = QUICK_FRAMES[index] ?? QUICK_FRAMES[0];
     ask({
       answer: item.answer,
       translation: item.translation,
-      cues: [frame.replaceAll("{translation}", meaningOf(item.translation))],
+      cues: [formatCue(frame, item.translation)],
     }, "quick", index);
   });
 
@@ -718,7 +777,7 @@ export function shapePhraseLesson(
       : `Another way to say it means "${meaningOf(recapSituation.translation)}", and it sounds like this.`;
   push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: recapLine, delivery: "clear" });
   push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: recapSituation.answer, translation: meaningOf(recapSituation.translation), delivery: "clear" });
-  push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: closingFor(chosenSituations), delivery: "praise" });
+  push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: closingFor(meaning, chosenSituations), delivery: "praise" });
 
   const focuses = [
     ...chunks.map((chunk) => chunk.text),
@@ -731,6 +790,7 @@ export function shapePhraseLesson(
   if (!focusesAreGlossedFirst(segments, focuses)) return reject("focus_unglossed");
   if (!phraseAnswersStayVaried(segments, context.targetLanguage)) return reject("answers_repeated");
   if (!answerWordsAreGlossed(segments, context.targetLanguage, core)) return reject("answer_words_unglossed");
+  if (!glossesStaySparse(segments)) return reject("glosses_bunched");
   if (segments.filter((segment) => segment.phase === "pattern").length > 1) return reject("pattern_repeated");
   const title = clip(textOf(source.title) || `Saying: ${meaning}`, 90);
   const topic = clip(textOf(source.topic) || meaning, 160);

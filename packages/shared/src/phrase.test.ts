@@ -203,7 +203,7 @@ describe("phrase lessons", () => {
       ...shoesModel,
       chunks: [],
       swaps: [
-        { from: "pouring", to: "starting", focus: "fängt an", focusTranslation: "is starting", words: [{ text: "regnen", translation: "to rain" }], answer: "Es fängt an zu regnen.", translation: "It's starting to rain" },
+        { from: "pouring", to: "starting", focus: "fängt an", focusTranslation: "is starting", words: [{ text: "zu regnen", translation: "to rain" }], answer: "Es fängt an zu regnen.", translation: "It's starting to rain" },
         { from: "the rain", to: "the weather", focus: "das Wetter", focusTranslation: "the weather", words: [{ text: "ist schlecht", translation: "is bad" }], answer: "Das Wetter ist schlecht.", translation: "The weather is bad" },
       ],
       situations: [
@@ -304,25 +304,24 @@ describe("phrase lessons", () => {
       ],
       situations: [
         {
-          setup: "You're on a phone call and the line crackles.",
-          focus: "die Verbindung",
-          focusTranslation: "the connection",
-          words: [{ text: "Ist", translation: "is" }, { text: "schlecht", translation: "bad" }],
-          answer: "Ist die Verbindung schlecht?",
-          translation: "Is the connection bad?",
+          setup: "You're on a video call and the picture just came back.",
+          focus: "jetzt",
+          focusTranslation: "now",
+          answer: "Kannst du mich jetzt hören?",
+          translation: "Can you hear me now?",
         },
         {
           setup: "A friend is across a noisy room.",
-          focus: "zu laut",
-          focusTranslation: "too loud",
-          answer: "Es ist zu laut.",
-          translation: "It's too loud.",
+          focus: "Hörst",
+          focusTranslation: "do you hear",
+          answer: "Hörst du mich?",
+          translation: "Can you hear me?",
         },
       ],
       roleplay: {
-        setup: "You're on a phone call and the line crackles.",
-        answer: "Ist die Verbindung schlecht?",
-        translation: "Is the connection bad?",
+        setup: "You're on a video call and the picture just came back.",
+        answer: "Kannst du mich jetzt hören?",
+        translation: "Can you hear me now?",
       },
     };
     const context: PhraseLessonContext = {
@@ -340,14 +339,28 @@ describe("phrase lessons", () => {
     expect(phraseLinesAreDistinct(lesson.segments)).toBe(true);
     expect(phraseAnswersStayVaried(lesson.segments, "de-DE")).toBe(true);
     expect(answerWordsAreGlossed(lesson.segments, "de-DE", context.translation)).toBe(true);
-    expect(focusesAreGlossedFirst(lesson.segments, ["hören", "deutlich hören", "mich deutlich hören", "Kann er", "gut", "die Verbindung", "zu laut", "Können Sie"])).toBe(true);
+    expect(focusesAreGlossedFirst(lesson.segments, ["hören", "deutlich hören", "mich deutlich hören", "Kann er", "gut", "jetzt", "Hörst", "Können Sie"])).toBe(true);
     expect(lesson.segments.filter((segment) => segment.phase === "pattern")).toHaveLength(1);
     const formal = lesson.segments.findIndex((segment) => segment.text === "Können Sie mich deutlich hören?");
     const gloss = lesson.segments.findIndex((segment) => segment.text.includes("Können Sie") && segment.text.includes("means \"can you\""));
     expect(gloss).toBeGreaterThanOrEqual(0);
     expect(formal).toBeGreaterThan(gloss);
     expect(lesson.segments.some((segment) => segment.text.includes("With a clerk"))).toBe(false);
+    expect(lesson.segments.some((segment) => /too loud|connection/i.test(segment.text))).toBe(false);
     expect(lesson.segments.some((segment) => segment.text.includes("A more formal way to say it"))).toBe(true);
+    const closing = lesson.segments.find((segment) => segment.phase === "closing")?.text ?? "";
+    expect(closing).toContain("Can you hear me clearly");
+    expect(closing).toContain("Can you hear me");
+    const prompts = lesson.segments.filter((segment) => (segment.pauseAfterMs ?? 0) > 0);
+    expect(prompts.some((segment) => /can you say can\b/i.test(segment.text))).toBe(false);
+    for (let index = 0; index < lesson.segments.length; index += 1) {
+      const prompt = lesson.segments[index];
+      if (!prompt?.pauseAfterMs) continue;
+      const answer = lesson.segments[index + 1];
+      if (answer?.translation?.trim().endsWith("?")) expect(prompt.text.trim().endsWith("?")).toBe(true);
+    }
+    expect(lesson.segments.some((segment) => segment.text === "Kannst du mich jetzt hören?")).toBe(true);
+    expect(lesson.segments.some((segment) => segment.text === "Hörst du mich?")).toBe(true);
     const coreCount = lesson.segments.filter((segment) => segment.text === "Kannst du mich deutlich hören?").length;
     expect(coreCount).toBeGreaterThan(0);
     expect(coreCount).toBeLessThanOrEqual(5);
@@ -390,15 +403,19 @@ describe("phrase lessons", () => {
       situations: [
         { setup: "You're on a street corner and someone is walking past.", focus: "in der Nähe", focusTranslation: "nearby", answer: "Ist der Bahnhof in der Nähe?", translation: "Is the train station nearby?" },
         { setup: "A friend is meeting you and asks which way.", focus: "links", focusTranslation: "left", answer: "Der Bahnhof ist links.", translation: "The train station is on the left." },
-        { setup: "You're looking at a sign in the station hall.", focus: "der Ausgang", focusTranslation: "the exit", answer: "Wo ist der Ausgang?", translation: "Where is the exit?" },
+        { setup: "You're looking at a sign in the station hall.", focus: "hier", focusTranslation: "here", answer: "Wo ist der Bahnhof hier?", translation: "Where is the train station here?" },
       ],
-      roleplay: { setup: "You're looking at a sign in the station hall.", answer: "Wo ist der Ausgang?", translation: "Where is the exit?" },
+      roleplay: { setup: "You're looking at a sign in the station hall.", answer: "Wo ist der Bahnhof hier?", translation: "Where is the train station here?" },
     }, context));
     expect(phrasePromptsAreClear(lesson.segments)).toBe(true);
     expect(phraseLinesAreDistinct(lesson.segments)).toBe(true);
     expect(phraseAnswersStayVaried(lesson.segments, "de-DE")).toBe(true);
     expect(answerWordsAreGlossed(lesson.segments, "de-DE", context.translation)).toBe(true);
-    expect(focusesAreGlossedFirst(lesson.segments, ["Bahnhof", "der Bahnhof", "ist der Bahnhof", "das Hotel", "liegt", "in der Nähe", "links", "der Ausgang"])).toBe(true);
+    expect(focusesAreGlossedFirst(lesson.segments, ["Bahnhof", "der Bahnhof", "ist der Bahnhof", "das Hotel", "liegt", "in der Nähe", "links", "hier"])).toBe(true);
+    const stationAnswers = lesson.segments.filter((segment) => segment.phase === "answer" && segment.language === "de-DE").map((segment) => segment.text);
+    for (const line of ["Ist der Bahnhof in der Nähe?", "Der Bahnhof ist links.", "Wo ist der Bahnhof hier?"]) {
+      expect(stationAnswers).toContain(line);
+    }
     expect(lesson.segments.filter((segment) => segment.phase === "pattern")).toHaveLength(1);
     expect(lesson.segments.some((segment) => /\b(clerk|shop)\b/i.test(segment.text))).toBe(false);
     const setups = lesson.segments.filter((segment) => segment.phase === "situation" && segment.kind === "narration").map((segment) => segment.text);
@@ -406,6 +423,44 @@ describe("phrase lessons", () => {
     expect(setups.length).toBeGreaterThanOrEqual(3);
     const coreCount = lesson.segments.filter((segment) => segment.text === "Wo ist der Bahnhof?").length;
     expect(coreCount).toBeLessThanOrEqual(5);
+  });
+
+  it("requires a gloss for a short word that is not in the core sentence", () => {
+    const core = "Kannst du mich deutlich hören?";
+    const ask = { id: "seg_01", speaker: "teacher" as const, kind: "drill" as const, phase: "practice", language: "en-US" as const, text: "Your turn: It's too loud?", delivery: "curious" as const, pauseAfterMs: 5000 };
+    const answer = { id: "seg_02", speaker: "teacher" as const, kind: "drill" as const, phase: "answer", language: "de-DE" as const, text: "Es ist zu laut.", translation: "It's too loud.", delivery: "clear" as const };
+    expect(answerWordsAreGlossed([ask, answer], "de-DE", core)).toBe(false);
+    const taught = [
+      { id: "seg_a", speaker: "teacher" as const, kind: "explanation" as const, phase: "situation", language: "en-US" as const, text: "Es means \"it\".", delivery: "clear" as const },
+      { id: "seg_b", speaker: "teacher" as const, kind: "explanation" as const, phase: "situation", language: "en-US" as const, text: "ist means \"is\".", delivery: "clear" as const },
+      { id: "seg_c", speaker: "teacher" as const, kind: "drill" as const, phase: "focus", language: "en-US" as const, text: "Your turn: is?", delivery: "curious" as const, pauseAfterMs: 5000 },
+      { id: "seg_d", speaker: "teacher" as const, kind: "explanation" as const, phase: "situation", language: "en-US" as const, text: "zu laut means \"too loud\".", delivery: "clear" as const },
+      ask,
+      answer,
+    ];
+    expect(answerWordsAreGlossed(taught, "de-DE", core)).toBe(true);
+  });
+
+  it("rejects situations that leave the phrase and a pile of new glosses", () => {
+    const drifted = shapePhraseLesson({
+      ...shoesModel,
+      situations: [
+        { setup: "You're on a phone call and the line crackles.", focus: "schlecht", focusTranslation: "bad", answer: "Die Verbindung ist schlecht.", translation: "The connection is bad." },
+        { setup: "A friend is across a noisy room.", focus: "laut", focusTranslation: "loud", answer: "Es ist zu laut.", translation: "It's too loud." },
+        { setup: "You're ordering online and you have to name what you need.", focus: "Ich brauche", focusTranslation: "I need", words: [{ text: "neue", translation: "new" }], answer: "Ich brauche neue Schuhe.", translation: "I need new shoes" },
+      ],
+    }, shoes);
+    expect(drifted.ok).toBe(false);
+    if (!drifted.ok) expect(drifted.reason).toBe("situation_off_pattern");
+
+    const piled = shapePhraseLesson({
+      ...shoesModel,
+      situations: shoesModel.situations.map((item, index) => index === 2
+        ? { ...item, words: [{ text: "neue", translation: "new" }, { text: "heute", translation: "today" }] }
+        : item),
+    }, shoes);
+    expect(piled.ok).toBe(false);
+    if (!piled.ok) expect(piled.reason).toBe("glosses_bunched");
   });
 
   it("remembers the full lines and not the chunks", () => {
