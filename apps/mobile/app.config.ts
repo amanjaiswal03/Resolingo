@@ -65,6 +65,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ["expo-build-properties", { ios: { useFrameworks: "static" } }],
     ],
     experiments: { typedRoutes: true },
+    updates: { url: `https://u.expo.dev/${orDefault(process.env.EXPO_PUBLIC_EAS_PROJECT_ID, DEFAULT_EAS_PROJECT_ID)}` },
+    runtimeVersion: { policy: "appVersion" },
     extra: {
       eas: { projectId: orDefault(process.env.EXPO_PUBLIC_EAS_PROJECT_ID, DEFAULT_EAS_PROJECT_ID) },
     },
