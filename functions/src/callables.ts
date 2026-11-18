@@ -8,6 +8,7 @@ import {
   CreatePhraseLessonRequestSchema,
   InitializeProfileRequestSchema,
   isStaleUnenqueuedLesson,
+  lessonCanBeDeleted,
   LanguageIdSchema,
   type LanguageId,
   LessonIdRequestSchema,
@@ -566,6 +567,48 @@ export const retryFailedLesson = onCall(callableOptions, async (request) => {
   });
   await enqueueOrRollBack(uid, parsed.data.lessonId, quotaDate);
   return { lessonId: parsed.data.lessonId };
+});
+
+/**
+ * Removes one lesson the learner owns: the lesson document and its audio
+ * under users/{uid}/lessons/{lessonId}/. Lessons have no subcollections.
+ * Phrase preview audio and the phrase itself stay; only a dangling lessonId
+ * pointer is cleared. Review items and dailyUsage are left as they are, so
+ * deleting a lesson does not refund the day's ready count or erase practice.
+ */
+export const deleteLesson = onCall(callableOptions, async (request) => {
+  const uid = requireUid(request);
+  const parsed = LessonIdRequestSchema.safeParse(request.data);
+  if (!parsed.success) throw new HttpsError("invalid-argument", "Choose a lesson to delete.");
+  const lessonId = parsed.data.lessonId;
+  const lessonRef = db.doc(`users/${uid}/lessons/${lessonId}`);
+  const snapshot = await lessonRef.get();
+  if (!snapshot.exists) return { ok: true };
+  const data = snapshot.data() ?? {};
+  const status = typeof data.status === "string" ? data.status : "";
+  if (!lessonCanBeDeleted(status)) {
+    throw new HttpsError("failed-precondition", "This lesson is still being created.");
+  }
+  const user = await db.doc(`users/${uid}`).get();
+  if (user.data()?.activeLessonId === lessonId) {
+    throw new HttpsError("failed-precondition", "This lesson is still being created.");
+  }
+  const phraseId = typeof data.phraseId === "string" ? data.phraseId : "";
+  if (phraseId) {
+    const phraseRef = db.doc(`users/${uid}/phrases/${phraseId}`);
+    const phrase = await phraseRef.get();
+    if (phrase.exists && phrase.data()?.lessonId === lessonId) {
+      await phraseRef.update({ lessonId: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp() });
+    }
+  }
+  try {
+    await bucket.deleteFiles({ prefix: `users/${uid}/lessons/${lessonId}/` });
+  } catch (error) {
+    logger.error("lesson_audio_delete_failed", { lessonId, message: error instanceof Error ? error.message : "delete_failed" });
+    throw new HttpsError("unavailable", "Couldn’t delete this lesson. Try again.");
+  }
+  await lessonRef.delete();
+  return { ok: true };
 });
 
 export const registerPushDevice = onCall(callableOptions, async (request) => {

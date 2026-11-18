@@ -9,10 +9,11 @@ import { LessonRow } from "@/components/LessonRow";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
-import { dailyCapBlocksStart, dailyQuotaLabel } from "@/home/daily-quota";
-import { useLessons } from "@/hooks/useLessons";
+import { dailyCapBlocksStart, dailyQuotaLabel, lessonsReadyToday } from "@/home/daily-quota";
+import { LessonRowDismiss, useLessonList } from "@/lessons/delete-lesson";
 import { percentWidth } from "@/lesson/navigation";
 import { api } from "@/services/api";
+import { subscribeReadyCount } from "@/services/lessons";
 import { listenForPushTokenChanges, registerForPush } from "@/services/notifications";
 import { report, track } from "@/services/telemetry";
 import { useSession } from "@/session/SessionProvider";
@@ -27,11 +28,12 @@ function dateInZone(zone: string): string {
 }
 
 export default function HomeScreen() {
-  const { profile } = useSession();
-  const { lessons, loading } = useLessons();
+  const { user, profile } = useSession();
+  const { lessons, loading, heldReadyDates, closeOpenRow } = useLessonList();
   const router = useRouter();
   const theme = useTheme();
   const [starting, setStarting] = useState<DailyLessonType | null>(null);
+  const [recordedReady, setRecordedReady] = useState(0);
   useEffect(() => {
     if (!profile?.reminderEnabled) return;
     void registerForPush();
@@ -39,7 +41,15 @@ export default function HomeScreen() {
     return () => subscription.remove();
   }, [profile?.reminderEnabled]);
   const today = profile ? dateInZone(profile.timezone) : "";
-  const used = useMemo(() => lessons.filter((lesson) => lesson.quotaDate === today && lesson.status === "ready").length, [lessons, today]);
+  useEffect(() => {
+    if (!user || !today) return;
+    return subscribeReadyCount(user.uid, today, setRecordedReady);
+  }, [today, user]);
+  const used = useMemo(() => lessonsReadyToday(
+    lessons.filter((lesson) => lesson.quotaDate === today && lesson.status === "ready").length,
+    heldReadyDates.filter((date) => date === today).length,
+    recordedReady,
+  ), [heldReadyDates, lessons, recordedReady, today]);
   const unlimited = profile?.unlimitedLessons === true;
   const active = lessons.find((lesson) => ["queued", "generating_content", "synthesizing_audio"].includes(lesson.status));
   const startDisabled = Boolean(starting || active) || dailyCapBlocksStart(used, unlimited);
@@ -56,17 +66,18 @@ export default function HomeScreen() {
   };
   if (loading || !profile) return <LoadingScreen />;
   return (
-    <Screen>
-      <View style={styles.header}><Body muted>GOOD TO SEE YOU, {profile.nickname.toUpperCase()}</Body><Title>What will you practice?</Title><Body muted>{dailyQuotaLabel(used, unlimited)}</Body></View>
-      {active ? <Pressable onPress={() => router.push(`/lesson/${active.id}`)}><Card style={{ backgroundColor: theme.surfaceMuted }}><Body muted>IN PROGRESS</Body><Heading>{active.title}</Heading><View style={[styles.progressTrack, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.primary, width: percentWidth(active.progress) }]} /></View><Body muted>{Number.isFinite(active.progress) ? active.progress : 0}% · Tap to follow progress</Body></Card></Pressable> : null}
+    <Screen onScrollBeginDrag={closeOpenRow}>
+      <LessonRowDismiss />
+      <View style={styles.header} onTouchStart={closeOpenRow}><Body muted>GOOD TO SEE YOU, {profile.nickname.toUpperCase()}</Body><Title>What will you practice?</Title><Body muted>{dailyQuotaLabel(used, unlimited)}</Body></View>
+      {active ? <Pressable onPressIn={closeOpenRow} onPress={() => router.push(`/lesson/${active.id}`)} style={styles.above}><Card style={{ backgroundColor: theme.surfaceMuted }}><Body muted>IN PROGRESS</Body><Heading>{active.title}</Heading><View style={[styles.progressTrack, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.primary, width: percentWidth(active.progress) }]} /></View><Body muted>{Number.isFinite(active.progress) ? active.progress : 0}% · Tap to follow progress</Body></Card></Pressable> : null}
       <View style={styles.choices}>
-        <Pressable disabled={startDisabled} onPress={() => void start("conversation")} accessibilityRole="button" accessibilityLabel="Start a conversation lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
+        <Pressable disabled={startDisabled} onPressIn={closeOpenRow} onPress={() => void start("conversation")} accessibilityRole="button" accessibilityLabel="Start a conversation lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
           <Card style={[styles.lessonCard, { backgroundColor: theme.amber }]}><Body style={styles.eyebrow}>CONVERSATION</Body><Title style={styles.dark}>Speak through a fresh everyday topic.</Title><Body style={styles.darkMuted}>{starting === "conversation" ? "Starting…" : "3–5 minutes · Two voices"}</Body></Card>
         </Pressable>
-        <Pressable disabled={startDisabled} onPress={() => void start("grammar")} accessibilityRole="button" accessibilityLabel="Start a grammar lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
+        <Pressable disabled={startDisabled} onPressIn={closeOpenRow} onPress={() => void start("grammar")} accessibilityRole="button" accessibilityLabel="Start a grammar lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
           <Card style={[styles.lessonCard, { backgroundColor: theme.mint }]}><Body style={styles.eyebrow}>GRAMMAR</Body><Title style={styles.dark}>Understand one useful pattern clearly.</Title><Body style={styles.darkMuted}>{starting === "grammar" ? "Starting…" : "8–12 minutes · One narrator"}</Body></Card>
         </Pressable>
-        <Pressable onPress={() => router.push("/say")} accessibilityRole="button" accessibilityLabel="How would you say">
+        <Pressable onPressIn={closeOpenRow} onPress={() => router.push("/say")} accessibilityRole="button" accessibilityLabel="How would you say">
           <Card style={[styles.lessonCard, { backgroundColor: theme.coral }]}><Body style={styles.eyebrow}>HOW WOULD YOU SAY?</Body><Title style={styles.dark}>Ask for a sentence, then practice it.</Title><Body style={styles.darkMuted}>Type it · One narrator</Body></Card>
         </Pressable>
       </View>
@@ -76,5 +87,5 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  header: { gap: 7, marginBottom: 4 }, choices: { gap: 14 }, lessonCard: { minHeight: 188, justifyContent: "space-between", borderWidth: 0 }, eyebrow: { color: "#08152F", fontSize: 12, fontWeight: "800", letterSpacing: 1.5 }, dark: { color: "#08152F", fontSize: 29, lineHeight: 34 }, darkMuted: { color: "#293652" }, recent: { gap: 10, marginTop: 8, paddingBottom: 20 }, progressTrack: { height: 8, borderRadius: 4, overflow: "hidden" }, progressFill: { height: 8, borderRadius: 4 },
+  header: { gap: 7, marginBottom: 4, zIndex: 2 }, choices: { gap: 14, zIndex: 2 }, above: { zIndex: 2 }, lessonCard: { minHeight: 188, justifyContent: "space-between", borderWidth: 0 }, eyebrow: { color: "#08152F", fontSize: 12, fontWeight: "800", letterSpacing: 1.5 }, dark: { color: "#08152F", fontSize: 29, lineHeight: 34 }, darkMuted: { color: "#293652" }, recent: { gap: 10, marginTop: 8, paddingBottom: 20, zIndex: 2 }, progressTrack: { height: 8, borderRadius: 4, overflow: "hidden" }, progressFill: { height: 8, borderRadius: 4 },
 });

@@ -8,6 +8,7 @@ export {
   createDailyLesson,
   createPhraseLesson,
   deleteAccount,
+  deleteLesson,
   initializeProfile,
   registerPushDevice,
   retryFailedLesson,
