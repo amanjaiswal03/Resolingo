@@ -172,6 +172,61 @@ function contentWords(text: string): string[] {
   return normalize(text).split(" ").filter((word) => word.length >= 3);
 }
 
+/** New content words in an alternative, grouped into short glosses of at most three words. */
+function novelFocuses(answer: string, core: string): string[] {
+  const known = new Set(contentWords(core));
+  const tokens = answer
+    .split(/\s+/u)
+    .map((token) => token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter((token) => token.length > 0);
+  const groups: string[][] = [];
+  let current: string[] = [];
+  const flush = () => {
+    if (current.length === 0) return;
+    groups.push(current);
+    current = [];
+  };
+  for (const token of tokens) {
+    const key = normalize(token);
+    if (key.length < 3 || known.has(key)) {
+      flush();
+      continue;
+    }
+    current.push(token);
+    if (current.length === MAX_GLOSS_WORDS) flush();
+  }
+  flush();
+  return groups.map((group) => group.join(" "));
+}
+
+function shortWordGlosses(words: PhraseLine[] | undefined): PhraseLine[] {
+  return (words ?? []).filter((word) => {
+    const count = contentWords(word.text).length;
+    return word.text.trim().length > 0 && word.translation.trim().length > 0 && count > 0 && count <= MAX_GLOSS_WORDS;
+  });
+}
+
+/** A register alternative is glossed as the new words, never as the whole sentence. */
+function registerGloss(alternative: PhraseAlternative, core: string): { focus: string; focusTranslation: string; words?: PhraseLine[] } {
+  const provided = shortWordGlosses(alternative.words);
+  if (provided.length > 0) {
+    const [first, ...rest] = provided;
+    return {
+      focus: first!.text.trim(),
+      focusTranslation: first!.translation.trim(),
+      ...(rest.length > 0 ? { words: rest } : {}),
+    };
+  }
+  const phrases = novelFocuses(alternative.text, core);
+  const [first, ...rest] = phrases.length > 0 ? phrases : [alternative.text.split(/\s+/u).slice(0, MAX_GLOSS_WORDS).join(" ")];
+  const label = alternative.label.trim() || "a more formal way";
+  return {
+    focus: first!,
+    focusTranslation: label,
+    ...(rest.length > 0 ? { words: rest.map((text) => ({ text, translation: label })) } : {}),
+  };
+}
+
 /** The words a gloss or same-word note actually teaches, ignoring a full-sentence translation. */
 function taughtWords(segment: LessonSegment): string[] {
   const shown = lessonDisplayText(segment.text);
@@ -390,13 +445,44 @@ function closingFor(situations: readonly PhraseSituation[]): string {
   return lines.join(" ");
 }
 
+export type PhraseShapeReason =
+  | "missing_core"
+  | "swaps_short"
+  | "situations_short"
+  | "roleplay_invalid"
+  | "script_short"
+  | "prompts_unclear"
+  | "lines_not_distinct"
+  | "focus_unglossed"
+  | "answers_repeated"
+  | "answer_words_unglossed"
+  | "pattern_repeated"
+  | "title_short";
+
+export type ShapedPhraseLesson = {
+  title: string;
+  topic: string;
+  ruleId: string;
+  summary: string;
+  speakerNames: SpeakerNames;
+  segments: LessonSegment[];
+};
+
+export type PhraseShapeResult =
+  | { ok: true; lesson: ShapedPhraseLesson }
+  | { ok: false; reason: PhraseShapeReason };
+
+function reject(reason: PhraseShapeReason): PhraseShapeResult {
+  return { ok: false, reason };
+}
+
 export function shapePhraseLesson(
   value: unknown,
   context: PhraseLessonContext,
-): { title: string; topic: string; ruleId: string; summary: string; speakerNames: SpeakerNames; segments: LessonSegment[] } | null {
+): PhraseShapeResult {
   const core = context.translation.trim();
   const meaning = meaningOf(context.nativeText);
-  if (core.length < 1 || meaning.length < 1 || context.phraseId.trim().length === 0 || context.phraseId.length > 40) return null;
+  if (core.length < 1 || meaning.length < 1 || context.phraseId.trim().length === 0 || context.phraseId.length > 40) return reject("missing_core");
   const source = asRecord(value) ?? {};
   const limits = budget(context.level);
   const note = textOf(context.note);
@@ -405,20 +491,21 @@ export function shapePhraseLesson(
     ? readChunks(source.chunks, core).slice(0, limits.chunks)
     : [];
   const swaps = readSwaps(source.swaps, core).filter((swap) => !isLiteral(swap.answer, note)).slice(0, limits.swaps);
-  if (swaps.length < limits.swaps) return null;
+  if (swaps.length < limits.swaps) return reject("swaps_short");
   const chosenSituations = readSituations(source.situations, core).filter((item) => !isLiteral(item.answer, note)).slice(0, limits.situations);
-  if (chosenSituations.length < limits.situations) return null;
+  if (chosenSituations.length < limits.situations) return reject("situations_short");
   for (const alternative of context.alternatives ?? []) {
     if (chosenSituations.some((item) => same(item.answer, alternative.text)) || same(alternative.text, core)) continue;
     if (isLiteral(alternative.text, note)) continue;
+    const glossed = registerGloss(alternative, core);
     chosenSituations.push({
       setup: "You want to sound a bit more formal.",
       answer: alternative.text,
-      translation: `${meaning}, ${alternative.label}`,
-      focus: alternative.text,
-      focusTranslation: `${meaning}, ${alternative.label}`,
+      translation: meaning,
+      focus: glossed.focus,
+      focusTranslation: glossed.focusTranslation,
       usage: "A more formal way to say it.",
-      ...(alternative.words && alternative.words.length > 0 ? { words: alternative.words } : {}),
+      ...(glossed.words && glossed.words.length > 0 ? { words: glossed.words } : {}),
     });
     break;
   }
@@ -426,7 +513,7 @@ export function shapePhraseLesson(
   const roleSetup = textOf(roleRecord?.setup) || chosenSituations[0]!.setup;
   const requestedRole = textOf(roleRecord?.answer);
   const roleSituation = chosenSituations.find((item) => same(item.answer, requestedRole)) ?? chosenSituations[0]!;
-  if (isLiteral(roleSituation.answer, note) || same(roleSituation.answer, core)) return null;
+  if (isLiteral(roleSituation.answer, note) || same(roleSituation.answer, core)) return reject("roleplay_invalid");
 
   const drills: Drill[] = [
     {
@@ -621,9 +708,16 @@ export function shapePhraseLesson(
     push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `To change ${swapLine.from} to ${swapLine.to}, you say the new sentence like this.`, delivery: "clear" });
     push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: swapLine.answer, translation: meaningOf(swapLine.translation), delivery: "clear" });
   }
-  const polite = chosenSituations.find((item) => /\b(clerk|shop)\b/i.test(item.setup)) ?? roleSituation;
-  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `With a clerk, the polite version means "${meaningOf(polite.translation)}", and it sounds like this.`, delivery: "clear" });
-  push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: polite.answer, translation: meaningOf(polite.translation), delivery: "clear" });
+  const clerk = chosenSituations.find((item) => /\b(clerk|shop)\b/i.test(item.setup));
+  const formal = chosenSituations.find((item) => /\bformal\b/i.test(item.setup));
+  const recapSituation = clerk ?? formal ?? roleSituation;
+  const recapLine = clerk
+    ? `With a clerk, the polite version means "${meaningOf(recapSituation.translation)}", and it sounds like this.`
+    : formal
+      ? `A more formal way to say it means "${meaningOf(recapSituation.translation)}", and it sounds like this.`
+      : `Another way to say it means "${meaningOf(recapSituation.translation)}", and it sounds like this.`;
+  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: recapLine, delivery: "clear" });
+  push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: recapSituation.answer, translation: meaningOf(recapSituation.translation), delivery: "clear" });
   push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: closingFor(chosenSituations), delivery: "praise" });
 
   const focuses = [
@@ -631,26 +725,26 @@ export function shapePhraseLesson(
     ...swaps.map((swap) => swap.focus),
     ...chosenSituations.map((situation) => situation.focus),
   ];
-  if (
-    segments.length < 8
-    || segments.some((segment) => segment.speaker !== "teacher")
-    || !phrasePromptsAreClear(segments)
-    || !phraseLinesAreDistinct(segments)
-    || !focusesAreGlossedFirst(segments, focuses)
-    || !phraseAnswersStayVaried(segments, context.targetLanguage)
-    || !answerWordsAreGlossed(segments, context.targetLanguage, core)
-    || segments.filter((segment) => segment.phase === "pattern").length > 1
-  ) return null;
+  if (segments.length < 8 || segments.some((segment) => segment.speaker !== "teacher")) return reject("script_short");
+  if (!phrasePromptsAreClear(segments)) return reject("prompts_unclear");
+  if (!phraseLinesAreDistinct(segments)) return reject("lines_not_distinct");
+  if (!focusesAreGlossedFirst(segments, focuses)) return reject("focus_unglossed");
+  if (!phraseAnswersStayVaried(segments, context.targetLanguage)) return reject("answers_repeated");
+  if (!answerWordsAreGlossed(segments, context.targetLanguage, core)) return reject("answer_words_unglossed");
+  if (segments.filter((segment) => segment.phase === "pattern").length > 1) return reject("pattern_repeated");
   const title = clip(textOf(source.title) || `Saying: ${meaning}`, 90);
   const topic = clip(textOf(source.topic) || meaning, 160);
   const summary = clip(textOf(source.summary) || `Practice how to say "${meaning}" and a few variations.`, 280);
-  if (title.length < 3 || topic.length < 3 || summary.length < 5) return null;
+  if (title.length < 3 || topic.length < 3 || summary.length < 5) return reject("title_short");
   return {
-    title,
-    topic,
-    ruleId: context.phraseId,
-    summary,
-    speakerNames: normalizeSpeakerNames({ teacher: teacherName }),
-    segments,
+    ok: true,
+    lesson: {
+      title,
+      topic,
+      ruleId: context.phraseId,
+      summary,
+      speakerNames: normalizeSpeakerNames({ teacher: teacherName }),
+      segments,
+    },
   };
 }
