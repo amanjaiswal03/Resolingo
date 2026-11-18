@@ -15,6 +15,7 @@ import {
   MAX_STORED_PHRASES,
   phraseIdFor,
   phraseLookupLimit,
+  reusablePhraseLesson,
   RegisterPushDeviceRequestSchema,
   SetTelemetryConsentRequestSchema,
   TranslatePhraseRequestSchema,
@@ -422,12 +423,25 @@ export const createPhraseLesson = onCall(callableOptions, async (request) => {
   const phraseRef = db.doc(`users/${uid}/phrases/${parsed.data.phraseId}`);
   let quotaDate = "";
   let alreadyExists = false;
+  let resolvedId = lessonId;
   const nowMs = Date.now();
 
   await db.runTransaction(async (transaction) => {
     const [userSnapshot, lessonSnapshot, phraseSnapshot] = await Promise.all([
       transaction.get(userRef), transaction.get(lessonRef), transaction.get(phraseRef),
     ]);
+    const linkedId = typeof phraseSnapshot.data()?.lessonId === "string" ? phraseSnapshot.data()?.lessonId ?? "" : "";
+    const linkedSnapshot = linkedId && linkedId !== lessonId
+      ? await transaction.get(db.doc(`users/${uid}/lessons/${linkedId}`))
+      : linkedId === lessonId ? lessonSnapshot : null;
+    const reusable = reusablePhraseLesson(linkedSnapshot ? { id: linkedId, exists: linkedSnapshot.exists } : null);
+    if (reusable) {
+      alreadyExists = true;
+      resolvedId = reusable;
+      const quota = linkedSnapshot?.data()?.quotaDate;
+      quotaDate = typeof quota === "string" ? quota : "";
+      return;
+    }
     if (lessonSnapshot.exists) {
       alreadyExists = true;
       quotaDate = lessonSnapshot.data()!.quotaDate as string;
@@ -508,8 +522,8 @@ export const createPhraseLesson = onCall(callableOptions, async (request) => {
     transaction.set(phraseRef, { lessonId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
   });
 
-  if (!alreadyExists) await enqueueOrRollBack(uid, lessonId, quotaDate);
-  return { lessonId, alreadyExists };
+  if (!alreadyExists) await enqueueOrRollBack(uid, resolvedId, quotaDate);
+  return { lessonId: resolvedId, alreadyExists };
 });
 
 export const retryFailedLesson = onCall(callableOptions, async (request) => {

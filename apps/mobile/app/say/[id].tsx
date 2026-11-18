@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, TextInput, View } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 import * as Crypto from "expo-crypto";
-import type { Phrase } from "@resolingo/shared";
+import { phraseLessonControl, type Lesson, type Phrase } from "@resolingo/shared";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { LoadingScreen } from "@/components/LoadingScreen";
@@ -11,6 +11,7 @@ import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
 import { firstRouteParam } from "@/lesson/navigation";
 import { api } from "@/services/api";
+import { subscribeLesson } from "@/services/lessons";
 import { phraseAudioUrl, subscribePhrase } from "@/services/phrases";
 import { useSession } from "@/session/SessionProvider";
 import { useTheme } from "@/theme/tokens";
@@ -28,6 +29,7 @@ export default function PhraseScreen() {
   const router = useRouter();
   const theme = useTheme();
   const [phrase, setPhrase] = useState<Phrase | null>(null);
+  const [linkedLesson, setLinkedLesson] = useState<{ id: string; lesson: Lesson | null } | null>(null);
   const [ready, setReady] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftFor, setDraftFor] = useState<string | null>(null);
@@ -43,6 +45,13 @@ export default function PhraseScreen() {
       setReady(true);
     }, () => setReady(true));
   }, [user, phraseId]);
+  useEffect(() => {
+    if (!user || !phrase?.lessonId) return;
+    const id = phrase.lessonId;
+    return subscribeLesson(user.uid, id, (next) => {
+      setLinkedLesson({ id, lesson: next });
+    }, () => setLinkedLesson({ id, lesson: null }));
+  }, [user, phrase?.lessonId]);
   const nativeDraft = phrase && draftFor === phrase.id ? draft : (phrase?.nativeText ?? "");
   const play = async () => {
     if (!phrase?.audioPath || playing) return;
@@ -73,14 +82,33 @@ export default function PhraseScreen() {
       setTranslating(false);
     }
   };
+  const linked = phrase?.lessonId && linkedLesson?.id === phrase.lessonId ? linkedLesson.lesson : undefined;
+  const control = phrase?.lessonId && linked === undefined ? "generating" : phraseLessonControl(linked?.status ?? null);
+  const openLesson = () => {
+    const id = linked?.id ?? phrase?.lessonId;
+    if (id) router.push(`/lesson/${id}`);
+  };
   const createLesson = async () => {
-    if (!phrase || creating) return;
+    if (!phrase || creating || control !== "create") return;
     setCreating(true);
     try {
       const result = await api.createPhraseLesson(phrase.id, Crypto.randomUUID());
       router.push(`/lesson/${result.lessonId}`);
     } catch (error) {
       Alert.alert("Couldn’t create a lesson", messageOf(error));
+    } finally {
+      setCreating(false);
+    }
+  };
+  const retryLesson = async () => {
+    const id = linked?.id ?? phrase?.lessonId;
+    if (!id || creating) return;
+    setCreating(true);
+    try {
+      await api.retryFailedLesson(id);
+      router.push(`/lesson/${id}`);
+    } catch (error) {
+      Alert.alert("Couldn’t retry", messageOf(error));
     } finally {
       setCreating(false);
     }
@@ -126,7 +154,10 @@ export default function PhraseScreen() {
         </View>
       ) : null}
       <Button label={playing ? "Playing…" : "Play"} variant="secondary" loading={playing} disabled={!phrase.audioPath} onPress={() => void play()} />
-      <Button label={creating ? "Creating your lesson…" : "Create a lesson"} loading={creating} onPress={() => void createLesson()} />
+      {control === "play" ? <Button label="Play lesson" onPress={openLesson} /> : null}
+      {control === "generating" ? <Button label="Creating your lesson…" disabled /> : null}
+      {control === "retry" ? <Button label={creating ? "Trying again…" : "Try again"} loading={creating} onPress={() => void retryLesson()} /> : null}
+      {control === "create" ? <Button label={creating ? "Creating your lesson…" : "Create a lesson"} loading={creating} onPress={() => void createLesson()} /> : null}
     </Screen>
   );
 }
