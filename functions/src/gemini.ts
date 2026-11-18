@@ -209,11 +209,12 @@ export async function generateLessonContent(
   });
   const config = lessonGenerationConfig(input.type);
   let sawInvalid = false;
+  let phraseRepair = "";
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const user = attempt === 0
       ? prompt
-      : `${prompt}\n\nREPAIR: The previous response was refused, malformed, or repeated a recent topic. Produce a completely valid lesson with a different topic.`;
+      : `${prompt}\n\nREPAIR: ${phraseRepair || "The previous response was refused, malformed, or repeated a recent topic. Produce a completely valid lesson with a different topic."}`;
     const response = await generator.generateContent({ model, contents: user, config });
     if (blocked(response)) continue;
     let json: unknown;
@@ -228,6 +229,38 @@ export async function generateLessonContent(
       });
       continue;
     }
+    if (input.type === "phrase") {
+      const phraseLesson = shapePhraseLesson(json, {
+        phraseId: input.phrase?.phraseId ?? "",
+        nativeLanguage: input.nativeLanguage,
+        targetLanguage: input.targetLanguage,
+        level: input.level,
+        nativeText: input.phrase?.nativeText ?? "",
+        translation: input.phrase?.translation ?? "",
+        ...(input.phrase?.transliteration ? { transliteration: input.phrase.transliteration } : {}),
+        ...(input.phrase?.alternatives ? { alternatives: input.phrase.alternatives } : {}),
+        ...(input.phrase?.note ? { note: input.phrase.note } : {}),
+        ...(input.phrase?.inputLanguage ? { inputLanguage: input.phrase.inputLanguage } : {}),
+      });
+      if (!phraseLesson.ok) {
+        sawInvalid = true;
+        phraseRepair = `The phrase lesson was rejected (${phraseLesson.reason}). Return JSON the shaper can accept: enough distinct swaps and situations, a short gloss of at most three words for every new word before the learner says it, and no segments array.`;
+        logger.warn("phrase_lesson_shape_rejected", { reason: phraseLesson.reason });
+        continue;
+      }
+      const parsed = GeneratedLessonSchema.safeParse(phraseLesson.lesson);
+      if (!parsed.success) {
+        sawInvalid = true;
+        logger.warn("lesson_schema_rejected", {
+          issues: parsed.error.issues.slice(0, 8).map((issue) => ({
+            path: issue.path.join("."),
+            code: issue.code,
+          })),
+        });
+        continue;
+      }
+      return parsed.data;
+    }
     const shaped = input.type === "grammar"
       ? shapeGrammarLesson(json, {
         nativeLanguage: input.nativeLanguage,
@@ -235,20 +268,7 @@ export async function generateLessonContent(
         level: input.level,
         topic: grammarTopic!,
       })
-      : input.type === "phrase"
-        ? shapePhraseLesson(json, {
-          phraseId: input.phrase?.phraseId ?? "",
-          nativeLanguage: input.nativeLanguage,
-          targetLanguage: input.targetLanguage,
-          level: input.level,
-          nativeText: input.phrase?.nativeText ?? "",
-          translation: input.phrase?.translation ?? "",
-          ...(input.phrase?.transliteration ? { transliteration: input.phrase.transliteration } : {}),
-          ...(input.phrase?.alternatives ? { alternatives: input.phrase.alternatives } : {}),
-          ...(input.phrase?.note ? { note: input.phrase.note } : {}),
-          ...(input.phrase?.inputLanguage ? { inputLanguage: input.phrase.inputLanguage } : {}),
-        })
-        : shapePimsleurLesson(json, {
+      : shapePimsleurLesson(json, {
         nativeLanguage: input.nativeLanguage,
         targetLanguage: input.targetLanguage,
         ...(input.type === "conversation" && input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),

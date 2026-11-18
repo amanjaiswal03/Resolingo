@@ -62,6 +62,14 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("Ich muss ein Paar Schuhe kaufen.");
     expect(prompt).toContain("not a copy");
     expect(prompt).toContain("German möchte");
+    expect(prompt).toContain("question, a request, a statement, or a social line");
+    expect(prompt).toContain("change the subject, the verb, or an adverb");
+    expect(prompt).toContain("does not invent a clerk");
+    expect(prompt).toContain("keeps the core verb or the main word");
+    expect(prompt).toContain("it's too loud");
+    expect(prompt).toContain("short pronouns and function words");
+    expect(prompt).toContain("at most two new words");
+    expect(prompt).toContain("Close on the learner's own sentence");
     expect(prompt).toContain("glossed on its own");
     expect(prompt).toContain("Do not turn that literal wording into an answer");
     expect(prompt).toContain("Do not review phrases from earlier lessons");
