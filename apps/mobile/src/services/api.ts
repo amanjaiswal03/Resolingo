@@ -31,6 +31,7 @@ export const api = {
   }>("translatePhrase", { mode: "transcribe", ...audio }),
   createPhraseLesson: (phraseId: string, idempotencyKey: string) => call<unknown, { lessonId: string }>("createPhraseLesson", { phraseId, idempotencyKey }),
   retryFailedLesson: (lessonId: string) => call("retryFailedLesson", { lessonId }),
+  deleteLesson: (lessonId: string) => call("deleteLesson", { lessonId }),
   registerPushDevice: (data: { expoPushToken: string; nativePushToken?: string; platform: "ios" | "android" }) => call("registerPushDevice", data),
   updateReminder: (data: { enabled: boolean; time: string; timezone: string }) => call("updateReminder", data),
   setTelemetryConsent: (enabled: boolean) => call("setTelemetryConsent", { enabled }),

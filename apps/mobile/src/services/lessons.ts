@@ -25,6 +25,13 @@ function mapLesson(document: FirebaseFirestoreTypes.QueryDocumentSnapshot | Fire
   });
 }
 
+export function subscribeReadyCount(uid: string, quotaDate: string, callback: (count: number) => void): () => void {
+  return onSnapshot(doc(firestore, "users", uid, "dailyUsage", quotaDate), (snapshot) => {
+    const value = snapshot.data()?.readyCount;
+    callback(typeof value === "number" && Number.isFinite(value) ? value : 0);
+  }, () => callback(0));
+}
+
 export function subscribeLessons(uid: string, callback: (lessons: Lesson[]) => void, onError?: (error: Error) => void): () => void {
   const lessonsQuery = query(collection(firestore, "users", uid, "lessons"), orderBy("createdAt", "desc"), limit(50));
   return onSnapshot(lessonsQuery, (snapshot) => {

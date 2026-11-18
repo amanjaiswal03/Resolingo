@@ -26,6 +26,8 @@ export default function LessonScreen() {
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [jumpTo, setJumpTo] = useState<{ id: string; token: number } | null>(null);
   const [jumpDirection, setJumpDirection] = useState<"up" | "down" | null>(null);
+  const [removedFor, setRemovedFor] = useState<string | null>(null);
+  const loadedId = useRef<string | null>(null);
   const transcriptRef = useRef<ScrollView>(null);
   const transcriptFrames = useRef<Record<string, { y: number; height: number }>>({});
   const scrollY = useRef(0);
@@ -38,7 +40,15 @@ export default function LessonScreen() {
     if (!user || !id) return;
     let active = true;
     const unsubscribe = subscribeLesson(user.uid, id, (next) => {
-      if (active) setLesson(next);
+      if (!active) return;
+      if (next) {
+        loadedId.current = id;
+        setRemovedFor(null);
+        setLesson(next);
+        return;
+      }
+      setLesson(null);
+      if (loadedId.current === id) setRemovedFor(id);
     }, (error) => {
       if (!active) return;
       report(error);
@@ -92,6 +102,15 @@ export default function LessonScreen() {
   }, [lessonType, profile?.telemetryConsent]);
   // Keep the loaded lesson mounted while the route param drops during a pop.
   // Swapping in a spinner here unmounts the player mid-gesture.
+  if (id && removedFor === id) {
+    return (
+      <Screen style={styles.center}>
+        <Title style={styles.centerText}>This lesson was deleted</Title>
+        <Body muted style={styles.centerText}>It’s no longer in your list.</Body>
+        <Button label="Back to today" variant="secondary" onPress={leave} />
+      </Screen>
+    );
+  }
   if (!lesson || !user) return <LoadingScreen />;
   const retry = async () => {
     if (!id) return;
