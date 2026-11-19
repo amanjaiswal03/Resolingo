@@ -2,7 +2,7 @@ import type { LanguageId } from "./languages.js";
 import type { CefrLevel, LessonSegment } from "./schemas.js";
 import { MAX_LESSON_SEGMENTS } from "./schemas.js";
 import { languageById } from "./languages.js";
-import { lessonDisplayText, repairMarkup } from "./markup.js";
+import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
 import { ANSWER_PAUSE_MS, REVIEW_GAPS } from "./pimsleur.js";
 import { normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 
@@ -842,6 +842,7 @@ export function shapePhraseLesson(
   const topic = clip(textOf(source.topic) || meaning, 160);
   const summary = clip(textOf(source.summary) || `Practice how to say "${meaning}" and a few variations.`, 280);
   if (title.length < 3 || topic.length < 3 || summary.length < 5) return reject("title_short");
+  const voiced = applyTargetVoices(segments, context.nativeLanguage, context.targetLanguage);
   return {
     ok: true,
     lesson: {
@@ -850,7 +851,7 @@ export function shapePhraseLesson(
       ruleId: context.phraseId,
       summary,
       speakerNames: normalizeSpeakerNames({ teacher: teacherName }),
-      segments,
+      segments: voiced.segments,
     },
   };
 }

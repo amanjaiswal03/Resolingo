@@ -1,5 +1,5 @@
 import type { LanguageId } from "./languages.js";
-import { repairMarkup } from "./markup.js";
+import { applyTargetVoices, repairMarkup } from "./markup.js";
 import { MAX_LESSON_SEGMENTS, type LessonSegment } from "./schemas.js";
 import { dialogueText, normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 
@@ -1077,7 +1077,7 @@ export function shapePimsleurLesson(value: unknown, context: {
       .slice(0, 2)
     : [];
   const roleplay = roleplayFrom(record.roleplay, keptLines, names, context.targetLanguage, allowed);
-  const segments = arrangePimsleur({
+  const arranged = arrangePimsleur({
     lines: keptLines,
     phrases: phrasesForLines(keptLines, phrases),
     cues,
@@ -1090,6 +1090,7 @@ export function shapePimsleurLesson(value: unknown, context: {
     ...(roleplay ? { roleplay } : {}),
     seed: hashSeed(title),
   });
+  const segments = applyTargetVoices(arranged, context.nativeLanguage, context.targetLanguage).segments;
   return {
     title: title.slice(0, 90),
     topic: (textOf(record.topic) || title).slice(0, 160),

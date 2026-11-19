@@ -4,6 +4,7 @@ import {
   CefrLevelSchema,
   LanguageIdSchema,
   LessonTypeSchema,
+  applyTargetVoices,
   displayLessonSegment,
   type GeneratedLesson,
   type LessonSegment,
@@ -174,6 +175,14 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       ...(type === "conversation" ? { priorReviews: await loadDueReviewPhrases(payload.uid, targetLanguage, nativeLanguage) } : {}),
       ...(phrase ? { phrase } : {}),
     });
+    const voiced = applyTargetVoices(content.segments, nativeLanguage, targetLanguage);
+    if (voiced.leftover.length > 0) {
+      logger.warn("native_span_target_language", {
+        lessonId: payload.lessonId,
+        leftover: voiced.leftover,
+      });
+    }
+    content.segments = voiced.segments;
     validateLessonLanguages(content, nativeLanguage, targetLanguage);
     await lessonRef.update({
       title: content.title,

@@ -1,6 +1,6 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel } from "./schemas.js";
-import { repairMarkup } from "./markup.js";
+import { applyTargetVoices, repairMarkup } from "./markup.js";
 import {
   ANSWER_PAUSE_MS,
   MAX_PIMSLEUR_SEGMENTS,
@@ -850,10 +850,11 @@ export function shapeGrammarLesson(value: unknown, context: {
     const teacherName = value && typeof value === "object"
       ? normalizeSpeakerNames((value as { speakerNames?: unknown }).speakerNames).teacher
       : "Mira";
-    const segments = arrangeParadigm(paradigm, {
+    const arranged = arrangeParadigm(paradigm, {
       nativeLanguage: context.nativeLanguage,
       targetLanguage: context.targetLanguage,
     });
+    const segments = applyTargetVoices(arranged, context.nativeLanguage, context.targetLanguage).segments;
     return {
       title: paradigm.title,
       topic: context.topic.title.slice(0, 160),
@@ -865,12 +866,13 @@ export function shapeGrammarLesson(value: unknown, context: {
   }
   const source = parseGrammarSource(value, context.topic, context.level);
   if (!source) return null;
-  const segments = arrangeGrammarLesson({
+  const arranged = arrangeGrammarLesson({
     source,
     nativeLanguage: context.nativeLanguage,
     targetLanguage: context.targetLanguage,
   });
-  if (segments.some((segment) => segment.speaker !== "teacher")) return null;
+  if (arranged.some((segment) => segment.speaker !== "teacher")) return null;
+  const segments = applyTargetVoices(arranged, context.nativeLanguage, context.targetLanguage).segments;
   return {
     title: source.title,
     topic: context.topic.title.slice(0, 160),

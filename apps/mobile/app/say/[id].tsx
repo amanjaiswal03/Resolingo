@@ -71,7 +71,7 @@ export default function PhraseScreen() {
     } finally {
       setPlaying(false);
     }
-  }, [phrase?.audioPath, playing]);
+  }, [phrase, playing]);
   useEffect(() => {
     if (!phrase?.audioPath || autoplayed.current === phrase.audioPath) return;
     autoplayed.current = phrase.audioPath;
