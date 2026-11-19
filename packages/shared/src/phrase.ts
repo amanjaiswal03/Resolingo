@@ -298,7 +298,7 @@ function produceCues(translation: string): string[] {
 
 function swapCues(swap: PhraseSwap): string[] {
   return SWAP_FRAMES.map((frame) => {
-    let template = frame;
+    let template: string = frame;
     if (/^now$/i.test(swap.to) && /^Now, /u.test(template)) {
       template = template.replace(/^Now, /u, "");
       template = template.charAt(0).toUpperCase() + template.slice(1);
