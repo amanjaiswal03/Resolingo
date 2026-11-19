@@ -425,6 +425,79 @@ describe("phrase lessons", () => {
     expect(coreCount).toBeLessThanOrEqual(5);
   });
 
+  it("teaches a two-sentence phrase one sentence at a time, then both together", () => {
+    const context: PhraseLessonContext = {
+      phraseId: "phrase_late0001",
+      nativeLanguage: "en-US",
+      targetLanguage: "de-DE",
+      level: "A1",
+      nativeText: "I'm running late. I need to get there faster.",
+      translation: "Ich komme zu spät. Ich muss schneller dorthin kommen.",
+      inputLanguage: "native",
+      alternatives: [{
+        label: "casual",
+        text: "Ich bin spät dran. Ich muss schneller da sein.",
+        words: [
+          { text: "bin", translation: "am" },
+          { text: "dran", translation: "running" },
+          { text: "da sein", translation: "be there" },
+        ],
+      }],
+    };
+    const lesson = expectLesson(shapePhraseLesson({
+      title: "Running late",
+      topic: "I'm running late. I need to get there faster.",
+      summary: "Practice saying you are running late and that you need to get there faster.",
+      speakerNames: { teacher: "Mira" },
+      pattern: "Schneller comes before the place, and kommen stays at the end.",
+      chunks: [
+        { text: "spät", translation: "late" },
+        { text: "zu spät", translation: "too late" },
+        { text: "Ich komme", translation: "I'm coming" },
+        { text: "kommen", translation: "to get" },
+        { text: "dorthin", translation: "there" },
+        { text: "schneller", translation: "faster" },
+        { text: "muss", translation: "need to" },
+      ],
+      swaps: [
+        { from: "faster", to: "now", focus: "jetzt", focusTranslation: "now", answer: "Ich komme zu spät. Ich muss jetzt dorthin kommen.", translation: "I'm running late. I need to get there now." },
+        { from: "there", to: "home", focus: "nach Hause", focusTranslation: "home", answer: "Ich komme zu spät. Ich muss schneller nach Hause kommen.", translation: "I'm running late. I need to get home faster." },
+      ],
+      situations: [
+        { setup: "You're calling a friend from the station.", focus: "später", focusTranslation: "later", answer: "Ich komme später. Ich muss schneller dorthin kommen.", translation: "I'm coming later. I need to get there faster." },
+        { setup: "You're in a taxi and the meeting has started.", focus: "sofort", focusTranslation: "right away", answer: "Ich komme zu spät. Ich muss sofort dorthin kommen.", translation: "I'm running late. I need to get there right away." },
+      ],
+      roleplay: { setup: "You're calling a friend from the station.", answer: "Ich komme später. Ich muss schneller dorthin kommen.", translation: "I'm coming later. I need to get there faster." },
+    }, context));
+    expect(phrasePromptsAreClear(lesson.segments)).toBe(true);
+    expect(phraseLinesAreDistinct(lesson.segments)).toBe(true);
+    expect(phraseAnswersStayVaried(lesson.segments, "de-DE")).toBe(true);
+    expect(answerWordsAreGlossed(lesson.segments, "de-DE", context.translation)).toBe(true);
+    expect(focusesAreGlossedFirst(lesson.segments, ["spät", "zu spät", "Ich komme", "kommen", "dorthin", "schneller", "muss", "jetzt", "nach Hause", "später", "sofort", "bin", "dran", "da sein"])).toBe(true);
+    const german = lesson.segments.filter((segment) => segment.language === "de-DE").map((segment) => segment.text);
+    const first = german.indexOf("Ich komme zu spät.");
+    const second = german.indexOf("Ich muss schneller dorthin kommen.");
+    const both = german.findIndex((text, index) => index > second && text === "Ich komme zu spät. Ich muss schneller dorthin kommen.");
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(second).toBeGreaterThan(first);
+    expect(both).toBeGreaterThan(second);
+    expect(lesson.segments.some((segment) => segment.text.includes("one sentence at a time"))).toBe(true);
+    expect(lesson.segments.some((segment) => segment.text.includes("Now both sentences together."))).toBe(true);
+    const closing = lesson.segments.find((segment) => segment.phase === "closing")?.text ?? "";
+    expect(closing).toContain("I'm running late. I need to get there faster");
+    expect(lesson.segments.some((segment) => segment.text === "Ich bin spät dran. Ich muss schneller da sein.")).toBe(true);
+    const prompts = lesson.segments.filter((segment) => (segment.pauseAfterMs ?? 0) > 0);
+    expect(prompts.some((segment) => /can you say can\b/i.test(segment.text))).toBe(false);
+    let fresh = 0;
+    for (const segment of lesson.segments) {
+      if ((segment.pauseAfterMs ?? 0) > 0) {
+        expect(fresh).toBeLessThanOrEqual(2);
+        fresh = 0;
+      }
+      if (/means\s+["“]/i.test(segment.text) || /is the same word/i.test(segment.text)) fresh += 1;
+    }
+  });
+
   it("requires a gloss for a short word that is not in the core sentence", () => {
     const core = "Kannst du mich deutlich hören?";
     const ask = { id: "seg_01", speaker: "teacher" as const, kind: "drill" as const, phase: "practice", language: "en-US" as const, text: "Your turn: It's too loud?", delivery: "curious" as const, pauseAfterMs: 5000 };
@@ -441,7 +514,7 @@ describe("phrase lessons", () => {
     expect(answerWordsAreGlossed(taught, "de-DE", core)).toBe(true);
   });
 
-  it("rejects situations that leave the phrase and a pile of new glosses", () => {
+  it("rejects situations that leave the phrase, and still shapes three separate glosses", () => {
     const drifted = shapePhraseLesson({
       ...shoesModel,
       situations: [
@@ -451,7 +524,10 @@ describe("phrase lessons", () => {
       ],
     }, shoes);
     expect(drifted.ok).toBe(false);
-    if (!drifted.ok) expect(drifted.reason).toBe("situation_off_pattern");
+    if (!drifted.ok) {
+      expect(drifted.reason).toBe("situation_off_pattern");
+      expect(drifted.detail).toContain("Es ist zu laut");
+    }
 
     const piled = shapePhraseLesson({
       ...shoesModel,
@@ -459,8 +535,7 @@ describe("phrase lessons", () => {
         ? { ...item, words: [{ text: "neue", translation: "new" }, { text: "heute", translation: "today" }] }
         : item),
     }, shoes);
-    expect(piled.ok).toBe(false);
-    if (!piled.ok) expect(piled.reason).toBe("glosses_bunched");
+    expect(piled.ok).toBe(true);
   });
 
   it("remembers the full lines and not the chunks", () => {

@@ -244,8 +244,11 @@ export async function generateLessonContent(
       });
       if (!phraseLesson.ok) {
         sawInvalid = true;
-        phraseRepair = `The phrase lesson was rejected (${phraseLesson.reason}). Return JSON the shaper can accept: enough distinct swaps and situations, a short gloss of at most three words for every new word before the learner says it, and no segments array.`;
-        logger.warn("phrase_lesson_shape_rejected", { reason: phraseLesson.reason });
+        phraseRepair = `The phrase lesson was rejected (${phraseLesson.reason}${phraseLesson.detail ? `: ${phraseLesson.detail}` : ""}). Return JSON the shaper can accept: enough distinct swaps and situations, a short gloss of at most three words for every new word before the learner says it, at most two new glosses before each time the learner speaks, and no segments array. A phrase of more than one sentence is taught one sentence at a time, then together. A situation may keep just one of those sentences.`;
+        logger.warn("phrase_lesson_shape_rejected", {
+          reason: phraseLesson.reason,
+          ...(phraseLesson.detail ? { detail: phraseLesson.detail } : {}),
+        });
         continue;
       }
       const parsed = GeneratedLessonSchema.safeParse(phraseLesson.lesson);

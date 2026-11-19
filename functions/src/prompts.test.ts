@@ -69,7 +69,23 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("it's too loud");
     expect(prompt).toContain("short pronouns and function words");
     expect(prompt).toContain("at most two new words");
+    expect(prompt).toContain("Do not stack four new glosses");
     expect(prompt).toContain("Close on the learner's own sentence");
+    const longer = lessonPrompt({
+      type: "phrase",
+      nativeLanguage: languageById["en-US"],
+      targetLanguage: languageById["de-DE"],
+      level: "A1",
+      recentTopics: [],
+      phrase: {
+        nativeText: "I'm running late. I need to get there faster.",
+        translation: "Ich komme zu spät. Ich muss schneller dorthin kommen.",
+        alternatives: [{ label: "casually", text: "Ich bin spät dran. Ich muss schneller da sein." }],
+      },
+    });
+    expect(longer).toContain("2 sentences");
+    expect(longer).toContain("one sentence at a time");
+    expect(longer).toContain("at least one sentence");
     expect(prompt).toContain("glossed on its own");
     expect(prompt).toContain("Do not turn that literal wording into an answer");
     expect(prompt).toContain("Do not review phrases from earlier lessons");
