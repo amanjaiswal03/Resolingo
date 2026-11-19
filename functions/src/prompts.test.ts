@@ -86,6 +86,10 @@ describe("lesson prompts", () => {
     expect(longer).toContain("2 sentences");
     expect(longer).toContain("one sentence at a time");
     expect(longer).toContain("at least one sentence");
+    expect(longer).toContain("still make sense together");
+    expect(longer).toContain("spät dran");
+    expect(longer).toContain("Two or fewer");
+    expect(longer).toContain("casual alternative");
     expect(prompt).toContain("glossed on its own");
     expect(prompt).toContain("Do not turn that literal wording into an answer");
     expect(prompt).toContain("Do not review phrases from earlier lessons");

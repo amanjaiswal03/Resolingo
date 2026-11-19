@@ -297,7 +297,14 @@ function produceCues(translation: string): string[] {
 }
 
 function swapCues(swap: PhraseSwap): string[] {
-  return SWAP_FRAMES.map((frame) => formatCue(frame, swap.translation, { from: swap.from, to: swap.to }));
+  return SWAP_FRAMES.map((frame) => {
+    let template = frame;
+    if (/^now$/i.test(swap.to) && /^Now, /u.test(template)) {
+      template = template.replace(/^Now, /u, "");
+      template = template.charAt(0).toUpperCase() + template.slice(1);
+    }
+    return formatCue(template, swap.translation, { from: swap.from, to: swap.to });
+  });
 }
 
 function takeCue(candidates: string[], used: Map<string, number>, start: number): string | null {
@@ -485,10 +492,12 @@ function introFor(context: PhraseLessonContext, targetLabel: string): string {
 
 function closingFor(meaning: string, situations: readonly PhraseSituation[]): string {
   const clerk = situations.find((item) => /\b(clerk|shop)\b/i.test(item.setup));
+  const casual = situations.find((item) => /\bcasual\b/i.test(`${item.setup} ${item.usage ?? ""}`));
   const friend = situations.find((item) => /\bfriend\b/i.test(item.setup));
   const lines = ["Nice work."];
   if (clerk) lines.push(`With a clerk, use the line that means "${meaningOf(clerk.translation)}".`);
-  if (friend && friend !== clerk) lines.push(`With a friend, use the line that means "${meaningOf(friend.translation)}".`);
+  if (casual) lines.push(`With a friend, the casual way is "${casual.answer}".`);
+  else if (friend && friend !== clerk) lines.push(`With a friend, use the line that means "${meaningOf(friend.translation)}".`);
   lines.push(`The line you came in with means "${meaning}".`);
   return lines.join(" ");
 }

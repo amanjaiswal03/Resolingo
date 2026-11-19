@@ -439,7 +439,7 @@ describe("phrase lessons", () => {
         text: "Ich bin spät dran. Ich muss schneller da sein.",
         words: [
           { text: "bin", translation: "am" },
-          { text: "dran", translation: "running" },
+          { text: "spät dran", translation: "running late" },
           { text: "da sein", translation: "be there" },
         ],
       }],
@@ -464,16 +464,16 @@ describe("phrase lessons", () => {
         { from: "there", to: "home", focus: "nach Hause", focusTranslation: "home", answer: "Ich komme zu spät. Ich muss schneller nach Hause kommen.", translation: "I'm running late. I need to get home faster." },
       ],
       situations: [
-        { setup: "You're calling a friend from the station.", focus: "später", focusTranslation: "later", answer: "Ich komme später. Ich muss schneller dorthin kommen.", translation: "I'm coming later. I need to get there faster." },
+        { setup: "You're calling from the station.", focus: "zum Bahnhof", focusTranslation: "to the station", answer: "Ich komme zu spät. Ich muss schneller zum Bahnhof kommen.", translation: "I'm running late. I need to get to the station faster." },
         { setup: "You're in a taxi and the meeting has started.", focus: "sofort", focusTranslation: "right away", answer: "Ich komme zu spät. Ich muss sofort dorthin kommen.", translation: "I'm running late. I need to get there right away." },
       ],
-      roleplay: { setup: "You're calling a friend from the station.", answer: "Ich komme später. Ich muss schneller dorthin kommen.", translation: "I'm coming later. I need to get there faster." },
+      roleplay: { setup: "You're in a taxi and the meeting has started.", answer: "Ich komme zu spät. Ich muss sofort dorthin kommen.", translation: "I'm running late. I need to get there right away." },
     }, context));
     expect(phrasePromptsAreClear(lesson.segments)).toBe(true);
     expect(phraseLinesAreDistinct(lesson.segments)).toBe(true);
     expect(phraseAnswersStayVaried(lesson.segments, "de-DE")).toBe(true);
     expect(answerWordsAreGlossed(lesson.segments, "de-DE", context.translation)).toBe(true);
-    expect(focusesAreGlossedFirst(lesson.segments, ["spät", "zu spät", "Ich komme", "kommen", "dorthin", "schneller", "muss", "jetzt", "nach Hause", "später", "sofort", "bin", "dran", "da sein"])).toBe(true);
+    expect(focusesAreGlossedFirst(lesson.segments, ["spät", "zu spät", "Ich komme", "kommen", "dorthin", "schneller", "muss", "jetzt", "nach Hause", "zum Bahnhof", "sofort", "bin", "spät dran", "da sein"])).toBe(true);
     const german = lesson.segments.filter((segment) => segment.language === "de-DE").map((segment) => segment.text);
     const first = german.indexOf("Ich komme zu spät.");
     const second = german.indexOf("Ich muss schneller dorthin kommen.");
@@ -485,7 +485,16 @@ describe("phrase lessons", () => {
     expect(lesson.segments.some((segment) => segment.text.includes("Now both sentences together."))).toBe(true);
     const closing = lesson.segments.find((segment) => segment.phase === "closing")?.text ?? "";
     expect(closing).toContain("I'm running late. I need to get there faster");
+    expect(closing).toContain("Ich bin spät dran. Ich muss schneller da sein.");
+    expect(closing).not.toContain("coming later");
     expect(lesson.segments.some((segment) => segment.text === "Ich bin spät dran. Ich muss schneller da sein.")).toBe(true);
+    const shown = lesson.segments.map((segment) => lessonDisplayText(segment.text));
+    expect(shown.some((text) => text.includes("spät dran means \"running late\""))).toBe(true);
+    expect(shown.some((text) => text.includes("da sein means \"be there\""))).toBe(true);
+    expect(shown.some((text) => /^dran means/i.test(text))).toBe(false);
+    expect(lesson.segments.some((segment) => segment.text.includes("Instead of faster, now."))).toBe(true);
+    expect(lesson.segments.some((segment) => /Now, instead of faster, now/i.test(segment.text))).toBe(false);
+    expect(lesson.segments.some((segment) => segment.text.includes("Ich komme später"))).toBe(false);
     const prompts = lesson.segments.filter((segment) => (segment.pauseAfterMs ?? 0) > 0);
     expect(prompts.some((segment) => /can you say can\b/i.test(segment.text))).toBe(false);
     let fresh = 0;
