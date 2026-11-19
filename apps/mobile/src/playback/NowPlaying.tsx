@@ -22,6 +22,9 @@ export function NowPlaying() {
   return <NowPlayingSession key={lessonId} lessonId={lessonId} />;
 }
 
+// Reanimated shared values are written in gesture worklets. The React compiler
+// treats that write as a render mutation, so this player stays on the manual pattern.
+/* eslint-disable react-hooks/immutability, react-hooks/preserve-manual-memoization, react-hooks/refs */
 function NowPlayingSession({ lessonId }: { lessonId: string }) {
   const { user, profile } = useSession();
   const { expanded, expand, collapse, close } = usePlayback();
