@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
+import { Asset } from "expo-asset";
 import {
-	createAudioPlaylist,
+	createAudioPlayer,
 	setAudioModeAsync,
-	useAudioPlaylistStatus,
+	useAudioPlayerStatus,
 } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { lessonDisplayText, type Lesson } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
-import { stopOwnedPlaylist } from "@/lesson/player-lifecycle";
+import { joinLessonAudio } from "@/lesson/join-lesson-audio";
+import { stopOwnedPlayer } from "@/lesson/player-lifecycle";
 import {
 	elapsedMs,
 	formatClock,
@@ -18,12 +20,21 @@ import {
 	segmentAtClipTime,
 	segmentStartInClip,
 } from "@/lesson/timeline";
+import { SkipIcon } from "./SkipIcon";
 import { Body } from "./Typography";
 import { useTheme } from "@/theme/tokens";
 
 const speeds = [0.8, 1, 1.2] as const;
 
 const kindLabel = { conversation: "Conversation", grammar: "Grammar", phrase: "Phrase" } as const;
+const appIcon = require("../../assets/resolingo-icon.png") as number;
+
+const playbackMode = {
+	playsInSilentMode: true,
+	shouldPlayInBackground: true,
+	interruptionMode: "doNotMix",
+	allowsRecording: false,
+} as const;
 
 export function LessonPlayer({
 	lesson,
@@ -71,40 +82,40 @@ export function LessonPlayer({
 	const seekGeneration = useRef(0);
 	const jumpToken = useRef<number | null>(null);
 	const indexRef = useRef(0);
+	const handledFinish = useRef(-1);
+	const [clipIndex, setClipIndex] = useState(0);
+	const [joined, setJoined] = useState<{ uri: string; durationsMs: number[] } | null>(null);
+	const [joinFailed, setJoinFailed] = useState(false);
+	const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
 	// Read by the playback effects below. Assigned during render so a jump in the same commit sees the latest callback.
 	// eslint-disable-next-line react-hooks/refs -- playback callback mirror
 	onStartRef.current = onStart;
-	// Owned outside useAudioPlaylist so we can pause before destroy(). That hook
-	// releases in its own effect, which runs before later cleanups and crashes
-	// iOS on the way back to home.
-	const [playlist] = useState(() =>
-		createAudioPlaylist({
-			sources: playable.map((clip) => ({
-				uri: clip.audioUrl,
-				name: lesson.title,
-			})),
+	// One player, not a queue, so the lock screen and background session stay attached
+	// to the audio that is actually playing. Clips advance with replace().
+	const [player] = useState(() =>
+		createAudioPlayer(null, {
 			updateInterval: 250,
-			loop: "none",
+			keepAudioSessionActive: true,
 		}),
 	);
-	const status = useAudioPlaylistStatus(playlist);
+	const continuous = playable.length <= 1 || joined != null;
+	const sourceUri = playable.length <= 1 ? playable[0]?.audioUrl ?? null : joined?.uri ?? (joinFailed ? playable[0]?.audioUrl ?? null : null);
+	const status = useAudioPlayerStatus(player);
 	const timeline = useMemo(
 		() =>
 			lessonTimeline(
 				playable.map((clip, index) => {
-					const durationMs = measuredMs[index] ?? clip.durationMs;
+					const durationMs = joined?.durationsMs[index] ?? measuredMs[index] ?? clip.durationMs;
 					return durationMs ? { durationMs } : {};
 				}),
 			),
-		[measuredMs, playable],
+		[joined, measuredMs, playable],
 	);
-	// eslint-disable-next-line react-hooks/refs -- compared inside the jump effect in this commit
-	indexRef.current = status.currentIndex;
-	const playedElapsed = elapsedMs(
-		timeline,
-		status.currentIndex,
-		status.currentTime,
-	);
+	const fileMs = status.currentTime * 1_000;
+	const fileDurationMs = status.duration * 1_000;
+	const playedElapsed = continuous && fileDurationMs > 0 && timeline.totalMs > 0
+		? fileMs * (timeline.totalMs / fileDurationMs)
+		: elapsedMs(timeline, clipIndex, status.currentTime);
 	// The finger position lives outside React so playback ticks do not pull the thumb backward.
 	// eslint-disable-next-line react-hooks/refs -- latest scrub position, written by the drag responder
 	const shownElapsed = scrubRatioRef.current == null ? playedElapsed : scrubRatioRef.current * timeline.totalMs;
@@ -127,23 +138,67 @@ export function LessonPlayer({
 		[],
 	);
 	useEffect(() => {
-		void setAudioModeAsync({
-			playsInSilentMode: true,
-			shouldPlayInBackground: true,
-			interruptionMode: "doNotMix",
-		});
+		const apply = () => {
+			void setAudioModeAsync(playbackMode).catch(() => undefined);
+		};
+		apply();
+		const subscription = AppState.addEventListener("change", apply);
+		return () => subscription.remove();
 	}, []);
-	/* eslint-disable react-hooks/immutability -- playbackRate is a property of the expo-audio playlist */
 	useEffect(() => {
-		if (!alive.current || playable.length === 0) return;
-		playlist.playbackRate = 1;
-		playlist.play();
-		if (!started.current) {
-			started.current = true;
-			onStartRef.current?.();
+		if (playable.length <= 1) return;
+		let cancelled = false;
+		void joinLessonAudio(playable.map((clip) => {
+			const audioPath = clip.segments[0]?.audioPath;
+			return audioPath ? { audioUrl: clip.audioUrl, audioPath } : { audioUrl: clip.audioUrl };
+		})).then((next) => {
+			if (cancelled) return;
+			if (next) setJoined(next);
+			else setJoinFailed(true);
+		}).catch(() => {
+			if (!cancelled) setJoinFailed(true);
+		});
+		return () => { cancelled = true; };
+	}, [playable]);
+	useEffect(() => {
+		if (!sourceUri) return;
+		let cancelled = false;
+		void (async () => {
+			await setAudioModeAsync(playbackMode).catch(() => undefined);
+			if (cancelled || !alive.current) return;
+			player.replace({ uri: sourceUri });
+			player.setPlaybackRate(1);
+			player.play();
+			if (!started.current) {
+				started.current = true;
+				onStartRef.current?.();
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [player, sourceUri]);
+	useEffect(() => {
+		let cancelled = false;
+		void Asset.fromModule(appIcon).downloadAsync().then((asset) => {
+			const uri = asset.localUri ?? asset.uri;
+			if (!cancelled && uri) setArtworkUrl(uri);
+		}).catch(() => undefined);
+		return () => { cancelled = true; };
+	}, []);
+	useEffect(() => {
+		if (!status.isLoaded) return;
+		try {
+			player.setActiveForLockScreen(true, {
+				title: lesson.title,
+				artist: "Resolingo",
+				albumTitle: kindLabel[lesson.type],
+				...(artworkUrl ? { artworkUrl } : {}),
+			}, { showSeekForward: true, showSeekBackward: true });
+		} catch {
+			// The installed dev client was built before lock-screen controls existed.
 		}
-	}, [playlist, playable.length]);
-	/* eslint-enable react-hooks/immutability */
+	}, [artworkUrl, lesson.title, lesson.type, player, status.isLoaded]);
 	useEffect(() => {
 		if (scrubbingRef.current || scrubRatioRef.current != null) return;
 		if (activeSegmentId) onSegmentChange?.(activeSegmentId);
@@ -169,33 +224,57 @@ export function LessonPlayer({
 		scrubRatioRef.current = null;
 		// eslint-disable-next-line react-hooks/set-state-in-effect -- drop the scrub preview when an external jump is applied
 		setScrubLock((lock) => lock + 1);
-		if (index !== indexRef.current) playlist.skipTo(index);
-		void playlist.seekTo(
-			segmentStartInClip(clip, jumpTo.id, timeline.durationsMs[index]) / 1_000,
-		);
-		playlist.play();
-	}, [jumpTo, playable, playlist, timeline.durationsMs, timeline.startsMs]);
+		const offsetSec = segmentStartInClip(clip, jumpTo.id, timeline.durationsMs[index]) / 1_000;
+		if (continuous) {
+			const targetMs = (timeline.startsMs[index] ?? 0) + offsetSec * 1_000;
+			const durationSec = status.duration > 0 ? status.duration : timeline.totalMs / 1_000;
+			void player.seekTo(timeline.totalMs > 0 ? (targetMs / timeline.totalMs) * durationSec : offsetSec);
+		} else {
+			if (index !== indexRef.current) {
+				indexRef.current = index;
+				setClipIndex(index);
+				player.replace({ uri: clip.audioUrl });
+			}
+			void player.seekTo(offsetSec);
+		}
+		player.play();
+	}, [continuous, jumpTo, playable, player, status.duration, timeline.durationsMs, timeline.startsMs, timeline.totalMs]);
 	useEffect(() => {
 		if (!status.isLoaded || status.duration <= 0) return;
 		const durationMs = Math.round(status.duration * 1_000);
 		// eslint-disable-next-line react-hooks/set-state-in-effect -- record the loaded clip length for the timeline
 		setMeasuredMs((currentMs) =>
-			currentMs[status.currentIndex] === durationMs
+			currentMs[clipIndex] === durationMs
 				? currentMs
-				: { ...currentMs, [status.currentIndex]: durationMs },
+				: { ...currentMs, [clipIndex]: durationMs },
 		);
-	}, [status.currentIndex, status.duration, status.isLoaded]);
+	}, [clipIndex, status.duration, status.isLoaded]);
 	useEffect(() => {
-		if (
-			!alive.current ||
-			!status.didJustFinish ||
-			status.currentIndex < playable.length - 1 ||
-			completed.current
-		)
+		const nearEnd = status.duration > 0 && status.currentTime >= status.duration - 0.25;
+		if (!nearEnd && status.currentTime > 0.3) handledFinish.current = -1;
+		if (!alive.current || !status.didJustFinish) return;
+		if (continuous) {
+			if (completed.current) return;
+			completed.current = true;
+			onComplete();
 			return;
+		}
+		const index = indexRef.current;
+		if (handledFinish.current === index) return;
+		handledFinish.current = index;
+		const next = playable[index + 1];
+		if (next) {
+			handledFinish.current = index + 1;
+			indexRef.current = index + 1;
+			setClipIndex(index + 1);
+			player.replace({ uri: next.audioUrl });
+			player.play();
+			return;
+		}
+		if (completed.current) return;
 		completed.current = true;
 		onComplete();
-	}, [onComplete, playable.length, status.currentIndex, status.didJustFinish]);
+	}, [continuous, onComplete, playable, player, status.currentTime, status.didJustFinish, status.duration]);
 	useEffect(() => {
 		const currentGeneration = ++generation.current;
 		return () => {
@@ -203,31 +282,41 @@ export function LessonPlayer({
 				// Reading the ref here is intentional: it changes when the effect re-runs.
 				// eslint-disable-next-line react-hooks/exhaustive-deps
 				if (generation.current !== currentGeneration) return;
-				stopOwnedPlaylist(playlist);
+				stopOwnedPlayer(player);
 			});
 		};
-	}, [playlist]);
+	}, [player]);
 
 	const changeSpeed = () => {
 		const next = (speedIndex + 1) % speeds.length;
 		setSpeedIndex(next);
-		// eslint-disable-next-line react-hooks/immutability -- playbackRate is a property of the expo-audio playlist
-		playlist.playbackRate = speeds[next]!;
+		player.setPlaybackRate(speeds[next]!);
 	};
 	const seekToLessonMs = (targetMs: number) => {
 		if (timeline.totalMs <= 0) return;
 		completed.current = false;
 		const target = seekInTimeline(timeline, targetMs);
+		const clip = playable[target.index];
+		if (!clip) return;
 		const generation = ++seekGeneration.current;
+		if (continuous) {
+			const durationSec = status.duration > 0 ? status.duration : timeline.totalMs / 1_000;
+			void player.seekTo((targetMs / timeline.totalMs) * durationSec);
+			return;
+		}
 		void (async () => {
-			// Changing clips rebuilds the queue at time zero, and a seek issued in that
+			// Replacing the clip starts at time zero, and a seek issued in that
 			// same moment is dropped. Retry until the new clip accepts the position.
-			if (target.index !== playlist.currentIndex) playlist.skipTo(target.index);
+			if (target.index !== indexRef.current) {
+				indexRef.current = target.index;
+				setClipIndex(target.index);
+				player.replace({ uri: clip.audioUrl });
+			}
 			for (let attempt = 0; attempt < 6; attempt += 1) {
 				if (seekGeneration.current !== generation) return;
-				await playlist.seekTo(target.offsetSec);
+				await player.seekTo(target.offsetSec);
 				if (seekGeneration.current !== generation) return;
-				const landed = playlist.currentIndex === target.index && Math.abs(playlist.currentTime - target.offsetSec) < 0.35;
+				const landed = indexRef.current === target.index && Math.abs(player.currentTime - target.offsetSec) < 0.35;
 				if (landed || target.offsetSec < 0.05) return;
 				await new Promise((resolve) => setTimeout(resolve, 60));
 			}
@@ -261,7 +350,7 @@ export function LessonPlayer({
 		shown?.segments.some((segment) => (segment.pauseAfterMs ?? 0) > 0) ?? false;
 	const activeLine = shown?.segments.find((segment) => segment.id === activeSegmentId);
 	const lineText = activeLine ? lessonDisplayText(activeLine.text) : "";
-	const toggle = () => (status.playing ? playlist.pause() : playlist.play());
+	const toggle = () => (status.playing ? player.pause() : player.play());
 	if (mode === "mini") {
 		return (
 			<View style={[styles.mini, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
@@ -377,13 +466,13 @@ export function LessonPlayer({
 			</View>
 			<View style={styles.transport}>
 				<Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.skip}>
-					<Text style={[styles.controlText, { color: theme.text }]}>−10</Text>
+					<SkipIcon direction="back" color={theme.text} />
 				</Pressable>
 				<Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause" : "Play"} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
 					<Text style={[styles.bigPlayIcon, { color: theme.onPrimary }, !status.playing && styles.playNudge]}>{status.playing ? "Ⅱ" : "▶"}</Text>
 				</Pressable>
 				<Pressable accessibilityRole="button" accessibilityLabel="Forward ten seconds" onPress={() => seekBy(10)} style={styles.skip}>
-					<Text style={[styles.controlText, { color: theme.text }]}>+10</Text>
+					<SkipIcon direction="forward" color={theme.text} />
 				</Pressable>
 			</View>
 		</View>
@@ -427,6 +516,5 @@ const styles = StyleSheet.create({
 	bigPlayIcon: { fontSize: 36, lineHeight: 42, fontWeight: "800" },
 	playNudge: { marginLeft: 4 },
 	play: { minWidth: 48, minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
-	controlText: { fontSize: 15, fontWeight: "700" },
 	playIcon: { fontSize: 26, lineHeight: 30, fontWeight: "800" },
 });

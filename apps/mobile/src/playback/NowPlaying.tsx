@@ -8,6 +8,7 @@ import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card } from "@/components/Card";
 import { LessonPlayer } from "@/components/LessonPlayer";
+import { SkipIcon } from "@/components/SkipIcon";
 import { Body, Heading, Title } from "@/components/Typography";
 import { markLessonCompleted, resolveAudioUrls, subscribeLesson } from "@/services/lessons";
 import { report, track } from "@/services/telemetry";
@@ -187,9 +188,9 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
                     <Body muted style={[styles.clock, styles.clockEnd]}>0:00</Body>
                   </View>
                   <View style={styles.transport}>
-                    <Body style={styles.skip}>−10</Body>
+                    <View style={styles.skip}><SkipIcon direction="back" color={theme.text} /></View>
                     <View style={[styles.bigPlay, { backgroundColor: theme.primary }]}><Body style={[styles.bigPlayIcon, styles.playNudge, { color: theme.onPrimary }]}>▶</Body></View>
-                    <Body style={styles.skip}>+10</Body>
+                    <View style={styles.skip}><SkipIcon direction="forward" color={theme.text} /></View>
                   </View>
                 </View>
               ) : (
@@ -294,7 +295,7 @@ const styles = StyleSheet.create({
   clockEnd: { textAlign: "right" },
   speed: { fontSize: 15, lineHeight: 20, fontWeight: "700" },
   transport: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 28, paddingTop: 6 },
-  skip: { width: 64, lineHeight: 64, textAlign: "center", fontSize: 16, fontWeight: "700" },
+  skip: { width: 64, height: 64, alignItems: "center", justifyContent: "center" },
   bigPlay: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center" },
   bigPlayIcon: { fontSize: 36, lineHeight: 42, fontWeight: "800" },
   playNudge: { marginLeft: 4 },
