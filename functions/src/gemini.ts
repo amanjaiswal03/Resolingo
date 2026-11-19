@@ -38,7 +38,7 @@ const SYSTEM_INSTRUCTION = [
   "speak is 6 to 8 different teaching-language lines that ask the learner to speak. Vary them. Use {translation} and {name} as placeholders. Do not repeat one sentence, and do not include the target-language answer.",
   "Also return speakerNames with teacher, speakerA, and speakerB. speakerA is male and speakerB is female. Each name is one Latin-script word of letters only, and the three names are different.",
   "Use those exact names inside dialogue lines. Do not write Speaker A or Speaker B.",
-  "When a line mixes the teaching language and the target language, wrap only the other-language span as [[lang:BCP-47]]...[[/lang]] and close every tag. Do not nest tags.",
+  "Every target-language word, including a gloss, a swap cue, a recap, and a closing, goes in its own [[lang:BCP-47]]...[[/lang]] span. Never leave a target word in a teaching-language span. Close every tag. Do not nest tags.",
 ].join(" ");
 
 const SAFETY_CATEGORIES = [
@@ -59,6 +59,7 @@ const PHRASE_INSTRUCTION = [
   "pattern is at most one short sentence, and only when the phrase has a notable structure.",
   "roleplay reuses a situation answer that was already taught. It is not the original sentence.",
   "Keep personal names and place names as names.",
+  "Every target-language word in a teaching-language line, including a gloss, a pattern note, a swap cue, a recap, and a closing, is wrapped as [[lang:BCP-47]]...[[/lang]]. Close every tag. Do not nest tags.",
   "Do not drill a literal idiom gloss.",
 ].join(" ");
 
@@ -72,7 +73,7 @@ const GRAMMAR_INSTRUCTION = [
   "drills has at least 12 items: substitution, a transformation that includes the source sentence, a fill-the-gap with ___, and a which-form question. Disambiguate you as you, to a friend; you all; or you, formally, and she versus they.",
   "The same cue sentence appears at most twice. Vary How would you say, Can you say, and Try saying, and always keep the meaning or the source sentence.",
   "recombinations has 2 new sentences that reuse the rule. Each cue includes the native meaning.",
-  "Quote the target language inside [[lang:BCP-47]]...[[/lang]] and close every tag. Do not nest tags.",
+  "Every target-language word in a teaching-language line, including a gloss, a rule, a recap, and a closing, is wrapped as [[lang:BCP-47]]...[[/lang]]. Close every tag. Do not nest tags.",
 ].join(" ");
 
 export function lessonGenerationConfig(type: LessonType = "conversation"): GenerateContentConfig {

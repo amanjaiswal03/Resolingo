@@ -136,8 +136,8 @@ describe("grammar lessons", () => {
     expect(spoken).not.toContain("where does the verb");
     expect(script).not.toMatch(/\w\.\s+means/);
     expect(script).toContain('Ich bin müde means "I am tired"');
-    expect(parsed.segments[0]?.text).toBe("Today we'll learn how to use sein, to be.");
-    expect(parsed.segments.some((segment) => segment.phase === "summary" && segment.text.startsWith("Here is sein"))).toBe(true);
+    expect(lessonDisplayText(parsed.segments[0]?.text ?? "")).toBe("Today we'll learn how to use sein, to be.");
+    expect(parsed.segments.some((segment) => segment.phase === "summary" && lessonDisplayText(segment.text).startsWith("Here is sein"))).toBe(true);
     expect(parsed.segments.at(-1)?.text).toMatch(/Nice work/);
     expect(parsed.segments.at(-1)?.text).toMatch(/out loud/);
     expect(grammarPromptsAreClear(parsed.segments)).toBe(true);
