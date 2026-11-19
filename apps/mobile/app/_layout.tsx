@@ -6,6 +6,8 @@ import * as Notifications from "expo-notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { NowPlaying } from "@/playback/NowPlaying";
+import { PlaybackProvider } from "@/playback/PlaybackProvider";
 import { SessionProvider, useSession } from "@/session/SessionProvider";
 import { track } from "@/services/telemetry";
 import { useTheme } from "@/theme/tokens";
@@ -42,6 +44,7 @@ function Navigation() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar style="auto" />
+      <PlaybackProvider>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}>
         <Stack.Screen name="index" options={{ animation: "none" }} />
         <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
@@ -51,6 +54,8 @@ function Navigation() {
         <Stack.Screen name="say/index" options={{ presentation: "card" }} />
         <Stack.Screen name="say/[id]" options={{ presentation: "card" }} />
       </Stack>
+      <NowPlaying />
+      </PlaybackProvider>
     </View>
   );
 }

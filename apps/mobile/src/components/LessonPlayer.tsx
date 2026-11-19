@@ -6,7 +6,7 @@ import {
 	useAudioPlaylistStatus,
 } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { type Lesson } from "@resolingo/shared";
+import { lessonDisplayText, type Lesson } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
 import { stopOwnedPlaylist } from "@/lesson/player-lifecycle";
 import {
@@ -18,11 +18,12 @@ import {
 	segmentAtClipTime,
 	segmentStartInClip,
 } from "@/lesson/timeline";
-import { Button } from "./Button";
 import { Body } from "./Typography";
 import { useTheme } from "@/theme/tokens";
 
 const speeds = [0.8, 1, 1.2] as const;
+
+const kindLabel = { conversation: "Conversation", grammar: "Grammar", phrase: "Phrase" } as const;
 
 export function LessonPlayer({
 	lesson,
@@ -30,12 +31,18 @@ export function LessonPlayer({
 	onStart,
 	onSegmentChange,
 	jumpTo,
+	mode = "full",
+	onOpen,
+	placement = "bottom",
 }: {
 	lesson: Lesson;
 	onComplete: () => void;
 	onStart?: () => void;
 	onSegmentChange?: (segmentId: string) => void;
 	jumpTo?: { id: string; token: number } | null;
+	mode?: "full" | "mini";
+	onOpen?: () => void;
+	placement?: "top" | "bottom";
 }) {
 	const theme = useTheme();
 	const insets = useSafeAreaInsets();
@@ -252,13 +259,40 @@ export function LessonPlayer({
 	};
 	const yourTurn =
 		shown?.segments.some((segment) => (segment.pauseAfterMs ?? 0) > 0) ?? false;
+	const activeLine = shown?.segments.find((segment) => segment.id === activeSegmentId);
+	const lineText = activeLine ? lessonDisplayText(activeLine.text) : "";
+	const toggle = () => (status.playing ? playlist.pause() : playlist.play());
+	if (mode === "mini") {
+		return (
+			<View style={[styles.mini, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
+				<View style={[styles.miniTrack, { backgroundColor: theme.border }]}>
+					<View style={[styles.miniFill, { backgroundColor: theme.primary, width: percentWidth(progress * 100) }]} />
+				</View>
+				<View style={styles.miniRow}>
+					<Pressable accessibilityRole="button" accessibilityLabel={`Open ${lesson.title}`} onPress={onOpen} style={styles.miniOpen}>
+						<Text style={[styles.miniChevron, { color: theme.text }]}>⌃</Text>
+						<View style={[styles.miniBadge, { backgroundColor: lesson.type === "grammar" ? theme.mint : lesson.type === "phrase" ? theme.coral : theme.amber }]}>
+							<Body style={styles.miniBadgeText}>{lesson.type.slice(0, 1).toUpperCase()}</Body>
+						</View>
+						<View style={styles.miniCopy}>
+							<Text numberOfLines={1} style={[styles.miniTitle, { color: theme.text }]}>{lineText || lesson.title}</Text>
+							<Text numberOfLines={1} style={[styles.miniSubtitle, { color: theme.textMuted }]}>{lineText ? lesson.title : kindLabel[lesson.type]}</Text>
+						</View>
+					</Pressable>
+					<Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause" : "Play"} onPress={toggle} style={styles.play}>
+						<Text style={[styles.playIcon, { color: theme.primary }]}>{status.playing ? "Ⅱ" : "▶"}</Text>
+					</Pressable>
+				</View>
+			</View>
+		);
+	}
 	return (
 		<View
 			style={[
 				styles.player,
 				{
-					backgroundColor: theme.navy,
-					paddingBottom: Math.max(8, insets.bottom),
+					backgroundColor: theme.surface,
+					paddingBottom: placement === "top" ? 14 : Math.max(16, insets.bottom + 8),
 				},
 			]}
 		>
@@ -307,14 +341,14 @@ export function LessonPlayer({
 				}}
 				style={styles.scrubber}
 			>
-				<View style={[styles.track, { backgroundColor: "#314262" }]}>
+				<View style={[styles.track, { backgroundColor: theme.border }]}>
 					<View
 						ref={fillRef}
 						collapsable={false}
 						style={[
 							styles.fill,
 							{
-								backgroundColor: theme.coral,
+								backgroundColor: theme.primary,
 								width: percentWidth(progress * 100),
 							},
 						]}
@@ -326,46 +360,30 @@ export function LessonPlayer({
 					style={[
 						styles.thumb,
 						{
-							backgroundColor: theme.coral,
+							backgroundColor: theme.primary,
+							borderColor: theme.surface,
 							left: percentWidth(progress * 100),
 						},
 					]}
 				/>
 			</View>
+			{yourTurn ? <Text style={[styles.time, styles.turn, { color: theme.textMuted }]}>Say it aloud</Text> : null}
 			<View style={styles.times}>
-				<Text ref={elapsedRef} style={styles.time}>{formatClock(shownElapsed)}</Text>
-				{yourTurn ? <Body style={styles.time}>Say it aloud</Body> : null}
-				<Body style={styles.time}>{formatClock(timeline.totalMs)}</Body>
+				<Text ref={elapsedRef} style={[styles.time, { color: theme.textMuted }]}>{formatClock(shownElapsed)}</Text>
+				<Pressable accessibilityRole="button" accessibilityLabel="Playback speed" onPress={changeSpeed} hitSlop={8}>
+					<Text style={[styles.speed, { color: theme.text }]}>{speeds[speedIndex]}×</Text>
+				</Pressable>
+				<Text style={[styles.time, styles.timeEnd, { color: theme.textMuted }]}>{formatClock(timeline.totalMs)}</Text>
 			</View>
-			<View style={styles.controls}>
-				<Button
-					label={`${speeds[speedIndex]}×`}
-					variant="ghost"
-					onPress={changeSpeed}
-				/>
-				<Pressable
-					accessibilityRole="button"
-					accessibilityLabel="Back ten seconds"
-					onPress={() => seekBy(-10)}
-					style={styles.circle}
-				>
-					<Body style={styles.controlText}>−10</Body>
+			<View style={styles.transport}>
+				<Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.skip}>
+					<Text style={[styles.controlText, { color: theme.text }]}>−10</Text>
 				</Pressable>
-				<Pressable
-					accessibilityRole="button"
-					accessibilityLabel={status.playing ? "Pause" : "Play"}
-					onPress={() => (status.playing ? playlist.pause() : playlist.play())}
-					style={[styles.play, { backgroundColor: theme.coral }]}
-				>
-					<Body style={styles.playText}>{status.playing ? "Ⅱ" : "▶"}</Body>
+				<Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause" : "Play"} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
+					<Text style={[styles.bigPlayIcon, { color: theme.onPrimary }, !status.playing && styles.playNudge]}>{status.playing ? "Ⅱ" : "▶"}</Text>
 				</Pressable>
-				<Pressable
-					accessibilityRole="button"
-					accessibilityLabel="Forward ten seconds"
-					onPress={() => seekBy(10)}
-					style={styles.circle}
-				>
-					<Body style={styles.controlText}>+10</Body>
+				<Pressable accessibilityRole="button" accessibilityLabel="Forward ten seconds" onPress={() => seekBy(10)} style={styles.skip}>
+					<Text style={[styles.controlText, { color: theme.text }]}>+10</Text>
 				</Pressable>
 			</View>
 		</View>
@@ -373,7 +391,18 @@ export function LessonPlayer({
 }
 
 const styles = StyleSheet.create({
-	player: { borderRadius: 22, paddingHorizontal: 16, paddingTop: 8, gap: 2 },
+	player: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 22, paddingTop: 18, gap: 10 },
+	mini: { minHeight: 76, borderTopWidth: StyleSheet.hairlineWidth },
+	miniTrack: { height: 2 },
+	miniFill: { height: 2 },
+	miniRow: { flex: 1, flexDirection: "row", alignItems: "center", paddingRight: 10 },
+	miniOpen: { flex: 1, flexDirection: "row", alignItems: "center", gap: 14, paddingLeft: 16, paddingVertical: 12 },
+	miniBadge: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+	miniBadgeText: { color: "#08152F", fontWeight: "800", fontSize: 14, lineHeight: 18 },
+	miniCopy: { flex: 1, gap: 1 },
+	miniTitle: { fontSize: 15, lineHeight: 18, fontWeight: "700" },
+	miniSubtitle: { fontSize: 12, lineHeight: 15 },
+	miniChevron: { fontSize: 20, lineHeight: 22, fontWeight: "700", width: 22 },
 	scrubber: { height: 28, justifyContent: "center" },
 	track: { height: 5, borderRadius: 3, overflow: "hidden" },
 	fill: { height: 5, borderRadius: 3 },
@@ -387,26 +416,17 @@ const styles = StyleSheet.create({
 		borderWidth: 2,
 		borderColor: "#FFFFFF",
 	},
-	times: { flexDirection: "row", justifyContent: "space-between" },
-	time: { color: "#9FB0CC", fontSize: 12, fontVariant: ["tabular-nums"] },
-	controls: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-	},
-	circle: {
-		width: 40,
-		height: 40,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	play: {
-		width: 46,
-		height: 46,
-		borderRadius: 23,
-		alignItems: "center",
-		justifyContent: "center",
-	},
-	controlText: { color: "#FFFFFF", fontWeight: "700" },
-	playText: { color: "#08152F", fontSize: 18, fontWeight: "800" },
+	times: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+	time: { fontSize: 13, fontVariant: ["tabular-nums"], minWidth: 64 },
+	timeEnd: { textAlign: "right" },
+	turn: { textAlign: "center", minWidth: 0 },
+	speed: { fontSize: 15, fontWeight: "700" },
+	transport: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 28, paddingTop: 6 },
+	skip: { width: 64, height: 64, alignItems: "center", justifyContent: "center" },
+	bigPlay: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center" },
+	bigPlayIcon: { fontSize: 36, lineHeight: 42, fontWeight: "800" },
+	playNudge: { marginLeft: 4 },
+	play: { minWidth: 48, minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
+	controlText: { fontSize: 15, fontWeight: "700" },
+	playIcon: { fontSize: 26, lineHeight: 30, fontWeight: "800" },
 });

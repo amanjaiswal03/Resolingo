@@ -6,6 +6,7 @@ import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture
 import { runOnJS, useAnimatedReaction, type SharedValue } from "react-native-reanimated";
 import { lessonCanBeDeleted, type Lesson } from "@resolingo/shared";
 import { useLessonDelete } from "@/lessons/delete-lesson";
+import { usePlayback } from "@/playback/PlaybackProvider";
 import { useTheme } from "@/theme/tokens";
 import { Card } from "./Card";
 import { Body, Heading } from "./Typography";
@@ -42,6 +43,8 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
   const router = useRouter();
   const theme = useTheme();
   const { requestDelete, registerOpenRow, releaseOpenRow, closeOpenRow, openRowId } = useLessonDelete();
+  const { lessonId, open } = usePlayback();
+  const playing = lessonId === lesson.id;
   const row = useRef<SwipeableMethods>(null);
   const armed = useRef(false);
   const deletable = lessonCanBeDeleted(lesson.status);
@@ -86,7 +89,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${lesson.title}, ${statusLabel[lesson.status]}`}
+        accessibilityLabel={`${lesson.title}, ${playing ? "Playing" : statusLabel[lesson.status]}`}
         accessibilityHint={deletable ? "Swipe left to delete, or long press for a delete menu." : "This lesson is still being created."}
         accessibilityActions={deletable ? [{ name: "delete", label: "Delete lesson" }] : undefined}
         onAccessibilityAction={(event) => {
@@ -97,13 +100,14 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
             closeOpenRow();
             return;
           }
-          router.push(`/lesson/${lesson.id}`);
+          if (lesson.status === "ready") open(lesson.id, { expand: true });
+          else router.push(`/lesson/${lesson.id}`);
         }}
         onLongPress={confirm}
       >
         <Card style={styles.card}>
           <View style={[styles.badge, { backgroundColor: lesson.type === "grammar" ? theme.mint : lesson.type === "phrase" ? theme.coral : theme.amber }]}><Body style={styles.badgeText}>{kindMark[lesson.type]}</Body></View>
-          <View style={styles.copy}><Heading numberOfLines={2}>{lesson.title}</Heading><Body muted>{statusLabel[lesson.status]} · {kindLabel[lesson.type]}</Body></View>
+          <View style={styles.copy}><Heading numberOfLines={2} style={styles.title}>{lesson.title}</Heading><Body muted style={styles.meta}>{playing ? <Body style={[styles.meta, { color: theme.primary }]}>Playing</Body> : statusLabel[lesson.status]} · {kindLabel[lesson.type]}</Body></View>
           <Body muted>›</Body>
         </Card>
       </Pressable>
@@ -120,8 +124,10 @@ const styles = StyleSheet.create({
   trashHandle: { width: 8, height: 2, backgroundColor: "#FFFFFF", borderRadius: 1 },
   trashLid: { width: 18, height: 2, backgroundColor: "#FFFFFF", borderRadius: 1, marginTop: 2, marginBottom: 2 },
   trashBin: { width: 14, height: 12, borderWidth: 2, borderTopWidth: 0, borderColor: "#FFFFFF", borderBottomLeftRadius: 3, borderBottomRightRadius: 3 },
-  card: { flexDirection: "row", alignItems: "center" },
-  badge: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  badgeText: { color: "#08152F", fontWeight: "800" },
-  copy: { flex: 1, gap: 2 },
+  card: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 14, gap: 10 },
+  badge: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  badgeText: { color: "#08152F", fontWeight: "800", fontSize: 14, lineHeight: 18 },
+  copy: { flex: 1, gap: 0 },
+  title: { fontSize: 17, lineHeight: 22 },
+  meta: { fontSize: 14, lineHeight: 18 },
 });

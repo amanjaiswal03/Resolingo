@@ -1,6 +1,6 @@
-/** Pop the lesson when the stack has history; otherwise land on the home tabs. */
-export function lessonExit(canGoBack: boolean): "back" | "replace-home" {
-  return canGoBack ? "back" : "replace-home";
+/** Leave a lesson on the home tabs. A phrase screen may still be underneath, so back is not a pop. */
+export function lessonExit(canGoBack: boolean): "home" | "replace-home" {
+  return canGoBack ? "home" : "replace-home";
 }
 
 /** `useLocalSearchParams` may hand back a string, a list, or nothing while a screen is popping. */

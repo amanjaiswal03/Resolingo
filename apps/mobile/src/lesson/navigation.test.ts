@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { firstRouteParam, lessonExit, percentWidth } from "./navigation";
 
 describe("lessonExit", () => {
-  it("pops when the stack has history", () => {
-    expect(lessonExit(true)).toBe("back");
+  it("returns home when the stack has history", () => {
+    expect(lessonExit(true)).toBe("home");
   });
 
   it("replaces home when back would target an empty stack", () => {
