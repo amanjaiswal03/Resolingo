@@ -18,6 +18,7 @@ export {
 } from "./callables.js";
 export { cleanupAbandonedJobs, dispatchReminders, processPushReceipts, recoverUnenqueuedLessons } from "./schedules.js";
 export { createUserProfile } from "./accounts.js";
+export { lessonVoiceFeedback } from "./voice-feedback.js";
 
 export const generateLessonTask = onTaskDispatched({
   region: REGION,

@@ -14,6 +14,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const identifier = orDefault(process.env.APP_IDENTIFIER, DEFAULT_APP_IDENTIFIER);
   const googleServicesFile = process.env.GOOGLE_SERVICES_JSON;
   const googleInfoPlist = process.env.GOOGLE_SERVICES_INFO_PLIST;
+  const microphonePermission = "Resolingo uses the microphone when you ask for a translation or turn on spoken answer checking for a lesson.";
 
   return {
     ...config,
@@ -33,7 +34,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ...(googleInfoPlist ? { googleServicesFile: googleInfoPlist } : {}),
       infoPlist: {
         UIBackgroundModes: ["audio", "remote-notification"],
-        NSMicrophoneUsageDescription: "Resolingo uses the microphone so you can say a sentence in your language and get it translated.",
+        NSMicrophoneUsageDescription: microphonePermission,
+        NSSpeechRecognitionUsageDescription: "Resolingo uses speech recognition on this iPhone to check your spoken lesson answers.",
       },
     },
     android: {
@@ -52,7 +54,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       ["expo-audio", {
         enableBackgroundPlayback: true,
         recordAudioAndroid: true,
-        microphonePermission: "Resolingo uses the microphone so you can say a sentence in your language and get it translated.",
+        microphonePermission,
       }],
       ["expo-notifications", { color: "#FF775F", defaultChannel: "lessons" }],
       "expo-apple-authentication",

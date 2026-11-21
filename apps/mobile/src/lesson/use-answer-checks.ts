@@ -1,0 +1,234 @@
+import { languageById } from "@resolingo/shared";
+import { requireOptionalNativeModule, type NativeModule } from "expo";
+import { requestRecordingPermissionsAsync, type AudioPlayer } from "expo-audio";
+import { randomUUID } from "expo-crypto";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Platform } from "react-native";
+import { api, type LessonVoiceClips } from "@/services/api";
+import type { AnswerPlan, AnswerWindow } from "./answer-windows";
+import type { VoiceResult, VoiceVerdict } from "./phrase-match";
+
+type AnswerEvent = { sessionId: string; id: string; verdict: VoiceVerdict; heard?: string };
+type WindowEvent = {
+  sessionId: string;
+  id: string;
+  recording: boolean;
+  state?: "recording" | "cancelled" | "skipped" | "checking" | "unclear";
+};
+type AnswerEvents = {
+  onAnswer: (event: AnswerEvent) => void;
+  onWindow: (event: WindowEvent) => void;
+  onFeedback: (event: { sessionId: string; playing: boolean }) => void;
+  onStopped: (event: { sessionId: string }) => void;
+};
+type NativeChecks = InstanceType<typeof NativeModule<AnswerEvents>> & {
+  supports(language: string): boolean;
+  prepare?(language: string): Promise<"legacy" | "dictation" | "unsupported" | "setupFailed">;
+  requestSpeechPermission(): Promise<boolean>;
+  start(player: AudioPlayer, id: string, language: string, windows: AnswerWindow[]): Promise<void>;
+  installFeedback?(id: string, clips: LessonVoiceClips): Promise<void>;
+  cancelFeedback?(id: string, resume: boolean): Promise<void>;
+  stop(id: string): Promise<void>;
+};
+
+const native = Platform.OS === "ios" ? requireOptionalNativeModule<NativeChecks>("LessonVoiceCheck") : null;
+
+export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: AnswerPlan | null, loaded: boolean, allowed: boolean) {
+  const session = useRef<string | null>(null);
+  const starting = useRef(false);
+  const mounted = useRef(false);
+  const allowedHere = useRef(allowed);
+  const planRef = useRef(plan);
+  const [state, setState] = useState<"off" | "starting" | "on">("off");
+  const [results, setResults] = useState<Record<string, VoiceResult>>({});
+  const [recording, setRecording] = useState<string | null>(null);
+  const [feedbackPlaying, setFeedbackPlaying] = useState(false);
+  const feedbackClips = useRef<Promise<LessonVoiceClips | null> | null>(null);
+
+  useEffect(() => { planRef.current = plan; }, [plan]);
+
+  useEffect(() => {
+    mounted.current = true;
+    const pending = new Map<string, ReturnType<typeof setTimeout>>();
+    const clearPending = (id: string) => {
+      const timeout = pending.get(id);
+      if (timeout !== undefined) clearTimeout(timeout);
+      pending.delete(id);
+    };
+    const recordResult = (id: string, result: VoiceResult) => {
+      setResults((previous) => ({ ...previous, [id]: result }));
+    };
+    const subscription = native?.addListener("onAnswer", (event) => {
+      if (session.current !== event.sessionId) return;
+      clearPending(event.id);
+      recordResult(event.id, { verdict: event.verdict, ...(event.heard ? { heard: event.heard } : {}) });
+    });
+    const window = native?.addListener("onWindow", (event) => {
+      if (session.current !== event.sessionId) return;
+      setRecording((current) => event.recording ? event.id : current === event.id ? null : current);
+      if (event.recording || event.state === "cancelled") return;
+      if (event.state === "skipped" || event.state === "unclear") {
+        clearPending(event.id);
+        recordResult(event.id, { verdict: event.state });
+        return;
+      }
+      if (!event.state) {
+        // Older builds signal a closed mic without stating whether the pause ended.
+        const end = planRef.current?.windows.find(({ id }) => id === event.id)?.endSeconds;
+        const time = player.currentTime;
+        if (end == null || time < end - 0.05 || time > end + 0.4) return;
+      }
+      clearPending(event.id);
+      recordResult(event.id, { verdict: "checking" });
+      pending.set(event.id, setTimeout(() => {
+        pending.delete(event.id);
+        setResults((previous) => previous[event.id]?.verdict === "checking"
+          ? { ...previous, [event.id]: { verdict: "unclear" } }
+          : previous);
+      }, 4_500));
+    });
+    const stopped = native?.addListener("onStopped", (event) => {
+      if (session.current !== event.sessionId) return;
+      session.current = null;
+      setRecording(null);
+      setFeedbackPlaying(false);
+      setState("off");
+    });
+    const feedback = native?.installFeedback && native.addListener("onFeedback", (event) => {
+      if (session.current === event.sessionId) setFeedbackPlaying(event.playing);
+    });
+    return () => {
+      mounted.current = false;
+      for (const timeout of pending.values()) clearTimeout(timeout);
+      subscription?.remove();
+      window?.remove();
+      stopped?.remove();
+      feedback?.remove();
+      const id = session.current;
+      session.current = null;
+      if (id) void native?.stop(id).catch(() => undefined);
+    };
+  }, [player]);
+
+  useEffect(() => {
+    allowedHere.current = allowed;
+    const id = session.current;
+    if (allowed || !id || !native) return;
+    session.current = null;
+    void native.stop(id).catch(() => undefined).finally(() => {
+      if (mounted.current && !session.current) {
+        setRecording(null);
+        setFeedbackPlaying(false);
+        setState("off");
+      }
+    });
+  }, [allowed]);
+
+  const isArmed = useCallback(() => session.current !== null, []);
+  const cancelFeedback = useCallback(() => {
+    const id = session.current;
+    if (id) void native?.cancelFeedback?.(id, false).catch(() => undefined);
+  }, []);
+  const start = async (currentPlan: AnswerPlan, onEnabled?: () => void) => {
+    if (!native || !mounted.current || !allowedHere.current || starting.current || session.current) return;
+    starting.current = true;
+    const id = randomUUID();
+    session.current = id;
+    let enabled = false;
+    setState("starting");
+    try {
+      if (native.installFeedback && !feedbackClips.current) {
+        feedbackClips.current = api.lessonVoiceFeedback(lessonId).catch(() => {
+          feedbackClips.current = null;
+          return null;
+        });
+      }
+      const speech = native.prepare
+        ? await native.prepare(currentPlan.language)
+        : native.supports(currentPlan.language) ? "legacy" : "unsupported";
+      if (session.current !== id) return;
+      if (speech === "setupFailed") {
+        Alert.alert("Speech setup couldn’t finish", "Connect to Wi-Fi and try turning on answer checking again.");
+        return;
+      }
+      if (speech === "unsupported") {
+        const language = languageById[currentPlan.language].label;
+        Alert.alert(
+          "On-device speech is unavailable",
+          `Try adding the ${language} keyboard and turning on Enable Dictation in Settings › General › Keyboard. Dictate a sentence using that keyboard, then try again.`,
+        );
+        return;
+      }
+      const mic = await requestRecordingPermissionsAsync();
+      if (session.current !== id) return;
+      const allowed = mic.granted && (speech === "dictation" || await native.requestSpeechPermission());
+      if (session.current !== id) return;
+      if (!allowed) {
+        Alert.alert("Answer checking is off", "Allow microphone and speech recognition access in Settings to check spoken answers.");
+        return;
+      }
+      const windows = currentPlan.windows.map(({ id, startSeconds, endSeconds, expected, feedbackAtSeconds }) =>
+        ({ id, startSeconds, endSeconds, expected, ...(feedbackAtSeconds ? { feedbackAtSeconds } : {}) }));
+      await native.start(player, id, currentPlan.language, windows);
+      if (session.current !== id) {
+        await native.stop(id);
+        return;
+      }
+      enabled = true;
+      setState("on");
+      void feedbackClips.current?.then((clips) => {
+        if (session.current === id && clips) return native.installFeedback?.(id, clips);
+      }).catch(() => undefined);
+      onEnabled?.();
+    } catch {
+      if (session.current === id) Alert.alert("Answer checking is unavailable", "You can keep listening and hear each model answer.");
+    } finally {
+      starting.current = false;
+      if (session.current === id && !enabled) {
+        session.current = null;
+        setState("off");
+      }
+    }
+  };
+
+  const enable = (onEnabled?: () => void) => {
+    if (!native || !plan || !loaded || !allowedHere.current || starting.current) return;
+    if (session.current) {
+      onEnabled?.();
+      return;
+    }
+    Alert.alert(
+      "Check my answers?",
+      "Speak after the tone for brief feedback, or let the pause pass. You can review your answers later. Your voice stays on this iPhone. The first setup may download a speech model.",
+      [{ text: "Cancel", style: "cancel" }, { text: "Turn on", onPress: () => void start(plan, onEnabled) }],
+    );
+  };
+
+  const toggle = () => {
+    if (!native || starting.current) return;
+    if (session.current) {
+      const id = session.current;
+      session.current = null;
+      setRecording(null);
+      setFeedbackPlaying(false);
+      setState("off");
+      // Turning checking off during a narrator line should resume the lesson.
+      void Promise.resolve(native.cancelFeedback?.(id, true)).catch(() => undefined)
+        .then(() => native.stop(id)).catch(() => undefined);
+      return;
+    }
+    enable();
+  };
+
+  return {
+    available: Boolean(native && allowed && plan && (loaded || state !== "off")),
+    state,
+    toggle,
+    enable,
+    isArmed,
+    recording,
+    feedbackPlaying,
+    cancelFeedback,
+    results,
+  };
+}

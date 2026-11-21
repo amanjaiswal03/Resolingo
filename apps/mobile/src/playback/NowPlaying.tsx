@@ -181,7 +181,7 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
           <GestureDetector gesture={playerPan}>
             <View>
               {resolved ? (
-                <LessonPlayer lesson={resolved} mode={presented} onOpen={() => glideTo(true)} onComplete={() => void complete()} onStart={started} onSegmentChange={setActiveSegmentId} jumpTo={jumpTo} />
+                <LessonPlayer lesson={resolved} mode={presented} onOpen={() => glideTo(true)} onComplete={() => void complete()} onStart={started} onSegmentChange={setActiveSegmentId} jumpTo={jumpTo} allowAnswerChecks={segments[0] !== "say"} />
               ) : presented === "full" ? (
                 <View pointerEvents="none" style={[styles.player, { backgroundColor: theme.surface, paddingBottom: Math.max(16, insets.bottom + 8) }]}>
                   <View style={styles.scrubber}><View style={[styles.track, { backgroundColor: theme.border }]} /></View>
@@ -264,7 +264,6 @@ function Transcript({ lesson, activeSegmentId, onJump }: { lesson: Lesson; activ
                 <Body muted>{speakerLabel(segment.speaker, lesson.speakerNames)}</Body>
                 <Body>{lessonDisplayText(segment.text)}</Body>
                 {segment.translation ? <Body muted>{lessonDisplayText(segment.translation)}</Body> : null}
-                {(segment.pauseAfterMs ?? 0) > 0 ? <Body muted>Say it aloud</Body> : null}
                 {segment.transliteration ? <Body muted>{segment.transliteration}</Body> : null}
               </Card>
             </Pressable>
