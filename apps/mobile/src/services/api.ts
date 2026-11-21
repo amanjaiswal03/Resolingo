@@ -10,10 +10,12 @@ async function call<Request, Response>(name: string, data: Request): Promise<Res
 }
 
 type DailyLessonType = Exclude<LessonType, "phrase">;
+export type LessonVoiceClips = { recalled: string[]; compare: string[]; unclear: string[] };
 
 export const api = {
   initializeProfile: (profile: Omit<UserProfile, "uid" | "onboardingComplete" | "unlimitedLessons">) => call("initializeProfile", profile),
   createDailyLesson: (type: DailyLessonType, idempotencyKey: string) => call<unknown, { lessonId: string }>("createDailyLesson", { type, idempotencyKey }),
+  lessonVoiceFeedback: (lessonId: string) => call<{ lessonId: string }, LessonVoiceClips>("lessonVoiceFeedback", { lessonId }),
   translatePhrase: (text: string) => call<unknown, {
     phraseId: string;
     nativeText: string;

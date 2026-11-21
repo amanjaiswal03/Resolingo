@@ -8,9 +8,11 @@ import {
 } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { lessonDisplayText, type Lesson } from "@resolingo/shared";
+import { answerPlan } from "@/lesson/answer-windows";
 import { percentWidth } from "@/lesson/navigation";
 import { joinLessonAudio } from "@/lesson/join-lesson-audio";
 import { stopOwnedPlayer } from "@/lesson/player-lifecycle";
+import { useAnswerChecks } from "@/lesson/use-answer-checks";
 import {
 	elapsedMs,
 	formatClock,
@@ -21,6 +23,7 @@ import {
 	segmentStartInClip,
 } from "@/lesson/timeline";
 import { SkipIcon } from "./SkipIcon";
+import { SpeakingPractice } from "./SpeakingPractice";
 import { Body } from "./Typography";
 import { useTheme } from "@/theme/tokens";
 
@@ -45,6 +48,7 @@ export function LessonPlayer({
 	mode = "full",
 	onOpen,
 	placement = "bottom",
+	allowAnswerChecks = true,
 }: {
 	lesson: Lesson;
 	onComplete: () => void;
@@ -54,6 +58,7 @@ export function LessonPlayer({
 	mode?: "full" | "mini";
 	onOpen?: () => void;
 	placement?: "top" | "bottom";
+	allowAnswerChecks?: boolean;
 }) {
 	const theme = useTheme();
 	const insets = useSafeAreaInsets();
@@ -101,6 +106,15 @@ export function LessonPlayer({
 	const continuous = playable.length <= 1 || joined != null;
 	const sourceUri = playable.length <= 1 ? playable[0]?.audioUrl ?? null : joined?.uri ?? (joinFailed ? playable[0]?.audioUrl ?? null : null);
 	const status = useAudioPlayerStatus(player);
+	const checks = useMemo(
+		() => joined ? answerPlan(lesson.segments, playable, joined.durationsMs) : null,
+		[joined, lesson.segments, playable],
+	);
+	const {
+		available: canCheckAnswers, enable: enableChecks, isArmed, recording, results,
+		feedbackPlaying, cancelFeedback, state: checkState, toggle: toggleChecks,
+	} = useAnswerChecks(player, lesson.id, checks, status.isLoaded, allowAnswerChecks);
+	const playing = status.playing || feedbackPlaying;
 	const timeline = useMemo(
 		() =>
 			lessonTimeline(
@@ -139,12 +153,13 @@ export function LessonPlayer({
 	);
 	useEffect(() => {
 		const apply = () => {
+			if (isArmed()) return;
 			void setAudioModeAsync(playbackMode).catch(() => undefined);
 		};
 		apply();
 		const subscription = AppState.addEventListener("change", apply);
 		return () => subscription.remove();
-	}, []);
+	}, [isArmed]);
 	useEffect(() => {
 		if (playable.length <= 1) return;
 		let cancelled = false;
@@ -219,6 +234,7 @@ export function LessonPlayer({
 		const clip = playable[index];
 		const start = timeline.startsMs[index];
 		if (!clip || index < 0 || start == null) return;
+		cancelFeedback();
 		completed.current = false;
 		scrubbingRef.current = false;
 		scrubRatioRef.current = null;
@@ -238,7 +254,7 @@ export function LessonPlayer({
 			void player.seekTo(offsetSec);
 		}
 		player.play();
-	}, [continuous, jumpTo, playable, player, status.duration, timeline.durationsMs, timeline.startsMs, timeline.totalMs]);
+	}, [cancelFeedback, continuous, jumpTo, playable, player, status.duration, timeline.durationsMs, timeline.startsMs, timeline.totalMs]);
 	useEffect(() => {
 		if (!status.isLoaded || status.duration <= 0) return;
 		const durationMs = Math.round(status.duration * 1_000);
@@ -301,7 +317,10 @@ export function LessonPlayer({
 		const generation = ++seekGeneration.current;
 		if (continuous) {
 			const durationSec = status.duration > 0 ? status.duration : timeline.totalMs / 1_000;
-			void player.seekTo((targetMs / timeline.totalMs) * durationSec);
+			if (feedbackPlaying) cancelFeedback();
+			void player.seekTo((targetMs / timeline.totalMs) * durationSec).then(() => {
+				if (feedbackPlaying && alive.current) player.play();
+			}).catch(() => undefined);
 			return;
 		}
 		void (async () => {
@@ -346,11 +365,24 @@ export function LessonPlayer({
 			paintScrub(next);
 		});
 	};
-	const yourTurn =
-		shown?.segments.some((segment) => (segment.pauseAfterMs ?? 0) > 0) ?? false;
 	const activeLine = shown?.segments.find((segment) => segment.id === activeSegmentId);
 	const lineText = activeLine ? lessonDisplayText(activeLine.text) : "";
-	const toggle = () => (status.playing ? player.pause() : player.play());
+	const pauseLesson = () => {
+		cancelFeedback();
+		player.pause();
+	};
+	const toggle = () => (playing ? pauseLesson() : player.play());
+	const playSegmentInLesson = (segmentId: string) => {
+		const index = playable.findIndex((clip) => clip.segmentIds.includes(segmentId));
+		const start = timeline.startsMs[index];
+		if (start == null || !continuous || timeline.totalMs <= 0) return;
+		const duration = status.duration > 0 ? status.duration : timeline.totalMs / 1_000;
+		completed.current = false;
+		pauseLesson();
+		void player.seekTo(start / timeline.totalMs * duration, 0, 0).then(() => {
+			if (alive.current) player.play();
+		}).catch(() => undefined);
+	};
 	if (mode === "mini") {
 		return (
 			<View style={[styles.mini, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
@@ -368,8 +400,8 @@ export function LessonPlayer({
 							<Text numberOfLines={1} style={[styles.miniSubtitle, { color: theme.textMuted }]}>{lineText ? lesson.title : kindLabel[lesson.type]}</Text>
 						</View>
 					</Pressable>
-					<Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause" : "Play"} onPress={toggle} style={styles.play}>
-						<Text style={[styles.playIcon, { color: theme.primary }]}>{status.playing ? "Ⅱ" : "▶"}</Text>
+					<Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause" : "Play"} onPress={toggle} style={styles.play}>
+						<Text style={[styles.playIcon, { color: theme.primary }]}>{playing ? "Ⅱ" : "▶"}</Text>
 					</Pressable>
 				</View>
 			</View>
@@ -456,7 +488,6 @@ export function LessonPlayer({
 					]}
 				/>
 			</View>
-			{yourTurn ? <Text style={[styles.time, styles.turn, { color: theme.textMuted }]}>Say it aloud</Text> : null}
 			<View style={styles.times}>
 				<Text ref={elapsedRef} style={[styles.time, { color: theme.textMuted }]}>{formatClock(shownElapsed)}</Text>
 				<Pressable accessibilityRole="button" accessibilityLabel="Playback speed" onPress={changeSpeed} hitSlop={8}>
@@ -468,13 +499,26 @@ export function LessonPlayer({
 				<Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.skip}>
 					<SkipIcon direction="back" color={theme.text} />
 				</Pressable>
-				<Pressable accessibilityRole="button" accessibilityLabel={status.playing ? "Pause" : "Play"} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
-					<Text style={[styles.bigPlayIcon, { color: theme.onPrimary }, !status.playing && styles.playNudge]}>{status.playing ? "Ⅱ" : "▶"}</Text>
+				<Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause" : "Play"} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
+					<Text style={[styles.bigPlayIcon, { color: theme.onPrimary }, !playing && styles.playNudge]}>{playing ? "Ⅱ" : "▶"}</Text>
 				</Pressable>
 				<Pressable accessibilityRole="button" accessibilityLabel="Forward ten seconds" onPress={() => seekBy(10)} style={styles.skip}>
 					<SkipIcon direction="forward" color={theme.text} />
 				</Pressable>
 			</View>
+			{checks && (canCheckAnswers || Object.keys(results).length > 0) ? (
+				<SpeakingPractice
+					plan={checks}
+					available={canCheckAnswers}
+					state={checkState}
+					recording={recording !== null}
+					results={results}
+					onToggle={toggleChecks}
+					onPauseLesson={pauseLesson}
+					onPlayInLesson={playSegmentInLesson}
+					onRetry={(id, close) => enableChecks(() => { close(); playSegmentInLesson(id); })}
+				/>
+			) : null}
 		</View>
 	);
 }
@@ -508,7 +552,6 @@ const styles = StyleSheet.create({
 	times: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
 	time: { fontSize: 13, fontVariant: ["tabular-nums"], minWidth: 64 },
 	timeEnd: { textAlign: "right" },
-	turn: { textAlign: "center", minWidth: 0 },
 	speed: { fontSize: 15, fontWeight: "700" },
 	transport: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 28, paddingTop: 6 },
 	skip: { width: 64, height: 64, alignItems: "center", justifyContent: "center" },

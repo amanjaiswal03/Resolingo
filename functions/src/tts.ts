@@ -184,6 +184,22 @@ async function voiceNameFor(speaker: LessonSpeaker, language: LanguageId): Promi
   return voices[speaker];
 }
 
+export async function synthesizeTeacherFeedback(language: LanguageId, text: string, delivery: "praise" | "gentle"): Promise<string> {
+  const segment = { id: "voice_feedback", kind: "narration", speaker: "teacher", language, text, delivery } as const;
+  const rendered = await synthesizeWithGemini({
+    segment,
+    speaker: segment.speaker,
+    language,
+    text,
+    delivery,
+    level: "C1",
+    targetLanguage: language,
+    cloud: () => synthesizeWithCloudTts({ speaker: segment.speaker, language, text, level: "C1", targetLanguage: language }),
+  });
+  const [audio] = await bucket.file(rendered.cachePath).download();
+  return audio.toString("base64");
+}
+
 async function synthesizeWithCloudTts(input: {
   speaker: LessonSpeaker;
   language: LanguageId;
