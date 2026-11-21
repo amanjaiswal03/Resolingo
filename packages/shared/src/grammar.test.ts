@@ -6,7 +6,7 @@ import {
   selectGrammarTopic,
   shapeGrammarLesson,
 } from "./grammar.js";
-import { lessonDisplayText } from "./markup.js";
+import { lessonDisplayText, speechSpans } from "./markup.js";
 import { GeneratedLessonSchema, type LessonSegment } from "./schemas.js";
 import { phrasesToRemember } from "./review.js";
 import { DEFAULT_SPEAKER_NAMES } from "./speakers.js";
@@ -134,8 +134,7 @@ describe("grammar lessons", () => {
     expect(notices.some((line) => /she/.test(line) && /they/.test(line))).toBe(true);
     expect(spoken).not.toContain("second position");
     expect(spoken).not.toContain("where does the verb");
-    expect(script).not.toMatch(/\w\.\s+means/);
-    expect(script).toContain('Ich bin müde means "I am tired"');
+    expect(script).toContain('Ich bin müde.\nThat means "I am tired".');
     expect(lessonDisplayText(parsed.segments[0]?.text ?? "")).toBe("Today we'll learn how to use sein, to be.");
     expect(parsed.segments.some((segment) => segment.phase === "summary" && lessonDisplayText(segment.text).startsWith("Here is sein"))).toBe(true);
     expect(parsed.segments.at(-1)?.text).toMatch(/Nice work/);
@@ -188,5 +187,55 @@ describe("grammar lessons", () => {
       expect(prompts.some((cue) => /formally/i.test(cue))).toBe(true);
       expect(lesson.segments.length).toBeLessThanOrEqual(120);
     }
+  });
+
+  it("models each hook once and speaks stems, irregular forms, and endings in German", () => {
+    for (const [id, stem] of [["de-haben", "hab-"], ["de-present", "mach-"]] as const) {
+      const { segments } = lessonFor(id);
+      const hook = segments.find((segment) => segment.kind === "example" && segment.phase === "hook")!;
+      expect(segments.filter((segment) => segment.kind === "example" && segment.text === hook.text)).toHaveLength(1);
+      expect(segments[segments.indexOf(hook) + 1]?.text).toBe(`That means "${hook.translation!.slice(0, -1)}".`);
+      const stemLine = segments.find((segment) => lessonDisplayText(segment.text).includes(stem))!;
+      const spans = speechSpans(stemLine.text, stemLine.language);
+      expect(spans).toContainEqual({ language: "de-DE", text: stem });
+      expect(spans.filter((span) => span.language === "en-US").map((span) => span.text).join("")).not.toContain(stem);
+    }
+    const script = lessonFor("de-present").segments;
+    const check = script.find((segment) => segment.phase === "check" && !segment.pauseAfterMs)!;
+    expect(speechSpans(check.text, check.language)).toEqual([{ language: "de-DE", text: "st. du machst." }]);
+    const ending = script.find((segment) => lessonDisplayText(segment.text).startsWith("Hold onto the endings"))!;
+    expect(speechSpans(ending.text, ending.language).at(-1)).toMatchObject({ language: "de-DE", text: "e, st, t, en, t, en." });
+  });
+
+  it("repairs untagged grammar terms and affixes in a generated lesson", () => {
+    const topic = grammarTopics("fr-FR", "A1").find((item) => item.id === "g-present")!;
+    const lesson = shapeGrammarLesson({
+      title: "Present tense of parler",
+      summary: "Use parler in the present tense.",
+      hook: { text: "Je parle.", translation: "I speak." },
+      examples: [
+        { text: "je parle!", translation: "I speak." },
+        { text: "Tu parles.", translation: "You speak." },
+        { text: "Il parle.", translation: "He speaks." },
+      ],
+      rule: "Keep parl- and add -e. The infinitive parler uses the same stem.",
+      mnemonic: "Keep parl-.",
+      targetTerms: ["parler"],
+      drills: [
+        { answer: "Je parle.", translation: "I speak." },
+        { answer: "Je parle!", translation: "I speak." },
+        { answer: "Tu parles.", translation: "You speak." },
+        { answer: "Il parle.", translation: "He speaks." },
+        { answer: "Nous parlons.", translation: "We speak." },
+      ],
+    }, { topic, level: "A1", nativeLanguage: "en-US", targetLanguage: "fr-FR" });
+    const segments = GeneratedLessonSchema.parse(lesson).segments;
+    const models = segments.filter((segment) => segment.kind === "example");
+    expect(models.map((segment) => segment.text)).toEqual(["Je parle.", "Tu parles.", "Il parle."]);
+    expect(segments.filter((segment) => segment.phase === "answer").map((segment) => segment.text))
+      .toEqual(["Je parle.", "Tu parles.", "Il parle.", "Nous parlons."]);
+    const rule = segments.find((segment) => lessonDisplayText(segment.text).startsWith("Keep parl- and add"))!;
+    expect(speechSpans(rule.text, rule.language).filter((span) => span.language === "fr-FR").map((span) => span.text.trim()))
+      .toEqual(["parl-", "-e", "parler"]);
   });
 });

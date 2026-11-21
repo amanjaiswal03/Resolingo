@@ -7,6 +7,7 @@ import {
   type GenerateContentResponse,
 } from "@google/genai";
 import {
+  ConversationSkillSchema,
   GeneratedLessonSchema,
   dialogueText,
   languageById,
@@ -29,13 +30,15 @@ import { lessonPrompt } from "./prompts.js";
 
 const SYSTEM_INSTRUCTION = [
   "You are Resolingo's expert multilingual lesson designer.",
-  "Return only a JSON object with title, topic, summary, speakerNames, lines, phrases, and cues.",
+  "Return only a JSON object with title, topic, summary, conversationSkill, speakerNames, lines, phrases, and cues. Use one conversationSkill ID from the lesson prompt.",
   "lines is an array of 4 to 6 dialogue turns. Each line has speaker (speakerA or speakerB), text, translation, and a BCP-47 language code.",
   "phrases has one item for every line. Each phrase has speaker, text, translation, language, note, and chunks.",
+  "A note teaches the meaning and one useful detail about when or how people say the line. Notes, glosses, and transitions before a model are teaching or listening lines, with no request to repeat, guess, or answer.",
   "chunks is optional and varies by line: empty for a short or easy line, otherwise a few meaningful pieces from the end of the sentence, not every word. Never a name-only chunk such as Anna. Each chunk has text and the translation of that chunk alone. A gloss, when needed, contains the chunk in [[lang]] tags and says what it means. Never a bare translation.",
   "recombinations is 0 to 2 new target sentences that combine earlier pieces, each with text and the translation of that new sentence. roleplay, when present, has stimulus (an earlier line), text (the learner's reply), and translation.",
-  "cues has welcome, listen, afterDialogue, buildup, again, closing, and speak.",
-  "speak is 6 to 8 different teaching-language lines that ask the learner to speak. Vary them. Use {translation} and {name} as placeholders. Do not repeat one sentence, and do not include the target-language answer.",
+  "cues has welcome, listen, afterDialogue, buildup, again, closing, speak, and echo. echo is 4 different brief teaching-language invitations to imitate a line the learner just heard.",
+  "speak has 6 to 8 conversational recall cues. Each includes {translation}. Some can include {name}. Vary the situation, instruction, and question styles without giving the target-language answer.",
+  "A phrase can also have a recallCue with a natural situation specific to that line and its exact teaching-language meaning. The learner hears the meaning and a clear model before any of these cues.",
   "Also return speakerNames with teacher, speakerA, and speakerB. speakerA is male and speakerB is female. Each name is one Latin-script word of letters only, and the three names are different.",
   "Use those exact names inside dialogue lines. Do not write Speaker A or Speaker B.",
   "Every target-language word, including a gloss, a swap cue, a recap, and a closing, goes in its own [[lang:BCP-47]]...[[/lang]] span. Never leave a target word in a teaching-language span. Close every tag. Do not nest tags.",
@@ -67,13 +70,14 @@ const GRAMMAR_INSTRUCTION = [
   "You are Resolingo's grammar teacher.",
   "Return only a JSON object for a lesson spoken by one teacher. Do not write a dialogue and do not use speakerA or speakerB as speakers.",
   "Teach the assigned grammar point and no other point. Do not add word order, negation, or a second tense.",
-  "Fields: title, topic, summary, speakerNames, hook, examples, notice, rule, mnemonic, drills, checks, recombinations.",
-  "hook and examples are short target-language sentences with a native translation. The noticing answer must be true for this exact point.",
+  "Fields: title, topic, summary, speakerNames, hook, examples, notice, rule, mnemonic, drills, checks, recombinations, targetTerms.",
+  "hook and examples are distinct short target-language sentences with a native translation. The noticing answer must be true for this exact point.",
   "rule lists every form the examples use. For a verb, teach the full level-appropriate paradigm, one person first and the rest later.",
   "drills has at least 12 items: substitution, a transformation that includes the source sentence, a fill-the-gap with ___, and a which-form question. Disambiguate you as you, to a friend; you all; or you, formally, and she versus they.",
   "The same cue sentence appears at most twice. Vary How would you say, Can you say, and Try saying, and always keep the meaning or the source sentence.",
   "recombinations has 2 new sentences that reuse the rule. Each cue includes the native meaning.",
-  "Every target-language word in a teaching-language line, including a gloss, a rule, a recap, and a closing, is wrapped as [[lang:BCP-47]]...[[/lang]]. Close every tag. Do not nest tags.",
+  "Wrap every target-language span inside a teaching-language line as [[lang:BCP-47]]...[[/lang]], including isolated letters, stems, prefixes, endings, pronouns, and words spelled the same in both languages. Include the hyphen within an affix span. This applies to explanations, questions, answers, and drill cues. Close each tag, and never include teaching-language words inside it.",
+  "targetTerms lists the exact target words and fragments used in teaching-language lines. Include stems and endings with their written hyphens.",
 ].join(" ");
 
 export function lessonGenerationConfig(type: LessonType = "conversation"): GenerateContentConfig {
@@ -96,6 +100,7 @@ function asJson(text: string | undefined): unknown {
   const value: unknown = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const record = value as Record<string, unknown>;
+  if (!ConversationSkillSchema.safeParse(record.conversationSkill).success) delete record.conversationSkill;
   if (typeof record.title === "string") {
     if (typeof record.topic !== "string") record.topic = record.title;
     if (typeof record.summary !== "string") record.summary = record.title;
@@ -211,11 +216,14 @@ export async function generateLessonContent(
   const config = lessonGenerationConfig(input.type);
   let sawInvalid = false;
   let phraseRepair = "";
+  const repair = input.type === "grammar"
+    ? "Return complete grammar source for the assigned topic. Use distinct examples and tag every target-language span with the requested language code."
+    : "The previous response was refused, malformed, or repeated a recent topic. Produce a completely valid lesson with a different topic.";
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const user = attempt === 0
       ? prompt
-      : `${prompt}\n\nREPAIR: ${phraseRepair || "The previous response was refused, malformed, or repeated a recent topic. Produce a completely valid lesson with a different topic."}`;
+      : `${prompt}\n\nREPAIR: ${phraseRepair || repair}`;
     const response = await generator.generateContent({ model, contents: user, config });
     if (blocked(response)) continue;
     let json: unknown;
@@ -277,7 +285,12 @@ export async function generateLessonContent(
         targetLanguage: input.targetLanguage,
         ...(input.type === "conversation" && input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
       });
-    const parsed = GeneratedLessonSchema.safeParse(shaped ?? json);
+    if (!shaped) {
+      sawInvalid = true;
+      logger.warn("lesson_shape_rejected", { type: input.type });
+      continue;
+    }
+    const parsed = GeneratedLessonSchema.safeParse(shaped);
     if (!parsed.success) {
       sawInvalid = true;
       logger.warn("lesson_schema_rejected", {

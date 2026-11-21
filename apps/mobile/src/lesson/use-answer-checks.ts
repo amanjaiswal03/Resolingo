@@ -1,4 +1,4 @@
-import { languageById } from "@resolingo/shared";
+import { checkedSpeakingBonusMs, languageById, speakingPauseMs } from "@resolingo/shared";
 import { requireOptionalNativeModule, type NativeModule } from "expo";
 import { requestRecordingPermissionsAsync, type AudioPlayer } from "expo-audio";
 import { randomUUID } from "expo-crypto";
@@ -21,11 +21,12 @@ type AnswerEvents = {
   onFeedback: (event: { sessionId: string; playing: boolean }) => void;
   onStopped: (event: { sessionId: string }) => void;
 };
+type CheckedWindow = AnswerWindow & { responseSeconds: number; extraSeconds: number };
 type NativeChecks = InstanceType<typeof NativeModule<AnswerEvents>> & {
   supports(language: string): boolean;
   prepare?(language: string): Promise<"legacy" | "dictation" | "unsupported" | "setupFailed">;
   requestSpeechPermission(): Promise<boolean>;
-  start(player: AudioPlayer, id: string, language: string, windows: AnswerWindow[]): Promise<void>;
+  start(player: AudioPlayer, id: string, language: string, windows: CheckedWindow[]): Promise<void>;
   installFeedback?(id: string, clips: LessonVoiceClips): Promise<void>;
   cancelFeedback?(id: string, resume: boolean): Promise<void>;
   stop(id: string): Promise<void>;
@@ -167,8 +168,14 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
         Alert.alert("Answer checking is off", "Allow microphone and speech recognition access in Settings to check spoken answers.");
         return;
       }
-      const windows = currentPlan.windows.map(({ id, startSeconds, endSeconds, expected, feedbackAtSeconds }) =>
-        ({ id, startSeconds, endSeconds, expected, ...(feedbackAtSeconds ? { feedbackAtSeconds } : {}) }));
+      const windows = currentPlan.windows.map(({ id, startSeconds, endSeconds, expected, feedbackAtSeconds }) => {
+        const baseline = speakingPauseMs(expected, currentPlan.language);
+        return {
+          id, startSeconds, endSeconds, feedbackAtSeconds, expected,
+          responseSeconds: baseline / 1_000,
+          extraSeconds: checkedSpeakingBonusMs(baseline) / 1_000,
+        };
+      });
       await native.start(player, id, currentPlan.language, windows);
       if (session.current !== id) {
         await native.stop(id);

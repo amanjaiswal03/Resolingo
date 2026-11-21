@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GeneratedLessonSchema } from "./schemas.js";
+import { speakingPauseMs } from "./speaking-timing.js";
 import {
-  ANSWER_PAUSE_MS,
   MAX_PIMSLEUR_SEGMENTS,
   REVIEW_GAPS,
   arrangePimsleur,
@@ -53,7 +53,7 @@ describe("Pimsleur arrangement", () => {
     { ...lines[1]!, note: "This means straight ahead." },
   ];
 
-  it("opens with the dialogue, drills with a five second pause, and repeats the dialogue", () => {
+  it("opens with the dialogue, models each answer, and gives longer answers more time", () => {
     const segments = arrangePimsleur({
       lines,
       phrases,
@@ -68,11 +68,14 @@ describe("Pimsleur arrangement", () => {
     const closing = segments.filter((segment) => segment.phase === "closing" && segment.speaker !== "teacher").map((segment) => segment.text);
     expect(opening).toEqual(lines.map((line) => line.text));
     expect(closing).toEqual(opening);
-    const prompt = segments.find((segment) => segment.pauseAfterMs === ANSWER_PAUSE_MS && segment.phase === "recall");
+    const prompt = segments.find((segment) => segment.pauseAfterMs && segment.phase === "recall");
     expect(prompt?.speaker).toBe("teacher");
     expect(prompt?.language).toBe("en-US");
     const answer = segments[segments.indexOf(prompt!) + 1];
     expect(answer).toMatchObject({ speaker: "speakerA", text: "Wo ist der Bahnhof?" });
+    expect(prompt?.pauseAfterMs).toBeGreaterThan(segments.find((segment, index) => (
+      segment.pauseAfterMs && segments[index + 1]?.text === "Danke."
+    ))?.pauseAfterMs ?? Infinity);
     expect(answer?.pauseAfterMs).toBeUndefined();
     expect(segments.some((segment) => segment.phase === "buildup" && segment.language === "de-DE")).toBe(false);
     expect(drillsAreUnique(segments)).toBe(true);
@@ -293,29 +296,8 @@ describe("model shaping", () => {
     }, { nativeLanguage: "en-US", targetLanguage: "de-DE" });
     const segments = shaped?.segments ?? [];
     const pauses = segments.filter((segment) => segment.pauseAfterMs);
-    const allowed = new Set([
-      "Can you say Where is the station?",
-      "Can you say Straight ahead?",
-      "Try saying Where is the station.",
-      "Try saying Straight ahead.",
-      "How would you say Where is the station?",
-      "How would you say Straight ahead?",
-      "Your turn.",
-      "Give it a try.",
-      "Imagine you want to tell Anna — what would you say?",
-      "Imagine you want to tell Lukas — what would you say?",
-      "Repeat after me.",
-      "Now you try.",
-      "How would you ask for that?",
-    ]);
     expect(pauses.every((segment) => segment.speaker === "teacher" && segment.kind === "drill")).toBe(true);
-    expect(pauses.every((segment) => allowed.has(segment.text))).toBe(true);
-    const partial = pauses.filter((segment) => {
-      const answer = segments[segments.indexOf(segment) + 1];
-      return answer?.text === "Bahnhof" || answer?.text === "der Bahnhof";
-    });
-    expect(partial.length).toBeGreaterThan(0);
-    expect(partial.every((segment) => !segment.text.includes("Where is the station"))).toBe(true);
+    expect(pauses.some((segment) => /^(Can you say|Try saying|How would you say) Where is the station[.?]$/.test(segment.text))).toBe(true);
     for (let index = 1; index < pauses.length; index += 1) {
       expect(pauses[index]?.text.toLocaleLowerCase()).not.toBe(pauses[index - 1]?.text.toLocaleLowerCase());
     }
@@ -326,22 +308,21 @@ describe("model shaping", () => {
     expect(gloss?.pauseAfterMs).toBeUndefined();
     const glossAt = segments.indexOf(gloss!);
     expect(segments[glossAt - 1]?.text).not.toBe("Bahnhof");
-    expect(segments[glossAt + 1]?.pauseAfterMs).toBeGreaterThan(0);
-    expect(segments[glossAt + 1]?.speaker).toBe("teacher");
-    expect(segments[glossAt + 2]?.text).toBe("Bahnhof");
-    expect(segments.filter((segment) => segment.text === "Bahnhof").length).toBe(1);
+    expect(segments[glossAt + 1]).toMatchObject({ kind: "example", text: "Bahnhof", speaker: "speakerA" });
+    expect(segments.filter((segment) => segment.phase === "buildup" && segment.pauseAfterMs)).toHaveLength(0);
     expect(segments.some((segment) => segment.text === "Anna" || segment.text === "Anna!")).toBe(false);
     expect(segments.filter((segment) => segment.kind === "explanation").every((segment) => segment.pauseAfterMs === undefined)).toBe(true);
     expect(segments.some((segment) => segment.text.includes("obvious"))).toBe(false);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
   });
 
-  it("uses each chunk's translation, and a gloss that names the target", () => {
+  it("explains and models the chunks, then invites a single echo", () => {
     const shaped = shapePimsleurLesson({
       title: "Asking the way",
       topic: "The station",
       summary: "Ask where the train station is.",
       cues: {
+        echo: ["Try the word on its own.", "Copy the rhythm you just heard."],
         speak: [
           "Can you say {translation}?",
           "Try saying {translation}.",
@@ -378,33 +359,23 @@ describe("model shaping", () => {
       const answer = segments[index + 1];
       return answer ? [{ prompt: segment.text, answer: answer.text }] : [];
     });
-    expect(pairs.map((pair) => pair.answer)).toEqual([
-      "Bahnhof",
-      "der Bahnhof",
-      "ist der Bahnhof",
-    ]);
-    expect(segments.filter((segment) => segment.text === "der Bahnhof").length).toBe(1);
-    const station = pairs.find((pair) => pair.answer === "der Bahnhof");
-    expect(station?.prompt.toLowerCase()).toContain("the train station");
-    expect(station?.prompt).not.toContain("Excuse me");
-    expect(station?.answer).toBe("der Bahnhof");
-    const missing = pairs.find((pair) => pair.answer === "Bahnhof");
-    expect(missing?.prompt.toLowerCase()).toContain("train station");
-    expect(missing?.prompt).not.toContain("Excuse me");
-    expect(missing?.prompt).not.toContain("the train station");
+    expect(pairs.map((pair) => pair.answer)).toEqual(["der Bahnhof"]);
+    expect(["Try the word on its own.", "Copy the rhythm you just heard."]).toContain(pairs[0]?.prompt);
+    expect(segments.filter((segment) => segment.phase === "buildup" && segment.kind === "example").map((segment) => segment.text))
+      .toEqual(["Bahnhof", "der Bahnhof", "ist der Bahnhof"]);
     const whole = segments.find((segment) => segment.phase === "recall" && segment.pauseAfterMs);
     expect(whole?.text).toContain("Excuse me, where is the train station");
     expect(segments[segments.indexOf(whole!) + 1]?.text).toBe("Entschuldigung, wo ist der Bahnhof?");
-    const gloss = segments.find((segment) => segment.kind === "explanation" && segment.phase === "buildup");
+    const gloss = segments.find((segment) => segment.kind === "explanation" && segment.phase === "buildup" && segment.text.includes("der Bahnhof"));
     expect(gloss?.text).toContain("[[lang:de-DE]]der Bahnhof[[/lang]]");
     expect(gloss?.text.toLowerCase()).toMatch(/means|is how you say/);
     expect(gloss?.text.trim()).not.toBe("the train station");
     expect(gloss?.pauseAfterMs).toBeUndefined();
     const glossAt = segments.indexOf(gloss!);
     expect(segments[glossAt - 1]?.text).not.toBe("der Bahnhof");
-    expect(segments[glossAt + 1]?.text.toLowerCase()).toContain("the train station");
-    expect(segments[glossAt + 1]?.pauseAfterMs).toBeGreaterThan(0);
-    expect(segments[glossAt + 2]?.text).toBe("der Bahnhof");
+    expect(segments[glossAt + 1]).toMatchObject({ kind: "example", text: "der Bahnhof" });
+    expect(segments[glossAt + 2]?.pauseAfterMs).toBeGreaterThan(0);
+    expect(segments[glossAt + 3]).toMatchObject({ kind: "drill", text: "der Bahnhof" });
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
 
     const bare = shapePimsleurLesson({
@@ -433,9 +404,8 @@ describe("model shaping", () => {
       const answer = bare?.segments[index + 1];
       return answer?.text === "der Bahnhof" ? [segment.text] : [];
     });
-    expect(barePairs.length).toBeGreaterThan(0);
-    expect(barePairs.every((prompt) => !prompt.includes("Excuse me") && !/train station/i.test(prompt))).toBe(true);
-    expect(barePairs.every((prompt) => !prompt.includes("{translation}"))).toBe(true);
+    expect(barePairs).toHaveLength(0);
+    expect(bare?.segments).toContainEqual(expect.objectContaining({ kind: "example", text: "der Bahnhof" }));
   });
 
   it("varies the breakdown, drops a name, and plays each chunk once", () => {
@@ -469,7 +439,7 @@ describe("model shaping", () => {
       .filter((segment) => segment.phase === "buildup" || segment.phase === "answer")
       .map((segment) => `${segment.speaker}: ${segment.text}${segment.pauseAfterMs ? " [pause]" : ""}`);
     expect(script).toContain("speakerA: der Bahnhof");
-    expect(script.filter((line) => line === "speakerA: der Bahnhof").length).toBe(1);
+    expect(segments.filter((segment) => segment.kind === "example" && segment.text === "der Bahnhof")).toHaveLength(1);
     expect(script).toContain("speakerA: wo ist");
     expect(script.some((line) => line.includes("Anna"))).toBe(false);
     expect(segments.some((segment) => segment.phase === "buildup" && segment.text === "Geradeaus.")).toBe(false);
@@ -477,11 +447,30 @@ describe("model shaping", () => {
     expect(segments.some((segment) => segment.phase === "dialogue" && segment.text === "Anna!")).toBe(true);
     expect(segments.some((segment) => segment.phase === "answer" && segment.text === "Anna!")).toBe(false);
     const stationPrompt = segments.find((segment) => segment.pauseAfterMs && segments[segments.indexOf(segment) + 1]?.text === "der Bahnhof");
-    expect(stationPrompt?.text.toLowerCase()).toContain("the station");
-    expect(stationPrompt?.text).not.toContain("where is the station");
+    expect(segments[segments.indexOf(stationPrompt!) - 1]).toMatchObject({ kind: "example", text: "der Bahnhof" });
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
     expect(segments.length).toBeLessThanOrEqual(MAX_PIMSLEUR_SEGMENTS);
+  });
+
+  it("uses a listening-only breakdown and a situation-specific cue on the next line", () => {
+    const first = { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?" };
+    const second = { speaker: "speakerB", text: "Gehen Sie geradeaus.", translation: "Go straight ahead." };
+    const recallCue = "They're waiting for directions. Tell them: Go straight ahead.";
+    const segments = shapePimsleurLesson({
+      title: "Walking to the station",
+      lines: [first, second],
+      phrases: [
+        { ...first, chunks: [{ text: "der Bahnhof", translation: "the station" }] },
+        { ...second, recallCue, chunks: [{ text: "geradeaus", translation: "straight ahead" }] },
+      ],
+    }, { nativeLanguage: "en-US", targetLanguage: "de-DE" })!.segments;
+    expect(segments.filter((segment) => segment.phase === "buildup" && segment.kind === "narration")).toHaveLength(1);
+    const model = segments.findIndex((segment) => segment.phase === "buildup" && segment.text === "geradeaus");
+    expect(segments[model]).toMatchObject({ kind: "example" });
+    expect(segments[model + 1]).toMatchObject({ kind: "example", text: second.text });
+    expect(segments[model + 2]).toMatchObject({ kind: "drill", text: recallCue });
+    expect(segments[model + 3]).toMatchObject({ kind: "drill", text: second.text });
   });
 
   it("recalls earlier lines, recombines them, and warms up with a due phrase", () => {
@@ -509,14 +498,15 @@ describe("model shaping", () => {
     const segments = shaped?.segments ?? [];
     const priorTexts = ["Einen Kaffee, bitte.", "Die Rechnung, bitte.", "Wo ist die Toilette?"];
     const warmup = segments.findIndex((segment) => segment.phase === "warmup" && segment.pauseAfterMs);
-    expect(segments[warmup - 1]?.text).toMatch(/remember|recall|earlier|last time/i);
+    expect(segments.slice(0, warmup).some((segment) => /remember|recall|earlier|last time/i.test(segment.text))).toBe(true);
+    expect(segments[warmup - 1]).toMatchObject({ kind: "example", text: "Einen Kaffee, bitte." });
     expect(segments[warmup]?.text.toLowerCase()).toContain("a coffee, please");
     expect(segments[warmup + 1]).toMatchObject({ text: "Einen Kaffee, bitte.", phase: "warmup" });
     expect(segments[warmup + 1]?.speaker).not.toBe("teacher");
     const dialogueAt = segments.findIndex((segment) => segment.phase === "dialogue");
     expect(warmup).toBeLessThan(dialogueAt);
     expect(segments.slice(warmup, dialogueAt).some((segment) => /today's conversation/i.test(segment.text))).toBe(true);
-    const mixed = segments.findIndex((segment) => segment.text === "Wo ist die Toilette?");
+    const mixed = segments.findIndex((segment) => segment.kind === "drill" && segment.text === "Wo ist die Toilette?");
     expect(mixed).toBeGreaterThan(dialogueAt);
     expect(segments[mixed - 1]?.text).toMatch(/previous lesson|earlier lesson/i);
     expect(segments[mixed - 1]?.text.toLowerCase()).toContain("where is the toilet");
@@ -529,9 +519,11 @@ describe("model shaping", () => {
     const again = segments.findIndex((segment, index) => index > first && segment.phase === "review" && segment.text === "Wo ist der Bahnhof?");
     expect(again).toBeGreaterThan(first);
     expect(segments.slice(first + 1, again).some((segment) => segment.text === "Geradeaus.")).toBe(true);
-    const fresh = segments.findIndex((segment) => segment.text === "Wo ist das Hotel?");
+    const fresh = segments.findIndex((segment) => segment.kind === "drill" && segment.text === "Wo ist das Hotel?");
     expect(segments[fresh - 1]?.pauseAfterMs).toBeGreaterThan(0);
     expect(segments[fresh - 1]?.text.toLowerCase()).toContain("where is the hotel");
+    expect(segments[fresh - 2]).toMatchObject({ kind: "example", text: "Wo ist das Hotel?" });
+    expect(segments[fresh - 3]).toMatchObject({ kind: "explanation", speaker: "teacher" });
     const role = segments.findIndex((segment) => segment.phase === "roleplay" && segment.text === "Geradeaus.");
     expect(segments[role - 1]?.text).toBe("Lukas asks you: Where is the station. Tell him: Straight ahead.");
     expect(segments[role - 1]?.pauseAfterMs).toBeGreaterThan(0);
@@ -547,6 +539,14 @@ describe("model shaping", () => {
     expect(recallPromptsCiteMeanings(segments)).toBe(true);
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
-    expect(segments.filter((segment) => segment.pauseAfterMs).every((segment) => segment.speaker === "teacher")).toBe(true);
+    for (const [index, prompt] of segments.entries()) {
+      if (!prompt.pauseAfterMs) continue;
+      const answer = segments[index + 1]!;
+      expect(prompt.speaker).toBe("teacher");
+      expect(prompt.pauseAfterMs).toBe(speakingPauseMs(answer.text, answer.language));
+      expect(segments.slice(0, index)).toContainEqual(expect.objectContaining({
+        kind: "example", text: answer.text, language: answer.language,
+      }));
+    }
   });
 });

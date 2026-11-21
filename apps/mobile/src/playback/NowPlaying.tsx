@@ -175,7 +175,7 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
               <Title style={styles.sheetTitle} numberOfLines={2}>{lesson?.title ?? "Opening lesson"}</Title>
             </View>
           </GestureDetector>
-          {resolved ? <Transcript lesson={resolved} activeSegmentId={activeSegmentId} onJump={(id) => setJumpTo({ id, token: Date.now() })} /> : <View style={styles.loading}><ActivityIndicator size="large" color={theme.primary} /><Body muted>Loading lesson...</Body></View>}
+          {resolved ? <Transcript lesson={resolved} activeSegmentId={activeSegmentId} onJump={(id) => setJumpTo({ id, token: Date.now() })} /> : null}
         </View>
         <View style={styles.dock}>
           <GestureDetector gesture={playerPan}>
@@ -192,14 +192,18 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
                   </View>
                   <View style={styles.transport}>
                     <View style={styles.skip}><SkipIcon direction="back" color={theme.text} /></View>
-                    <View style={[styles.bigPlay, { backgroundColor: theme.primary }]}><Body style={[styles.bigPlayIcon, styles.playNudge, { color: theme.onPrimary }]}>▶</Body></View>
+                    <View accessible accessibilityRole="progressbar" accessibilityLabel="Loading lesson audio" style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
+                      <ActivityIndicator size="large" color={theme.onPrimary} />
+                    </View>
                     <View style={styles.skip}><SkipIcon direction="forward" color={theme.text} /></View>
                   </View>
                 </View>
               ) : (
                 <View pointerEvents="none" style={[styles.waiting, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
                   <Body style={styles.waitingTitle} numberOfLines={1}>{lesson?.title ?? "Opening lesson"}</Body>
-                  <Body muted style={styles.waitingMeta}>Loading lesson...</Body>
+                  <View accessible accessibilityRole="progressbar" accessibilityLabel="Loading lesson audio" style={styles.waitingSpinner}>
+                    <ActivityIndicator color={theme.primary} />
+                  </View>
                 </View>
               )}
             </View>
@@ -288,7 +292,6 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 26, lineHeight: 31 },
   transcript: { flex: 1 },
   transcriptContent: { gap: 16, paddingTop: 12, paddingBottom: 24 },
-  loading: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14 },
   player: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 22, paddingTop: 18, gap: 10 },
   scrubber: { height: 28, justifyContent: "center" },
   track: { height: 5, borderRadius: 3 },
@@ -299,11 +302,9 @@ const styles = StyleSheet.create({
   transport: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 28, paddingTop: 6 },
   skip: { width: 64, height: 64, alignItems: "center", justifyContent: "center" },
   bigPlay: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center" },
-  bigPlayIcon: { fontSize: 36, lineHeight: 42, fontWeight: "800" },
-  playNudge: { marginLeft: 4 },
-  waiting: { minHeight: MINI_PLAYER_HEIGHT, justifyContent: "center", paddingHorizontal: 16, gap: 2, borderTopWidth: StyleSheet.hairlineWidth },
-  waitingTitle: { fontWeight: "700" },
-  waitingMeta: { fontSize: 13, lineHeight: 18 },
+  waiting: { minHeight: MINI_PLAYER_HEIGHT, flexDirection: "row", alignItems: "center", paddingLeft: 16, paddingRight: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  waitingSpinner: { minWidth: 48, alignItems: "center" },
+  waitingTitle: { flex: 1, fontWeight: "700" },
   jump: { position: "absolute", right: 8, bottom: 12, width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", borderWidth: StyleSheet.hairlineWidth, shadowColor: "#08152F", shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 4 },
   jumpIcon: { fontSize: 20, lineHeight: 24, fontWeight: "700" },
 });

@@ -175,18 +175,24 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       ...(type === "conversation" ? { priorReviews: await loadDueReviewPhrases(payload.uid, targetLanguage, nativeLanguage) } : {}),
       ...(phrase ? { phrase } : {}),
     });
-    const voiced = applyTargetVoices(content.segments, nativeLanguage, targetLanguage);
-    if (voiced.leftover.length > 0) {
-      logger.warn("native_span_target_language", {
-        lessonId: payload.lessonId,
-        leftover: voiced.leftover,
-      });
+    if (type !== "grammar") {
+      const voiced = applyTargetVoices(content.segments, nativeLanguage, targetLanguage);
+      if (voiced.leftover.length > 0) {
+        logger.warn("native_span_target_language", {
+          lessonId: payload.lessonId,
+          leftover: voiced.leftover,
+        });
+      }
+      content.segments = voiced.segments;
     }
-    content.segments = voiced.segments;
     validateLessonLanguages(content, nativeLanguage, targetLanguage);
     await lessonRef.update({
       title: content.title,
       topic: content.topic,
+      ...(content.conversationSkill ? { conversationSkill: content.conversationSkill } : {}),
+      nativeLanguage,
+      targetLanguage,
+      level,
       ...(content.ruleId ? { ruleId: content.ruleId } : {}),
       summary: content.summary,
       speakerNames: content.speakerNames,

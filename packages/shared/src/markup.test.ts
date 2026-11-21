@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayLessonSegment, lessonDisplayText, markupIssues, repairMarkup, speechSpans } from "./markup.js";
+import { applyTargetVoices, displayLessonSegment, lessonDisplayText, markupIssues, repairMarkup, speechSpans } from "./markup.js";
 
 describe("pronunciation markup", () => {
   it("shows the line without tags", () => {
@@ -30,6 +30,14 @@ describe("pronunciation markup", () => {
 
   it("leaves an unmarked line as one span", () => {
     expect(speechSpans("Hello there.", "en-US")).toEqual([{ language: "en-US", text: "Hello there." }]);
+  });
+
+  it("keeps an accented teaching-language translation in its own language", () => {
+    const { segments } = applyTargetVoices([
+      { language: "de-DE", text: "müde", translation: "fatigué" },
+      { language: "fr-FR", text: 'Cela signifie "fatigué".' },
+    ], "fr-FR", "de-DE");
+    expect(speechSpans(segments[1]!.text, "fr-FR")).toEqual([{ language: "fr-FR", text: 'Cela signifie "fatigué".' }]);
   });
 
   it("rejects nested, empty, unknown, and unclosed tags", () => {

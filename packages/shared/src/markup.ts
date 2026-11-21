@@ -93,10 +93,7 @@ function letterTokens(text: string): string[] {
 
 function distinctive(token: string, nativeWords: ReadonlySet<string>): boolean {
   const folded = foldToken(token);
-  if (folded.length < 2) return false;
-  if (/[^\u0000-\u007F]/u.test(token)) return true;
-  if (SHARED_WITH_ENGLISH.has(folded) || nativeWords.has(folded)) return false;
-  return true;
+  return folded.length >= 2 && !SHARED_WITH_ENGLISH.has(folded) && !nativeWords.has(folded);
 }
 
 function tagRanges(text: string): Array<{ start: number; end: number }> {
@@ -112,11 +109,15 @@ function overlaps(start: number, end: number, ranges: Array<{ start: number; end
   return ranges.some((range) => start < range.end && end > range.start);
 }
 
+const EDGE_AFFIX = /^(?:[-‐][\p{L}\p{M}]+|[\p{L}\p{M}]+[-‐])$/u;
+
 function phrasePattern(phrase: string): RegExp | null {
-  const words = letterTokens(phrase);
+  const isAffix = EDGE_AFFIX.test(phrase);
+  const words = isAffix ? [phrase] : letterTokens(phrase);
   if (words.length === 0) return null;
   const body = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s.,!?;:…]+");
-  return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, "giu");
+  const boundary = isAffix ? "[\\p{L}\\p{M}\\p{N}\\p{Pd}]" : "[\\p{L}\\p{M}\\p{N}]";
+  return new RegExp(`(?<!${boundary})${body}(?!${boundary})`, "giu");
 }
 
 /**
@@ -133,7 +134,9 @@ export function tagTargetLanguage(
 ): string {
   if (base === target || !text.trim() || vocabulary.length === 0) return text;
   const occupied = tagRanges(text);
-  const phrases = [...new Set(vocabulary.map((item) => item.trim()).filter((item) => letterTokens(item).some((token) => distinctive(token, nativeWords))))]
+  const phrases = [...new Set(vocabulary.map((item) => item.trim()).filter((item) => (
+    EDGE_AFFIX.test(item) || letterTokens(item).some((token) => distinctive(token, nativeWords))
+  )))]
     .sort((left, right) => right.length - left.length);
   const matches: Array<{ start: number; end: number }> = [];
   for (const phrase of phrases) {
@@ -227,13 +230,15 @@ export function applyTargetVoices<T extends VoicedSegment>(
   segments: readonly T[],
   nativeLanguage: LanguageId,
   targetLanguage: LanguageId,
+  additionalTerms: readonly string[] = [],
 ): { segments: T[]; leftover: string[] } {
   const { phrases, nativeWords } = vocabularyOf(segments, targetLanguage);
+  const vocabulary = [...phrases, ...additionalTerms];
   const leftover: string[] = [];
   const next = segments.map((segment) => {
     if (segment.language !== nativeLanguage) return segment;
-    const text = tagTargetLanguage(segment.text, nativeLanguage, targetLanguage, phrases, nativeWords);
-    const missed = untaggedTargetTokens(text, nativeLanguage, targetLanguage, phrases, nativeWords);
+    const text = tagTargetLanguage(segment.text, nativeLanguage, targetLanguage, vocabulary, nativeWords);
+    const missed = untaggedTargetTokens(text, nativeLanguage, targetLanguage, vocabulary, nativeWords);
     for (const token of missed) leftover.push(token);
     return text === segment.text ? segment : { ...segment, text };
   });

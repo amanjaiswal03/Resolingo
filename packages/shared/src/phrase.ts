@@ -3,7 +3,8 @@ import type { CefrLevel, LessonSegment } from "./schemas.js";
 import { MAX_LESSON_SEGMENTS } from "./schemas.js";
 import { languageById } from "./languages.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
-import { ANSWER_PAUSE_MS, REVIEW_GAPS } from "./pimsleur.js";
+import { REVIEW_GAPS } from "./pimsleur.js";
+import { speakingPauseMs } from "./speaking-timing.js";
 import { normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 
 /** Lookups kept on the profile. Older ones are deleted on the next save. */
@@ -683,7 +684,7 @@ export function shapePhraseLesson(
     if (!cue) return;
     const answerPhase = phase === "practice" ? "answer" : phase;
     const before = segments.length;
-    push({ kind: "drill", phase, language: context.nativeLanguage, text: cue, delivery: "curious" }, ANSWER_PAUSE_MS);
+    push({ kind: "drill", phase, language: context.nativeLanguage, text: cue, delivery: "curious" }, speakingPauseMs(drill.answer, context.targetLanguage));
     const placed = push({
       kind: "drill",
       phase: answerPhase,

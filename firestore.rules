@@ -50,6 +50,27 @@ service cloud.firestore {
         allow read: if owns(userId);
         allow write: if false;
       }
+
+      match /skillReviews/{pair}/items/{itemId} {
+        allow read: if owns(userId);
+        allow create, update: if owns(userId)
+          && pair.matches('^[a-z]{2,3}-[A-Z]{2}_[a-z]{2,3}-[A-Z]{2}$')
+          && itemId.matches('^[a-f0-9]{16}$')
+          && validSkillReview(request.resource.data);
+      }
+    }
+
+    function validSkillReview(data) {
+      return data.keys().hasOnly(['attemptId', 'lastRating', 'lastMode', 'recallRating', 'reviewedAt', 'dueAt', 'intervalDays'])
+        && data.keys().hasAll(['attemptId', 'lastRating', 'lastMode', 'recallRating', 'reviewedAt', 'dueAt', 'intervalDays'])
+        && data.attemptId is string && data.attemptId.size() == 36
+        && data.lastRating in ['got-it', 'almost', 'forgot']
+        && data.lastMode in ['recall', 'recognition']
+        && (data.recallRating == null || data.recallRating in ['got-it', 'almost', 'forgot'])
+        && (data.lastMode != 'recall' || data.recallRating == data.lastRating)
+        && data.reviewedAt is int && data.reviewedAt >= 0
+        && data.intervalDays is int && data.intervalDays >= 1 && data.intervalDays <= 32
+        && data.dueAt is int && data.dueAt == data.reviewedAt + data.intervalDays * 86400000;
     }
 
     match /{document=**} {

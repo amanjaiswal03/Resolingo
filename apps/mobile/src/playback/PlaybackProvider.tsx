@@ -20,6 +20,10 @@ type Playback = {
   expand: () => void;
   collapse: () => void;
   close: () => void;
+  pause: () => void;
+  registerPause: (handler: () => void) => () => void;
+  stopExample: () => void;
+  registerExamplePause: (handler: () => void) => () => void;
 };
 
 const PlaybackContext = createContext<Playback | null>(null);
@@ -45,6 +49,8 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
   const [openedLessonIds, setOpenedLessonIds] = useState<ReadonlySet<string>>(new Set());
   const [openedLessonsReady, setOpenedLessonsReady] = useState(false);
   const lessonIdRef = useRef<string | null>(null);
+  const pauseRef = useRef<(() => void) | null>(null);
+  const examplePauseRef = useRef<(() => void) | null>(null);
   const openedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     let active = true;
@@ -81,13 +87,27 @@ export function PlaybackProvider({ children }: PropsWithChildren) {
     setLessonId(null);
     setExpanded(false);
   }, []);
+  const registerPause = useCallback((handler: () => void) => {
+    pauseRef.current = handler;
+    return () => {
+      if (pauseRef.current === handler) pauseRef.current = null;
+    };
+  }, []);
+  const pause = useCallback(() => pauseRef.current?.(), []);
+  const stopExample = useCallback(() => examplePauseRef.current?.(), []);
+  const registerExamplePause = useCallback((handler: () => void) => {
+    examplePauseRef.current = handler;
+    return () => {
+      if (examplePauseRef.current === handler) examplePauseRef.current = null;
+    };
+  }, []);
   const onTabs = segments[0] === "(tabs)";
   const showingBar = lessonId != null && !expanded;
   const dockBottom = showingBar ? (onTabs ? TAB_BAR_HEIGHT : insets.bottom) : 0;
   const contentInset = showingBar ? MINI_PLAYER_HEIGHT + (onTabs ? 0 : insets.bottom) : 0;
   const value = useMemo(
-    () => ({ lessonId, expanded, contentInset, dockBottom, open, openedLessonIds, openedLessonsReady, expand, collapse, close }),
-    [close, collapse, contentInset, dockBottom, expand, expanded, lessonId, open, openedLessonIds, openedLessonsReady],
+    () => ({ lessonId, expanded, contentInset, dockBottom, open, openedLessonIds, openedLessonsReady, expand, collapse, close, pause, registerPause, stopExample, registerExamplePause }),
+    [close, collapse, contentInset, dockBottom, expand, expanded, lessonId, open, openedLessonIds, openedLessonsReady, pause, registerExamplePause, registerPause, stopExample],
   );
   return <PlaybackContext.Provider value={value}>{children}</PlaybackContext.Provider>;
 }

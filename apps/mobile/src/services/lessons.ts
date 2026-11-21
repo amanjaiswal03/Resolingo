@@ -1,4 +1,4 @@
-import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, type FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, where, type FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
 import { getDownloadURL, ref } from "@react-native-firebase/storage";
 import { LessonSchema, type Lesson, type UserProfile } from "@resolingo/shared";
 import { firestore, storage } from "./firebase";
@@ -56,6 +56,24 @@ export function subscribeLesson(uid: string, lessonId: string, callback: (lesson
     } catch {
       onError?.(new Error(`Could not read lesson ${lessonId}.`));
     }
+  }, onError);
+}
+
+export function subscribeCompletedLessons(
+  uid: string,
+  count: number,
+  callback: (lessons: Lesson[], hasMore: boolean) => void,
+  onError: (error: Error) => void,
+): () => void {
+  const completed = query(collection(firestore, "users", uid, "lessons"),
+    where("completed", "==", true), orderBy("updatedAt", "desc"), limit(count + 1));
+  return onSnapshot(completed, (snapshot) => {
+    const lessons: Lesson[] = [];
+    for (const document of snapshot.docs.slice(0, count)) {
+      try { lessons.push(mapLesson(document)); }
+      catch { continue; }
+    }
+    callback(lessons, snapshot.size > count);
   }, onError);
 }
 

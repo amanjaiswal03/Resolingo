@@ -5,7 +5,7 @@ export type AnswerWindow = {
   id: string;
   startSeconds: number;
   endSeconds: number;
-  feedbackAtSeconds?: number;
+  feedbackAtSeconds: number;
   expected: string;
 };
 
@@ -45,10 +45,11 @@ export function answerPlan(segments: LessonSegment[], clips: PlaybackClip[], dur
     language = answer.language;
     windows.push({
       id: prompt.id,
-      // Stay inside the baked silence, including for the two-second buildup drills.
+      // Keep the cue and microphone inside the baked silence, including on older lessons.
       startSeconds: (clipEndMs - pause + 60) / 1_000,
       endSeconds: (clipEndMs - 220) / 1_000,
-      ...(clips[index + 2] && durationsMs[index + 1] ? { feedbackAtSeconds: (clipEndMs + durationsMs[index + 1]!) / 1_000 } : {}),
+      // Leave some silence for the player to stop before the model starts.
+      feedbackAtSeconds: (clipEndMs - 100) / 1_000,
       expected,
       answerId: answer.id,
       ...(answer.translation ? { translation: lessonDisplayText(answer.translation) } : {}),

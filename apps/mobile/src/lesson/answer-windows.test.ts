@@ -17,12 +17,12 @@ const example: LessonSegment = {
 };
 
 describe("spoken answer windows", () => {
-  it("starts after the prompt's speech and ends before the example on the joined track", () => {
+  it("leaves room for feedback before the model, even when the model ends the lesson", () => {
     const segments = [intro, prompt, example];
     expect(answerPlan(segments, playbackClips(segments), [1_000, 7_000, 2_000])).toEqual({
       language: "de-DE",
       windows: [{
-        id: "prompt", expected: "Die Rechnung, bitte.", startSeconds: 3.06, endSeconds: 7.78,
+        id: "prompt", expected: "Die Rechnung, bitte.", startSeconds: 3.06, endSeconds: 7.78, feedbackAtSeconds: 7.9,
         answerId: "example", translation: "The bill, please.", modelAudioUrl: example.audioUrl,
       }],
     });
@@ -44,6 +44,8 @@ describe("spoken answer windows", () => {
     ]);
     const plan = answerPlan(segments, playbackClips(segments), segments.map(() => 3_000));
     expect(plan?.windows.map(({ id }) => id)).toEqual(phases.map((phase) => `prompt-${phase}`));
+    expect(plan?.windows.map(({ feedbackAtSeconds }) => feedbackAtSeconds))
+      .toEqual(phases.map((_, index) => (6_000 * index + 2_900) / 1_000));
   });
 
   it("accepts a model answer at the beginning of shared scene audio", () => {
@@ -52,6 +54,7 @@ describe("spoken answer windows", () => {
     expect(answerPlan(segments, playbackClips(segments), [7_000, 3_000])?.windows[0]).toMatchObject({
       answerId: "example",
       expected: "Die Rechnung, bitte.",
+      feedbackAtSeconds: 6.9,
     });
     expect(answerPlan(segments, playbackClips(segments), [7_000, 3_000])?.windows[0]?.modelAudioUrl).toBeUndefined();
   });

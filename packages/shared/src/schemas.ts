@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConversationSkillSchema } from "./conversation-skills.js";
 import { LanguageIdSchema } from "./languages.js";
 import { normalizeSpeakerNames } from "./speakers.js";
 
@@ -59,6 +60,7 @@ export const SpeakerNamesField = z.preprocess((value) => normalizeSpeakerNames(v
 export const GeneratedLessonSchema = z.object({
   title: z.string().min(3).max(90),
   topic: z.string().min(3).max(160),
+  conversationSkill: ConversationSkillSchema.optional(),
   /** Catalog id for a grammar lesson, so later reviews can name the rule. */
   ruleId: z.string().min(1).max(40).optional(),
   summary: z.string().min(5).max(280),
@@ -93,6 +95,10 @@ export type UserProfile = z.infer<typeof UserProfileSchema>;
 export const LessonSchema = z.object({
   id: z.string().min(1),
   type: LessonTypeSchema,
+  conversationSkill: ConversationSkillSchema.optional(),
+  nativeLanguage: LanguageIdSchema.optional(),
+  targetLanguage: LanguageIdSchema.optional(),
+  level: CefrLevelSchema.optional(),
   status: LessonStatusSchema,
   progress: z.number().int().min(0).max(100),
   quotaDate: z.string(),

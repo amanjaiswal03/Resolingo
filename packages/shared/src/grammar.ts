@@ -1,11 +1,11 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel } from "./schemas.js";
-import { applyTargetVoices, repairMarkup } from "./markup.js";
+import { applyTargetVoices, lessonDisplayText, repairMarkup, speechSpans } from "./markup.js";
 import {
-  ANSWER_PAUSE_MS,
   MAX_PIMSLEUR_SEGMENTS,
   scheduleReviewSlots,
 } from "./pimsleur.js";
+import { speakingPauseMs } from "./speaking-timing.js";
 import type { LessonSegment } from "./schemas.js";
 import { normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 
@@ -117,7 +117,7 @@ function withPrerequisites(rows: Array<Omit<GrammarTopic, "level" | "prerequisit
       ...row,
       level,
       prerequisites: rows.slice(0, index).map((earlier) => earlier.title),
-      ...(notes ? { insight: notes.insight, forms: notes.forms, pitfall: notes.pitfall } : {}),
+      ...(notes ? { insight: lessonDisplayText(notes.insight), forms: notes.forms, pitfall: notes.pitfall } : {}),
     };
   });
 }
@@ -184,6 +184,7 @@ export type GrammarSource = {
   notice: string;
   rule: string;
   mnemonic: string;
+  targetTerms?: string[];
   exception?: string;
   drills: Drill[];
   checks: RuleCheck[];
@@ -196,6 +197,10 @@ function textOf(value: unknown): string {
 
 function meaningOf(value: string): string {
   return value.replace(/[.!?？。]+$/u, "").trim();
+}
+
+function spokenKey(text: string): string {
+  return meaningOf(lessonDisplayText(text)).normalize("NFC").toLocaleLowerCase();
 }
 
 function applyAddress(meaning: string, kind: Address): string {
@@ -272,7 +277,7 @@ function uniqueExamples(items: Example[], limit: number): Example[] {
   const seen = new Set<string>();
   const kept: Example[] = [];
   for (const item of items) {
-    const key = item.text.toLocaleLowerCase();
+    const key = spokenKey(item.text);
     if (seen.has(key)) continue;
     seen.add(key);
     kept.push(item);
@@ -306,7 +311,7 @@ export function parseGrammarSource(value: unknown, topic: GrammarTopic, level: C
       const row = item as Record<string, unknown>;
       const cue = textOf(row.cue ?? row.prompt);
       const answer = textOf(row.answer);
-      return cue && answer ? { cue: cue.slice(0, 220), answer: answer.slice(0, 180) } : null;
+      return cue && answer ? { cue: cue.slice(0, 420), answer: answer.slice(0, 420) } : null;
     })
     .filter((item): item is RuleCheck => Boolean(item))
     .slice(0, 2);
@@ -314,6 +319,9 @@ export function parseGrammarSource(value: unknown, topic: GrammarTopic, level: C
   const mnemonic = textOf(record.mnemonic) || rule.split(/[.。]/u)[0]?.trim() || rule;
   if (!rule || !mnemonic) return null;
   const exception = textOf(record.exception);
+  const targetTerms = Array.isArray(record.targetTerms)
+    ? record.targetTerms.map(textOf).filter((term) => term.length > 0 && term.length <= 80).slice(0, 80)
+    : [];
   const names = normalizeSpeakerNames(record.speakerNames);
   const title = textOf(record.title) || topic.title;
   return {
@@ -323,19 +331,27 @@ export function parseGrammarSource(value: unknown, topic: GrammarTopic, level: C
     teacherName: names.teacher,
     hook,
     examples,
-    notice: textOf(record.notice) || rule,
-    rule: rule.slice(0, 320),
-    mnemonic: mnemonic.slice(0, 160),
-    ...(exception && grammarLevelAllowsException(level) ? { exception: exception.slice(0, 180) } : {}),
+    notice: (textOf(record.notice) || rule).slice(0, 640),
+    rule: rule.slice(0, 640),
+    mnemonic: mnemonic.slice(0, 420),
+    ...(targetTerms.length > 0 ? { targetTerms } : {}),
+    ...(exception && grammarLevelAllowsException(level) ? { exception: exception.slice(0, 420) } : {}),
     drills,
-    checks: checks.length > 0 ? checks : [{ cue: "What is the pattern?", answer: mnemonic.slice(0, 180) }],
+    checks: checks.length > 0 ? checks : [{ cue: "What is the pattern?", answer: mnemonic.slice(0, 420) }],
     recombinations,
   };
 }
 
-function gloss(example: Example, language: LanguageId): string {
-  const phrase = example.text.replace(/[.!?]+$/u, "").trim();
-  return `[[lang:${language}]]${phrase}[[/lang]] means "${meaningOf(example.translation)}".`.slice(0, 400);
+function exampleMeaning(example: Example): string {
+  return `That means "${meaningOf(example.translation)}".`;
+}
+
+function inLanguage(language: LanguageId, text: string): string {
+  return `[[lang:${language}]]${text}[[/lang]]`;
+}
+
+function german(text: string): string {
+  return inLanguage("de-DE", text);
 }
 
 type PracticeMode = "produce" | "transform" | "gap";
@@ -389,21 +405,21 @@ const OFF_TOPIC = /second position|second idea|word order|where does the verb|ni
 const SEIN: Paradigm = {
   title: "Sein, to be",
   summary: "The present tense of sein for one person, then for more than one, including the formal you.",
-  welcome: "Today we'll learn how to use sein, to be.",
-  insight: "Sein does not add a regular ending. The word itself changes: bin for ich, bist for du, and ist for er, sie, and es.",
+  welcome: `Today we'll learn how to use ${german("sein")}, to be.`,
+  insight: `${german("Sein")} does not add a regular ending. The word itself changes: ${german("bin")} for ${german("ich")}, ${german("bist")} for ${german("du")}, and ${german("ist")} for ${german("er, sie")} and ${german("es")}.`,
   forms: "ich bin, du bist, er ist, sie ist, es ist, wir sind, ihr seid, sie sind, Sie sind",
   pitfall: "sie ist is she. sie sind is they. Sie sind, written with a capital, is you, formally. Learners also invent a regular ending instead of bin, bist, and ist.",
   reject: /ending changes|regular ending|second position|second idea|word order/i,
   offTopic: OFF_TOPIC,
-  singularRule: "For one person: ich bin, du bist when you talk to a friend, and sie ist. er ist and es ist use that same ist.",
+  singularRule: `For one person: ${german("ich bin, du bist")} when you talk to a friend, and ${german("sie ist")}. ${german("er ist")} and ${german("es ist")} use that same ${german("ist")}.`,
   pluralBridge: "That is one person. Now more than one person, and the formal you.",
-  pluralQuestion: "Sie ist and sie sind look similar. What changes?",
-  pluralInsight: "sie ist is she, one person. sie sind is they. When Sie is written as the formal you, you still say Sie sind.",
-  pluralRule: "For more than one: wir sind, ihr seid for you all, and sie sind for they. Speaking formally, you say Sie sind.",
-  mnemonic: "bin, bist, ist. A different word for each person, not an ending added on.",
+  pluralQuestion: `${german("Sie ist")} and ${german("sie sind")} look similar. What changes?`,
+  pluralInsight: `${german("sie ist")} is she, one person. ${german("sie sind")} is they. When ${german("Sie")} is written as the formal you, you still say ${german("Sie sind")}.`,
+  pluralRule: `For more than one: ${german("wir sind, ihr seid")} for you all, and ${german("sie sind")} for they. Speaking formally, you say ${german("Sie sind")}.`,
+  mnemonic: `${german("bin, bist, ist")}. A different word for each person, not an ending added on.`,
   recap: [
-    "Here is sein, to be. One person: ich bin, du bist, er ist, sie ist, es ist. More than one: wir sind, ihr seid, sie sind, and Sie sind when you are formal.",
-    "Hold onto the chant: bin, bist, ist, sind, seid.",
+    `Here is ${german("sein")}, to be. One person: ${german("ich bin, du bist, er ist, sie ist, es ist")}. More than one: ${german("wir sind, ihr seid, sie sind")}, and ${german("Sie sind")} when you are formal.`,
+    `Hold onto the chant: ${german("bin, bist, ist, sind, seid")}.`,
   ],
   closing: "Nice work. The next time you say how you are, or how someone else is, use these out loud. That's how they stay with you.",
   hook: { text: "Ich bin müde.", translation: "I am tired." },
@@ -446,30 +462,30 @@ const SEIN: Paradigm = {
     gap("plural", "Wir ___ müde", "Wir sind müde.", "we are tired"),
   ],
   checks: [
-    { cue: "Which form of sein goes with ich?", answer: "bin." },
-    { cue: "Which form of sein goes with ihr, you all?", answer: "seid." },
-    { cue: "Speaking formally, which form goes with Sie?", answer: "Sie sind." },
+    { cue: `Which form of ${german("sein")} goes with ${german("ich")}?`, answer: german("bin.") },
+    { cue: `Which form of ${german("sein")} goes with ${german("ihr")}, you all?`, answer: german("seid.") },
+    { cue: `Speaking formally, which form goes with ${german("Sie")}?`, answer: german("Sie sind.") },
   ],
 };
 
 const HABEN: Paradigm = {
   title: "Haben, to have",
   summary: "The present tense of haben, including the irregular du and er forms.",
-  welcome: "Today we'll learn how to use haben, to have.",
-  insight: "Most forms keep hab-, but du and er change: du hast, er hat. Not habst, and not habt for er.",
+  welcome: `Today we'll learn how to use ${german("haben")}, to have.`,
+  insight: `Most forms keep ${german("hab-")}, but ${german("du")} and ${german("er")} change: ${german("du hast, er hat")}. Not ${german("habst")}, and not ${german("habt")} for ${german("er")}.`,
   forms: "ich habe, du hast, er hat, sie hat, es hat, wir haben, ihr habt, sie haben, Sie haben",
   pitfall: "du hast and er hat are irregular. sie hat is she has. sie haben is they have. Sie haben is you have, formally.",
   reject: /second position|second idea|word order|regular ending only|sein does not/i,
   offTopic: OFF_TOPIC,
-  singularRule: "For one person: ich habe, du hast when you talk to a friend, and er hat, sie hat, es hat.",
+  singularRule: `For one person: ${german("ich habe, du hast")} when you talk to a friend, and ${german("er hat, sie hat, es hat")}.`,
   pluralBridge: "That is one person. Now more than one, and the formal you.",
-  pluralQuestion: "Sie hat and sie haben are not the same person. What is the difference?",
-  pluralInsight: "sie hat is she has. sie haben is they have. The formal you is Sie haben. ihr habt is you all.",
-  pluralRule: "For more than one: wir haben, ihr habt for you all, and sie haben for they. Speaking formally, you say Sie haben.",
-  mnemonic: "habe, hast, hat for one. haben, habt, haben for more than one.",
+  pluralQuestion: `${german("Sie hat")} and ${german("sie haben")} are not the same person. What is the difference?`,
+  pluralInsight: `${german("sie hat")} is she has. ${german("sie haben")} is they have. The formal you is ${german("Sie haben")}. ${german("ihr habt")} is you all.`,
+  pluralRule: `For more than one: ${german("wir haben, ihr habt")} for you all, and ${german("sie haben")} for they. Speaking formally, you say ${german("Sie haben")}.`,
+  mnemonic: `${german("habe, hast, hat")} for one. ${german("haben, habt, haben")} for more than one.`,
   recap: [
-    "Here is haben, to have. One person: ich habe, du hast, er hat, sie hat, es hat. More than one: wir haben, ihr habt, sie haben, and Sie haben when you are formal.",
-    "Hold onto the chant: habe, hast, hat, haben, habt.",
+    `Here is ${german("haben")}, to have. One person: ${german("ich habe, du hast, er hat, sie hat, es hat")}. More than one: ${german("wir haben, ihr habt, sie haben")}, and ${german("Sie haben")} when you are formal.`,
+    `Hold onto the chant: ${german("habe, hast, hat, haben, habt")}.`,
   ],
   closing: "Nice work. The next time you say what you have, or what someone else has, use these out loud. That's how they stay with you.",
   hook: { text: "Ich habe Zeit.", translation: "I have time." },
@@ -507,30 +523,30 @@ const HABEN: Paradigm = {
     gap("plural", "Wir ___ Zeit", "Wir haben Zeit.", "we have time"),
   ],
   checks: [
-    { cue: "Which form of haben goes with du, a friend?", answer: "hast." },
-    { cue: "Which form of haben goes with ihr, you all?", answer: "habt." },
-    { cue: "Speaking formally, which form goes with Sie?", answer: "Sie haben." },
+    { cue: `Which form of ${german("haben")} goes with ${german("du")}, a friend?`, answer: german("hast.") },
+    { cue: `Which form of ${german("haben")} goes with ${german("ihr")}, you all?`, answer: german("habt.") },
+    { cue: `Speaking formally, which form goes with ${german("Sie")}?`, answer: german("Sie haben.") },
   ],
 };
 
 const REGULAR: Paradigm = {
   title: "A regular present tense",
   summary: "The present-tense endings of a regular verb, using machen.",
-  welcome: "Today we'll learn how to use a regular verb in the present, like machen, to make or to do.",
-  insight: "The stem mach- stays. You add an ending: ich mache, du machst, er macht. The ending changes, the stem does not.",
+  welcome: `Today we'll learn how to use a regular verb in the present, like ${german("machen")}, to make or to do.`,
+  insight: `The stem ${german("mach-")} stays. You add an ending: ${german("ich mache, du machst, er macht")}. The ending changes, the stem does not.`,
   forms: "ich mache, du machst, er macht, sie macht, es macht, wir machen, ihr macht, sie machen, Sie machen",
   pitfall: "ihr macht takes -t, the same ending as er macht, not -st. sie macht is she. sie machen is they. Sie machen is you, formally.",
   reject: /second position|second idea|word order|the word itself changes completely/i,
   offTopic: OFF_TOPIC,
-  singularRule: "For one person the stem stays mach-: ich mache, du machst for a friend, and er macht, sie macht, es macht.",
+  singularRule: `For one person the stem stays ${german("mach-")}: ${german("ich mache, du machst")} for a friend, and ${german("er macht, sie macht, es macht")}.`,
   pluralBridge: "That is one person. The stem stays. Now the plural endings.",
-  pluralQuestion: "Er macht and ihr macht share an ending. What do wir and sie do?",
-  pluralInsight: "wir machen and sie machen take -en. ihr macht takes -t, not -st. sie macht is she. sie machen is they. Sie machen is you, formally.",
-  pluralRule: "For more than one: wir machen, ihr macht for you all, and sie machen for they. Speaking formally, you say Sie machen.",
-  mnemonic: "mache, machst, macht, machen, macht, machen. Stem mach-, then the ending.",
+  pluralQuestion: `${german("Er macht")} and ${german("ihr macht")} share an ending. What do ${german("wir")} and ${german("sie")} do?`,
+  pluralInsight: `${german("wir machen")} and ${german("sie machen")} take ${german("-en")}. ${german("ihr macht")} takes ${german("-t")}, not ${german("-st")}. ${german("sie macht")} is she. ${german("sie machen")} is they. ${german("Sie machen")} is you, formally.`,
+  pluralRule: `For more than one: ${german("wir machen, ihr macht")} for you all, and ${german("sie machen")} for they. Speaking formally, you say ${german("Sie machen")}.`,
+  mnemonic: `Keep the stem ${german("mach-")}. For one person, add ${german("-e, -st, -t")}.`,
   recap: [
-    "A regular verb keeps its stem. machen: ich mache, du machst, er macht, sie macht, es macht, wir machen, ihr macht, sie machen, and Sie machen when you are formal.",
-    "Hold onto the endings: e, st, t, en, t, en.",
+    `A regular verb keeps its stem. ${german("machen: ich mache, du machst, er macht, sie macht, es macht, wir machen, ihr macht, sie machen")}, and ${german("Sie machen")} when you are formal.`,
+    `Hold onto the endings: ${german("e, st, t, en, t, en")}.`,
   ],
   closing: "Nice work. The next time you use a regular verb, start with the stem and add the ending out loud. That's how the pattern sticks.",
   hook: { text: "Ich mache Kaffee.", translation: "I make coffee." },
@@ -568,9 +584,9 @@ const REGULAR: Paradigm = {
     gap("plural", "Wir ___ das", "Wir machen das.", "we do that"),
   ],
   checks: [
-    { cue: "Which ending goes with du, a friend?", answer: "st. du machst." },
-    { cue: "Which ending goes with ihr, you all?", answer: "t. ihr macht." },
-    { cue: "Speaking formally, which form of machen do you use?", answer: "Sie machen." },
+    { cue: `Which ending goes with ${german("du")}, a friend?`, answer: german("st. du machst.") },
+    { cue: `Which ending goes with ${german("ihr")}, you all?`, answer: german("t. ihr macht.") },
+    { cue: `Speaking formally, which form of ${german("machen")} do you use?`, answer: german("Sie machen.") },
   ],
 };
 
@@ -587,7 +603,19 @@ const TOPIC_NOTES: Record<string, { insight: string; forms: string; pitfall: str
 };
 
 function spokenLesson(segments: LessonSegment[]): LessonSegment[] {
-  return segments.map((segment) => ({ ...segment, text: repairMarkup(segment.text).trim() || segment.text }));
+  const spoken: LessonSegment[] = [];
+  for (const segment of segments) {
+    const previous = spoken.at(-1);
+    if (previous?.language === segment.language && !previous.pauseAfterMs && !segment.pauseAfterMs
+        && spokenKey(previous.text) === spokenKey(segment.text)) continue;
+    spoken.push({ ...segment, text: repairMarkup(segment.text.normalize("NFC")).trim() || segment.text });
+  }
+  return spoken;
+}
+
+function repeatsAnswer(previous: LessonSegment | undefined, answer: { text: string; language: LanguageId }): boolean {
+  return previous?.kind === "drill" && !previous.pauseAfterMs && previous.language === answer.language
+    && spokenKey(previous.text) === spokenKey(answer.text);
 }
 
 function takeCue(candidates: string[], used: Map<string, number>, start: number): string | null {
@@ -605,19 +633,23 @@ function produceCues(translation: string): string[] {
   return SPEAK_FRAMES.map((frame) => frame.replaceAll("{translation}", translation));
 }
 
-function practiceCues(item: Practice, translation: string): string[] {
+function practiceCues(item: Practice, translation: string, language: LanguageId): string[] {
   if (item.mode === "transform" && item.source && item.from && item.to) {
+    const from = inLanguage(language, item.from);
+    const to = inLanguage(language, item.to);
+    const source = inLanguage(language, item.source);
     return [
-      `Change ${item.from} to ${item.to}: ${item.source}`,
-      `Now make it ${item.to}: ${item.source}`,
-      `Put this in the ${item.to} form: ${item.source}`,
+      `Change ${from} to ${to}: ${source}`,
+      `Now make it ${to}: ${source}`,
+      `Put this in the ${to} form: ${source}`,
     ];
   }
   if (item.mode === "gap" && item.gap) {
+    const gap = inLanguage(language, item.gap);
     return [
-      `Fill the gap. ${item.gap}. The meaning is ${translation}.`,
-      `What is missing? ${item.gap}. The meaning is ${translation}.`,
-      `Complete it. ${item.gap}. The meaning is ${translation}.`,
+      `Fill the gap. ${gap}. The meaning is ${translation}.`,
+      `What is missing? ${gap}. The meaning is ${translation}.`,
+      `Complete it. ${gap}. The meaning is ${translation}.`,
     ];
   }
   return produceCues(translation);
@@ -633,7 +665,6 @@ export function arrangeGrammarLesson(input: {
   let ordinal = 0;
   const push = (segment: Omit<LessonSegment, "id" | "speaker" | "delivery"> & { delivery?: LessonSegment["delivery"] }, pauseMs = 0): boolean => {
     if (segments.length >= MAX_PIMSLEUR_SEGMENTS) return false;
-    if (segments.at(-1)?.text === segment.text) return true;
     ordinal += 1;
     segments.push({
       id: `seg_${String(ordinal).padStart(2, "0")}`,
@@ -644,8 +675,8 @@ export function arrangeGrammarLesson(input: {
     });
     return true;
   };
-  const ask = (phase: string, cue: string | null, answer: { text: string; translation?: string; language: LanguageId }, pause = ANSWER_PAUSE_MS): void => {
-    if (!cue || segments.length + 2 > MAX_PIMSLEUR_SEGMENTS - 4) return;
+  const ask = (phase: string, cue: string | null, answer: { text: string; translation?: string; language: LanguageId }, pause = speakingPauseMs(answer.text, answer.language)): void => {
+    if (!cue || segments.length + 2 > MAX_PIMSLEUR_SEGMENTS - 4 || repeatsAnswer(segments.at(-1), answer)) return;
     push({ kind: "drill", phase, language: input.nativeLanguage, text: cue, delivery: "curious" }, pause);
     push({
       kind: "drill",
@@ -667,17 +698,18 @@ export function arrangeGrammarLesson(input: {
 
   push({ kind: "narration", phase: "hook", language: input.nativeLanguage, text: "Listen to one real sentence. This is why the pattern matters.", delivery: "warm" });
   push({ kind: "example", phase: "hook", language: input.targetLanguage, text: input.source.hook.text, translation: input.source.hook.translation, delivery: "clear" });
-  push({ kind: "explanation", phase: "hook", language: input.nativeLanguage, text: gloss(input.source.hook, input.targetLanguage), delivery: "clear" });
+  push({ kind: "explanation", phase: "hook", language: input.nativeLanguage, text: exampleMeaning(input.source.hook), delivery: "clear" });
 
-  input.source.examples.slice(0, 3).forEach((example) => {
+  uniqueExamples([input.source.hook, ...input.source.examples], 4).slice(1).forEach((example) => {
     push({ kind: "example", phase: "example", language: input.targetLanguage, text: example.text, translation: example.translation, delivery: "clear" });
-    push({ kind: "explanation", phase: "example", language: input.nativeLanguage, text: gloss(example, input.targetLanguage), delivery: "clear" });
+    push({ kind: "explanation", phase: "example", language: input.nativeLanguage, text: exampleMeaning(example), delivery: "clear" });
   });
   const notice = input.source.topic.insight && input.source.topic.insight.length > 0 ? input.source.topic.insight : input.source.notice;
   ask("notice", "What do you notice here?", { text: notice, language: input.nativeLanguage }, NOTICE_PAUSE_MS);
 
+  const mnemonic = spokenKey(input.source.rule) !== spokenKey(input.source.mnemonic) ? input.source.mnemonic : undefined;
   push({ kind: "explanation", phase: "rule", language: input.nativeLanguage, text: input.source.rule, delivery: "clear" });
-  push({ kind: "explanation", phase: "rule", language: input.nativeLanguage, text: `Hold onto this: ${input.source.mnemonic}`, delivery: "clear" });
+  if (mnemonic) push({ kind: "explanation", phase: "rule", language: input.nativeLanguage, text: `Hold onto this: ${mnemonic}`, delivery: "clear" });
   if (input.source.exception) {
     push({ kind: "explanation", phase: "rule", language: input.nativeLanguage, text: `One common exception: ${input.source.exception}`, delivery: "clear" });
   }
@@ -711,7 +743,7 @@ export function arrangeGrammarLesson(input: {
     ask("recombine", takeCue(produceCues(translation), used, 4), { text: fresh.answer, translation, language: input.targetLanguage });
   }
   push({ kind: "recap", phase: "summary", language: input.nativeLanguage, text: input.source.rule, delivery: "clear" });
-  push({ kind: "recap", phase: "summary", language: input.nativeLanguage, text: `Hold onto this: ${input.source.mnemonic}`, delivery: "clear" });
+  if (mnemonic) push({ kind: "recap", phase: "summary", language: input.nativeLanguage, text: `Hold onto this: ${mnemonic}`, delivery: "clear" });
   const quick = [...ending, 0, Math.min(1, drills.length - 1)].filter((index, position, all) => all.indexOf(index) === position).slice(0, 3);
   for (const index of quick) {
     const item = drills[index];
@@ -735,7 +767,6 @@ function arrangeParadigm(paradigm: Paradigm, input: {
   let ordinal = 0;
   const push = (segment: Omit<LessonSegment, "id" | "speaker" | "delivery"> & { delivery?: LessonSegment["delivery"] }, pauseMs = 0): boolean => {
     if (segments.length >= MAX_PIMSLEUR_SEGMENTS) return false;
-    if (segments.at(-1)?.text === segment.text) return true;
     ordinal += 1;
     segments.push({
       id: `seg_${String(ordinal).padStart(2, "0")}`,
@@ -746,8 +777,8 @@ function arrangeParadigm(paradigm: Paradigm, input: {
     });
     return true;
   };
-  const ask = (phase: string, cue: string | null, answer: { text: string; translation?: string; language: LanguageId }, pause = ANSWER_PAUSE_MS): void => {
-    if (!cue || segments.length + 2 > MAX_PIMSLEUR_SEGMENTS - 6) return;
+  const ask = (phase: string, cue: string | null, answer: { text: string; translation?: string; language: LanguageId }, pause = speakingPauseMs(answer.text, answer.language)): void => {
+    if (!cue || segments.length + 2 > MAX_PIMSLEUR_SEGMENTS - 6 || repeatsAnswer(segments.at(-1), answer)) return;
     push({ kind: "drill", phase, language: input.nativeLanguage, text: cue, delivery: "curious" }, pause);
     push({
       kind: "drill",
@@ -760,13 +791,13 @@ function arrangeParadigm(paradigm: Paradigm, input: {
   };
   const show = (example: Example, phase: string): void => {
     push({ kind: "example", phase, language: input.targetLanguage, text: example.text, translation: example.translation, delivery: "clear" });
-    push({ kind: "explanation", phase, language: input.nativeLanguage, text: gloss(example, input.targetLanguage), delivery: "clear" });
+    push({ kind: "explanation", phase, language: input.nativeLanguage, text: exampleMeaning(example), delivery: "clear" });
   };
 
   push({ kind: "narration", phase: "intro", language: input.nativeLanguage, text: paradigm.welcome, delivery: "warm" });
   push({ kind: "narration", phase: "hook", language: input.nativeLanguage, text: "Listen to one real sentence. This is why the pattern matters.", delivery: "warm" });
   show(paradigm.hook, "hook");
-  paradigm.singularExamples.forEach((example) => show(example, "example"));
+  uniqueExamples([paradigm.hook, ...paradigm.singularExamples], 4).slice(1).forEach((example) => show(example, "example"));
   ask("notice", "What happens to the verb itself when the person changes?", { text: paradigm.insight, language: input.nativeLanguage }, NOTICE_PAUSE_MS);
   push({ kind: "explanation", phase: "rule", language: input.nativeLanguage, text: paradigm.singularRule, delivery: "clear" });
   push({ kind: "explanation", phase: "rule", language: input.nativeLanguage, text: `Hold onto this: ${paradigm.mnemonic}`, delivery: "clear" });
@@ -783,7 +814,7 @@ function arrangeParadigm(paradigm: Paradigm, input: {
   const pose = (item: Practice, phase: string, salt: number): void => {
     const translation = disambiguateTranslation(item.translation, item.answer, input.targetLanguage);
     const start = item.mode === "produce" || phase === "review" ? salt : 0;
-    ask(phase, takeCue(practiceCues(item, translation), used, start), { text: item.answer, translation, language: input.targetLanguage });
+    ask(phase, takeCue(practiceCues(item, translation, input.targetLanguage), used, start), { text: item.answer, translation, language: input.targetLanguage });
   };
   drills.forEach((drill, index) => {
     if (drill.half === "plural" && !pluralOpen) {
@@ -850,11 +881,10 @@ export function shapeGrammarLesson(value: unknown, context: {
     const teacherName = value && typeof value === "object"
       ? normalizeSpeakerNames((value as { speakerNames?: unknown }).speakerNames).teacher
       : "Mira";
-    const arranged = arrangeParadigm(paradigm, {
+    const segments = arrangeParadigm(paradigm, {
       nativeLanguage: context.nativeLanguage,
       targetLanguage: context.targetLanguage,
     });
-    const segments = applyTargetVoices(arranged, context.nativeLanguage, context.targetLanguage).segments;
     return {
       title: paradigm.title,
       topic: context.topic.title.slice(0, 160),
@@ -872,7 +902,17 @@ export function shapeGrammarLesson(value: unknown, context: {
     targetLanguage: context.targetLanguage,
   });
   if (arranged.some((segment) => segment.speaker !== "teacher")) return null;
-  const segments = applyTargetVoices(arranged, context.nativeLanguage, context.targetLanguage).segments;
+  const affixes = arranged
+    .filter((segment) => segment.language === context.nativeLanguage)
+    .flatMap((segment) => lessonDisplayText(segment.text).match(
+      /(?<![\p{L}\p{M}\p{N}\p{Pd}])(?:[-‐][\p{L}\p{M}]+|[\p{L}\p{M}]+[-‐])(?![\p{L}\p{M}\p{N}\p{Pd}])/gu,
+    ) ?? []);
+  const { segments, leftover } = applyTargetVoices(arranged, context.nativeLanguage, context.targetLanguage, [
+    ...(source.targetTerms ?? []), ...affixes,
+  ]);
+  if (leftover.length > 0 || segments.some((segment) => speechSpans(segment.text, segment.language).some((span) => (
+    span.language !== context.nativeLanguage && span.language !== context.targetLanguage
+  )))) return null;
   return {
     title: source.title,
     topic: context.topic.title.slice(0, 160),

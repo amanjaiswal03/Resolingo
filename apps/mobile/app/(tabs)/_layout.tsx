@@ -16,6 +16,7 @@ export default function TabsLayout() {
     <Tabs screenOptions={{ headerShown: false, tabBarActiveTintColor: theme.primary, tabBarInactiveTintColor: theme.textMuted, tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.border, height: TAB_BAR_HEIGHT, paddingTop: 2 }, tabBarLabelStyle: { fontSize: 11, fontWeight: "600" } }}>
       <Tabs.Screen name="index" options={{ title: "Today", tabBarIcon: ({ color }) => icon("✦", color) }} />
       <Tabs.Screen name="history" options={{ title: "Lessons", tabBarIcon: ({ color }) => icon("◫", color) }} />
+      <Tabs.Screen name="skills" options={{ title: "Skills", tabBarIcon: ({ color }) => icon("◇", color) }} />
       <Tabs.Screen name="settings" options={{ title: "Settings", tabBarIcon: ({ color }) => icon("⚙", color) }} />
     </Tabs>
     </LessonDeleteProvider>

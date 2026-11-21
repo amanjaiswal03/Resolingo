@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, AppState, Pressable, StyleSheet, Text, View } from "react-native";
 import { Asset } from "expo-asset";
 import {
 	createAudioPlayer,
@@ -26,6 +26,7 @@ import { SkipIcon } from "./SkipIcon";
 import { SpeakingPractice } from "./SpeakingPractice";
 import { Body } from "./Typography";
 import { useTheme } from "@/theme/tokens";
+import { usePlayback } from "@/playback/PlaybackProvider";
 
 const speeds = [0.8, 1, 1.2] as const;
 
@@ -62,6 +63,7 @@ export function LessonPlayer({
 }) {
 	const theme = useTheme();
 	const insets = useSafeAreaInsets();
+	const { registerPause, stopExample } = usePlayback();
 	const playable = useMemo(
 		() => playbackClips(lesson.segments),
 		[lesson.segments],
@@ -77,10 +79,10 @@ export function LessonPlayer({
 	const paintFrame = useRef<number | null>(null);
 	const pendingRatio = useRef<number | null>(null);
 	const started = useRef(false);
+	const autoPlay = useRef(true);
 	const completed = useRef(false);
 	const alive = useRef(true);
 	const generation = useRef(0);
-	const onStartRef = useRef(onStart);
 	const trackWidth = useRef(0);
 	const trackPageX = useRef(0);
 	const scrubberRef = useRef<View>(null);
@@ -91,10 +93,8 @@ export function LessonPlayer({
 	const [clipIndex, setClipIndex] = useState(0);
 	const [joined, setJoined] = useState<{ uri: string; durationsMs: number[] } | null>(null);
 	const [joinFailed, setJoinFailed] = useState(false);
+	const [opening, setOpening] = useState(true);
 	const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
-	// Read by the playback effects below. Assigned during render so a jump in the same commit sees the latest callback.
-	// eslint-disable-next-line react-hooks/refs -- playback callback mirror
-	onStartRef.current = onStart;
 	// One player, not a queue, so the lock screen and background session stay attached
 	// to the audio that is actually playing. Clips advance with replace().
 	const [player] = useState(() =>
@@ -115,6 +115,26 @@ export function LessonPlayer({
 		feedbackPlaying, cancelFeedback, state: checkState, toggle: toggleChecks,
 	} = useAnswerChecks(player, lesson.id, checks, status.isLoaded, allowAnswerChecks);
 	const playing = status.playing || feedbackPlaying;
+	const loadingAudio = playable.length > 0 && !playing && !status.error && status.playbackState !== "failed" &&
+		(opening || status.timeControlStatus === "waitingToPlayAtSpecifiedRate");
+	const playLabel = loadingAudio ? "Loading lesson audio" : playing ? "Pause" : "Play";
+	const pauseLesson = useCallback(() => {
+		autoPlay.current = false;
+		setOpening(false);
+		cancelFeedback();
+		player.pause();
+	}, [cancelFeedback, player]);
+	useEffect(() => registerPause(pauseLesson), [pauseLesson, registerPause]);
+	useEffect(() => {
+		if (!status.playing) return;
+		// eslint-disable-next-line react-hooks/set-state-in-effect -- remember that the native player has started
+		setOpening(false);
+		stopExample();
+		if (!started.current) {
+			started.current = true;
+			onStart?.();
+		}
+	}, [onStart, status.playing, stopExample]);
 	const timeline = useMemo(
 		() =>
 			lessonTimeline(
@@ -183,11 +203,8 @@ export function LessonPlayer({
 			if (cancelled || !alive.current) return;
 			player.replace({ uri: sourceUri });
 			player.setPlaybackRate(1);
+			if (!autoPlay.current) return;
 			player.play();
-			if (!started.current) {
-				started.current = true;
-				onStartRef.current?.();
-			}
 		})();
 		return () => {
 			cancelled = true;
@@ -367,11 +384,15 @@ export function LessonPlayer({
 	};
 	const activeLine = shown?.segments.find((segment) => segment.id === activeSegmentId);
 	const lineText = activeLine ? lessonDisplayText(activeLine.text) : "";
-	const pauseLesson = () => {
-		cancelFeedback();
-		player.pause();
+	const toggle = () => {
+		if (playing) {
+			pauseLesson();
+			return;
+		}
+		autoPlay.current = true;
+		if (sourceUri) player.play();
+		else if (playable.length > 0) setOpening(true);
 	};
-	const toggle = () => (playing ? pauseLesson() : player.play());
 	const playSegmentInLesson = (segmentId: string) => {
 		const index = playable.findIndex((clip) => clip.segmentIds.includes(segmentId));
 		const start = timeline.startsMs[index];
@@ -400,8 +421,8 @@ export function LessonPlayer({
 							<Text numberOfLines={1} style={[styles.miniSubtitle, { color: theme.textMuted }]}>{lineText ? lesson.title : kindLabel[lesson.type]}</Text>
 						</View>
 					</Pressable>
-					<Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause" : "Play"} onPress={toggle} style={styles.play}>
-						<Text style={[styles.playIcon, { color: theme.primary }]}>{playing ? "Ⅱ" : "▶"}</Text>
+					<Pressable accessibilityRole="button" accessibilityLabel={playLabel} accessibilityState={{ busy: loadingAudio }} disabled={loadingAudio} onPress={toggle} style={styles.play}>
+						{loadingAudio ? <ActivityIndicator color={theme.primary} /> : <Text style={[styles.playIcon, { color: theme.primary }]}>{playing ? "Ⅱ" : "▶"}</Text>}
 					</Pressable>
 				</View>
 			</View>
@@ -499,8 +520,8 @@ export function LessonPlayer({
 				<Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.skip}>
 					<SkipIcon direction="back" color={theme.text} />
 				</Pressable>
-				<Pressable accessibilityRole="button" accessibilityLabel={playing ? "Pause" : "Play"} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
-					<Text style={[styles.bigPlayIcon, { color: theme.onPrimary }, !playing && styles.playNudge]}>{playing ? "Ⅱ" : "▶"}</Text>
+				<Pressable accessibilityRole="button" accessibilityLabel={playLabel} accessibilityState={{ busy: loadingAudio }} disabled={loadingAudio} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
+					{loadingAudio ? <ActivityIndicator size="large" color={theme.onPrimary} /> : <Text style={[styles.bigPlayIcon, { color: theme.onPrimary }, !playing && styles.playNudge]}>{playing ? "Ⅱ" : "▶"}</Text>}
 				</Pressable>
 				<Pressable accessibilityRole="button" accessibilityLabel="Forward ten seconds" onPress={() => seekBy(10)} style={styles.skip}>
 					<SkipIcon direction="forward" color={theme.text} />

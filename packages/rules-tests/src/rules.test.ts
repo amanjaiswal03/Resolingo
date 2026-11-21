@@ -1,9 +1,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from "@firebase/rules-unit-testing";
-import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, orderBy, query, setDoc, updateDoc, where } from "firebase/firestore";
 import { getBytes, ref, uploadBytes } from "firebase/storage";
-import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 let env: RulesTestEnvironment;
@@ -64,6 +64,56 @@ describe("Firestore owner rules", () => {
     const own = env.authenticatedContext("alice").firestore();
     await assertFails(getDoc(doc(own, "users/alice/reviewItems/item1")));
     await assertFails(setDoc(doc(own, "users/alice/reviewItems/item2"), { text: "Bitte." }));
+  });
+
+  it("permits private Skills progress and rejects invalid schedules", async () => {
+    const path = "users/alice/skillReviews/en-US_de-DE/items/0123456789abcdef";
+    const owner = env.authenticatedContext("alice").firestore();
+    const guest = env.authenticatedContext("bob").firestore();
+    const alice = doc(owner, path);
+    const bob = doc(guest, path);
+    const items = "users/alice/skillReviews/en-US_de-DE/items";
+    expect((await assertSucceeds(getDocs(collection(owner, items)))).empty).toBe(true);
+    await assertFails(getDocs(collection(guest, items)));
+    const reviewedAt = Date.now();
+    const progress = {
+      attemptId: "e266c7a8-cd2b-4b20-9179-3fec548b603d",
+      lastRating: "forgot",
+      lastMode: "recall",
+      recallRating: "forgot",
+      reviewedAt,
+      dueAt: reviewedAt + 86_400_000,
+      intervalDays: 1,
+    };
+    await assertSucceeds(setDoc(alice, progress));
+    await assertSucceeds(getDoc(alice));
+    expect((await assertSucceeds(getDocs(collection(owner, items)))).docs.map((entry) => entry.data())).toEqual([progress]);
+    await assertFails(getDoc(bob));
+    await assertFails(setDoc(bob, progress));
+    await assertFails(updateDoc(alice, { recallRating: "got-it" }));
+    await assertFails(updateDoc(alice, { dueAt: 0 }));
+  });
+
+  it("makes lessons available after completion and keeps synced review progress with its language pair", async () => {
+    await seed();
+    const device = env.authenticatedContext("alice").firestore();
+    const otherDevice = env.authenticatedContext("alice", { device: "second" }).firestore();
+    const completed = query(collection(otherDevice, "users/alice/lessons"), where("completed", "==", true), orderBy("updatedAt", "desc"));
+    expect((await assertSucceeds(getDocs(completed))).empty).toBe(true);
+    await assertSucceeds(updateDoc(doc(device, "users/alice/lessons/lesson-1"), { completed: true, updatedAt: new Date() }));
+    expect((await assertSucceeds(getDocs(completed))).docs.map((lesson) => lesson.id)).toEqual(["lesson-1"]);
+
+    const id = "0123456789abcdef";
+    const reviewedAt = Date.now();
+    const german = `users/alice/skillReviews/en-US_de-DE/items/${id}`;
+    const spanish = `users/alice/skillReviews/en-US_es-ES/items/${id}`;
+    await assertSucceeds(setDoc(doc(device, german), {
+      attemptId: "e266c7a8-cd2b-4b20-9179-3fec548b603d",
+      lastRating: "got-it", lastMode: "recall", recallRating: "got-it",
+      intervalDays: 3, reviewedAt, dueAt: reviewedAt + 3 * 86_400_000,
+    }));
+    expect((await assertSucceeds(getDoc(doc(otherDevice, german)))).data()?.recallRating).toBe("got-it");
+    expect((await assertSucceeds(getDoc(doc(otherDevice, spanish)))).exists()).toBe(false);
   });
 
   it("allows completion while denying lesson status changes", async () => {

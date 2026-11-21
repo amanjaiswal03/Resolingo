@@ -9,6 +9,8 @@ struct AnswerWindow: Record {
   @Field var startSeconds: Double = 0
   @Field var endSeconds: Double = 0
   @Field var feedbackAtSeconds: Double = 0
+  @Field var responseSeconds: Double = 0
+  @Field var extraSeconds: Double = 0
   @Field var expected: String = ""
 }
 
@@ -82,6 +84,7 @@ private enum AnswerWindowState: String {
 }
 
 private final class AnswerAudioLevel {
+  private static let minimumVoiceSeconds = 0.045
   private let lock = NSLock()
   private var totalSeconds = 0.0
   private var audibleSeconds = 0.0
@@ -109,13 +112,19 @@ private final class AnswerAudioLevel {
     lock.lock()
     defer { lock.unlock() }
     // No metering data means the mic couldn't be evaluated.
-    return totalSeconds >= 0.15 && audibleSeconds < 0.045
+    return totalSeconds >= 0.15 && audibleSeconds < Self.minimumVoiceSeconds
   }
 
   var heardSound: Bool {
     lock.lock()
     defer { lock.unlock() }
     return audibleSeconds >= 0.12
+  }
+
+  var hasVoiceActivity: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return audibleSeconds >= Self.minimumVoiceSeconds
   }
 }
 
@@ -174,6 +183,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var previousUptime: TimeInterval?
   private var pending: AnswerWindow?
   private var armedAt: TimeInterval = 0
+  private var speakingRate: (normal: Float, duringPause: Float)?
   private var active: Capture?
   private var finishing: [UUID: Capture] = [:]
   private var latestCapture: [String: UUID] = [:]
@@ -184,7 +194,6 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var feedbackAudio: AVAudioPlayer?
   private var feedbackClips: [String: [Data]] = [:]
   private var feedbackVariant = 0
-  private var feedbackTarget: (id: UUID, time: Double, verdict: String?, heardSound: Bool)?
   private var feedbackBreak: (id: UUID, rate: Float)?
   private var onFeedback: ((Bool) -> Void)?
 
@@ -302,13 +311,13 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     period = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.05, preferredTimescale: 1_000), queue: .main) { [weak self] _ in
       self?.tick()
     }
-    let feedbackTimes = Set(windows.map(\.feedbackAtSeconds)).filter { $0.isFinite && $0 > 0 }.sorted()
-    if !feedbackTimes.isEmpty {
+    let captureEnds = Set(windows.map(\.endSeconds)).filter { $0.isFinite && $0 > 0 }.sorted()
+    if !captureEnds.isEmpty {
       boundary = player.addBoundaryTimeObserver(
-        forTimes: feedbackTimes.map { NSValue(time: CMTime(seconds: $0, preferredTimescale: 1_000)) },
+        forTimes: captureEnds.map { NSValue(time: CMTime(seconds: $0, preferredTimescale: 1_000)) },
         queue: .main
       ) { [weak self] in
-        self?.startFeedbackAtBoundary()
+        self?.tick()
       }
     }
   }
@@ -363,7 +372,6 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     previousTime = nil
     previousUptime = nil
     pending = nil
-    feedbackTarget = nil
     cue?.stop()
     if let active {
       self.active = nil
@@ -371,6 +379,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
       onWindow?(active.window.id, .cancelled)
       active.cancelRecognition()
     }
+    restoreSpeakingRate()
   }
 
   private func tick() {
@@ -407,7 +416,6 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
       }
       return
     }
-    if startFeedbackAtBoundary() { return }
     guard elapsed < 0.5 else {
       resetWindow()
       return
@@ -415,6 +423,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     if let pending {
       if time >= pending.endSeconds - 0.35 {
         self.pending = nil
+        restoreSpeakingRate()
       } else if now >= armedAt {
         self.pending = nil
         begin(pending)
@@ -430,11 +439,15 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     cue.currentTime = 0
     guard cue.play() else { return }
     pending = window
+    extendSpeakingPause(window, on: player, at: time)
     // Let the cue clear the output before opening the input, including Bluetooth latency.
     armedAt = now + 0.30
   }
 
   private func begin(_ window: AnswerWindow) {
+    defer {
+      if active == nil { restoreSpeakingRate() }
+    }
     let capture = Capture(window: window)
     let input = capture.audio.inputNode
     let format = input.outputFormat(forBus: 0)
@@ -474,19 +487,21 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
 
   private func finish(_ capture: Capture, canTranscribe: Bool) {
     active = nil
+    let hasTranscript = capture.best?.formattedString.isEmpty == false
+    if canTranscribe && (capture.level.hasVoiceActivity || hasTranscript) {
+      holdForFeedback(capture.window, captureId: capture.id)
+    }
     capture.closeMic()
-    if capture.level.wasQuiet && capture.best?.formattedString.isEmpty != false {
+    restoreSpeakingRate()
+    if capture.level.wasQuiet && !hasTranscript {
       capture.cancelRecognition()
       onWindow?(capture.window.id, .skipped)
+      if feedbackBreak?.id == capture.id { endFeedback(resume: true) }
       return
-    }
-    if capture.window.feedbackAtSeconds > capture.window.endSeconds {
-      feedbackTarget = (capture.id, capture.window.feedbackAtSeconds, nil, capture.level.heardSound)
     }
     guard canTranscribe else {
       capture.cancelRecognition()
       onWindow?(capture.window.id, .unclear)
-      if capture.level.heardSound { feedbackTarget?.verdict = "unclear" }
       return
     }
     finishing[capture.id] = capture
@@ -519,6 +534,29 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     }
   }
 
+  private func extendSpeakingPause(_ window: AnswerWindow, on player: AVPlayer, at time: Double) {
+    guard window.responseSeconds.isFinite, window.extraSeconds.isFinite, window.extraSeconds > 0,
+          player.rate > 0 else { return }
+    let normal = player.rate
+    let remaining = window.endSeconds - time
+    let seconds = max(remaining / Double(normal), window.responseSeconds) + window.extraSeconds
+    // Media time inside the baked silence advances more slowly, so the
+    // microphone stays open longer while the rest of the lesson keeps its rate.
+    let slower = min(normal, max(0.12, Float(remaining / seconds)))
+    guard slower < normal else { return }
+    speakingRate = (normal, slower)
+    player.playImmediately(atRate: slower)
+  }
+
+  private func restoreSpeakingRate() {
+    guard let speakingRate else { return }
+    self.speakingRate = nil
+    // A Pause or a new speed selected while answering takes precedence.
+    if let player, abs(player.rate - speakingRate.duringPause) < 0.01 {
+      player.rate = speakingRate.normal
+    }
+  }
+
   private func report(_ capture: Capture) {
     let transcript = capture.best.map {
       SpokenTranscript(text: $0.formattedString, confidences: $0.segments.map(\.confidence), isFinal: capture.final)
@@ -533,7 +571,10 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     guard latestCapture[capture.window.id] == capture.id else { return }
     let heard = Self.normalized(transcript?.text ?? "", locale: locale)
     let expected = Self.normalized(capture.window.expected, locale: locale)
-    guard !expected.isEmpty else { return }
+    guard !expected.isEmpty else {
+      sendResult(capture, verdict: "unclear", heard: "", maySpeak: false)
+      return
+    }
     guard let transcript, !heard.isEmpty else {
       sendResult(capture, verdict: capture.level.wasQuiet ? "skipped" : "unclear", heard: "", maySpeak: capture.level.heardSound)
       return
@@ -553,13 +594,12 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
 
   private func sendResult(_ capture: Capture, verdict: String, heard: String, maySpeak: Bool = true) {
     notify?(capture.window.id, verdict, heard)
-    guard feedbackTarget?.id == capture.id else { return }
-    guard maySpeak else {
+    guard feedbackBreak?.id == capture.id else { return }
+    guard maySpeak && verdict != "skipped" else {
       endFeedback(resume: true)
       return
     }
-    feedbackTarget?.verdict = verdict
-    if feedbackBreak?.id == capture.id { playFeedback(verdict) }
+    playFeedback(verdict)
   }
 
   func installFeedback(sessionId: String, clips: FeedbackClips) {
@@ -575,35 +615,21 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     if self.sessionId == sessionId { endFeedback(resume: resume) }
   }
 
-  @discardableResult
-  private func startFeedbackAtBoundary() -> Bool {
-    guard let target = feedbackTarget, let player,
-          !feedbackClips.isEmpty, !reachedEnd, !interrupted, active == nil, pending == nil,
-          feedbackBreak == nil, player.timeControlStatus == .playing, player.rate > 0 else { return false }
-    let time = player.currentTime().seconds
-    guard time >= target.time - 0.03 else { return false }
-    guard time <= target.time + 0.12,
-          target.verdict == nil ? target.heardSound && finishing[target.id] != nil : feedbackClips[target.verdict ?? ""] != nil else {
-      feedbackTarget = nil
-      return false
+  private func holdForFeedback(_ window: AnswerWindow, captureId: UUID) {
+    guard let player, !feedbackClips.isEmpty, !reachedEnd, !interrupted, feedbackBreak == nil,
+          player.timeControlStatus == .playing, player.rate > 0 else { return }
+    // Older plans placed the feedback time after the model answer. Always stop within the pause.
+    let latest = min(window.feedbackAtSeconds, window.endSeconds + 0.12)
+    guard player.currentTime().seconds <= latest else { return }
+    let resumeRate: Float
+    if let speakingRate, abs(player.rate - speakingRate.duringPause) < 0.01 {
+      resumeRate = speakingRate.normal
+    } else {
+      resumeRate = player.rate
     }
-    feedbackBreak = (target.id, player.rate)
+    feedbackBreak = (captureId, resumeRate)
     player.pause()
     onFeedback?(true)
-    if let verdict = target.verdict {
-      playFeedback(verdict)
-    } else {
-      // Limit how long feedback can hold the next narrator line.
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-        guard let self, self.feedbackBreak?.id == target.id, self.feedbackAudio == nil else { return }
-        if let capture = self.finishing[target.id] {
-          self.report(capture, transcript: nil, locale: self.dictation?.locale ?? self.recognizer?.locale ?? .current)
-        } else {
-          self.endFeedback(resume: true)
-        }
-      }
-    }
-    return true
   }
 
   private func playFeedback(_ verdict: String) {
@@ -629,7 +655,6 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   }
 
   private func endFeedback(resume: Bool) {
-    feedbackTarget = nil
     guard let previous = feedbackBreak else { return }
     feedbackBreak = nil
     feedbackAudio?.stop()
