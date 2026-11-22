@@ -425,14 +425,15 @@ async function cloudScene(input: {
 }): Promise<{ cachePath: string; durationMs: number }> {
   const language = input.turns[0]!.language;
   const voices = await voicesFor(language);
+  const gapMs = input.level === "A1" ? 400 : input.level === "A2" ? 300 : SCENE_GAP_MS;
   const pieces: Buffer[] = [];
   for (const turn of input.turns) {
     pieces.push(await cloudPcm({ speaker: turn.speaker, language: turn.language, text: turn.text, level: input.level, targetLanguage: input.targetLanguage }));
   }
-  const pcm = concatPcm16(pieces, SCENE_GAP_MS);
+  const pcm = concatPcm16(pieces, gapMs);
   const cloud = cloudSynthesis({ language, level: input.level, pcm: true });
   const cachePath = cloudCachePath({
-    voiceName: `scene:${voices.teacher}/${voices.speakerA}/${voices.speakerB}`,
+    voiceName: `scene:${gapMs}:${voices.teacher}/${voices.speakerA}/${voices.speakerB}`,
     languageCode: cloud.languageCode,
     speakingRate: cloud.speakingRate,
     text: input.turns.map((turn) => `${turn.speaker}:${turn.text}`).join("\n"),

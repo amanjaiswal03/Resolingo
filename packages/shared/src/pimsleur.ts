@@ -1,18 +1,11 @@
 import type { LanguageId } from "./languages.js";
-import { applyTargetVoices, repairMarkup } from "./markup.js";
+import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
 import { ConversationSkillSchema, type ConversationSkill } from "./conversation-skills.js";
-import { MAX_LESSON_SEGMENTS, type LessonSegment } from "./schemas.js";
-import { groupBunsetsu, needsWordSegment, segmentWords } from "./segment.js";
+import { MAX_LESSON_SEGMENTS, type CefrLevel, type LessonSegment } from "./schemas.js";
+import { groupBunsetsu, needsWordSegment, segmentWords, splitSentences } from "./segment.js";
 import { dialogueText, normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 import { line, template, type TeachingKey } from "./teaching.js";
 import { speakingPauseMs } from "./speaking-timing.js";
-
-/**
- * Parakeet delayed a phrase's recall by one dialogue turn, then one more.
- * Those delays are about 25 seconds and 2 minutes of other material.
- * A 10 minute gap does not fit one lesson; Parakeet kept that step in FSRS, across lessons.
- */
-export const REVIEW_INTERVALS_MS = [25_000, 120_000] as const;
 
 /**
  * Pimsleur's 5s / 25s / 2min steps, counted in other items rather than in a
@@ -23,13 +16,19 @@ export const REVIEW_GAPS = [1, 3, 6] as const;
 
 export type ReviewSlot = { item: number; gap: number; afterItem: number };
 
-export const MAX_DIALOGUE_LINES = 6;
-/** One drilled phrase per dialogue turn. A 4-turn conversation is not cut down to 3. */
-export const MAX_PHRASES = MAX_DIALOGUE_LINES;
+export const conversationPacing = {
+  A1: { turns: 4, phrases: 2, wordsPerTurn: 10, variation: false, thinkMs: 2_000, listenMs: 650 },
+  A2: { turns: 4, phrases: 3, wordsPerTurn: 13, variation: false, thinkMs: 1_500, listenMs: 500 },
+  B1: { turns: 5, phrases: 3, wordsPerTurn: 18, variation: true, thinkMs: 1_000, listenMs: 350 },
+  B2: { turns: 6, phrases: 3, wordsPerTurn: 23, variation: true, thinkMs: 750, listenMs: 250 },
+  C1: { turns: 6, phrases: 3, wordsPerTurn: 28, variation: true, thinkMs: 500, listenMs: 250 },
+} as const satisfies Record<CefrLevel, {
+  turns: number; phrases: number; wordsPerTurn: number;
+  variation: boolean; thinkMs: number; listenMs: number;
+}>;
+
 export const MAX_BUILDUP_CHUNKS = 3;
-/** Model-chosen pieces for one line. Zero means the line is drilled whole, in recall only. */
 export const MAX_DRILL_CHUNKS = 6;
-/** Room for every turn's buildup, recall, spaced review, and the closing replay. */
 export const MAX_PIMSLEUR_SEGMENTS = MAX_LESSON_SEGMENTS;
 
 const VOWEL = /[aeiouyäöüáéíóúàèìòùâêîôûæøå]/i;
@@ -132,11 +131,6 @@ export function scheduleReviewSlots(itemCount: number, maxSlots: number): Review
     placed.push({ item: leftover.item, gap: REVIEW_GAPS[leftover.gapIndex] ?? REVIEW_GAPS[0], afterItem: itemCount });
   }
   return placed;
-}
-
-function estimateSpeechMs(text: string): number {
-  const words = segmentWords(text).length;
-  return Math.max(700, Math.round((Math.max(words, 1) / 2.4) * 1_000));
 }
 
 function splitSyllables(word: string): string[] {
@@ -349,7 +343,7 @@ function longestMeaning(prompt: string, meanings: string[]): string | undefined 
     .sort((left, right) => right.length - left.length)[0];
 }
 
-const RECALL_PHASES = new Set(["recall", "review", "warmup", "recombine", "roleplay"]);
+const RECALL_PHASES = new Set(["recall", "review", "quick", "warmup", "recombine", "roleplay"]);
 /** Cues that ask for something the learner should already know, without a fresh model. */
 const MEMORY_CUE_PHASES = new Set(["review", "quick", "warmup"]);
 
@@ -360,7 +354,7 @@ const MEMORY_CUE_PHASES = new Set(["review", "quick", "warmup"]);
 export function recallAnswersFollowPrompts(segments: LessonSegment[]): boolean {
   for (let index = 0; index < segments.length; index += 1) {
     const prompt = segments[index];
-    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher") continue;
+    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher" || prompt.kind !== "drill") continue;
     if (!MEMORY_CUE_PHASES.has(prompt.phase ?? "")) continue;
     const answer = segments[index + 1];
     if (!answer || answer.language === prompt.language) return false;
@@ -467,7 +461,7 @@ function justHeardTarget(segments: LessonSegment[], promptIndex: number, answer:
 export function recallPromptsCiteMeanings(segments: LessonSegment[]): boolean {
   for (let index = 0; index < segments.length; index += 1) {
     const prompt = segments[index];
-    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher") continue;
+    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher" || prompt.kind !== "drill") continue;
     if (!RECALL_PHASES.has(prompt.phase ?? "")) continue;
     const answer = segments[index + 1];
     if (!answer || answer.speaker === "teacher") return false;
@@ -489,7 +483,7 @@ export function speakPromptsMatchAnswers(segments: LessonSegment[]): boolean {
   const known = segments.map((segment) => segment.translation).filter((translation): translation is string => Boolean(translation));
   for (let index = 0; index < segments.length; index += 1) {
     const prompt = segments[index];
-    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher") continue;
+    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher" || prompt.kind !== "drill") continue;
     const answer = segments[index + 1];
     if (!answer || answer.speaker === "teacher") return false;
     if (prompt.phase === "roleplay") continue;
@@ -513,7 +507,7 @@ function enforcePromptAnswers(segments: LessonSegment[]): LessonSegment[] {
   if (speakPromptsMatchAnswers(segments)) return segments;
   const known = segments.map((segment) => segment.translation).filter((translation): translation is string => Boolean(translation));
   return segments.map((segment, index) => {
-    if (!segment.pauseAfterMs || segment.speaker !== "teacher") return segment;
+    if (!segment.pauseAfterMs || segment.speaker !== "teacher" || segment.kind !== "drill") return segment;
     const answer = segments[index + 1];
     if (!answer || answer.speaker === "teacher") return segment;
     const own = meaningOf(answer.translation);
@@ -604,349 +598,145 @@ export function arrangePimsleur(input: {
   names: SpeakerNames;
   nativeLanguage: LanguageId;
   targetLanguage: LanguageId;
+  level: CefrLevel;
   speakPrompts?: string[];
   seed?: number;
-  estimateMs?: (text: string) => number;
-  /** Phrases due from earlier lessons. Empty means this lesson stands alone. */
+  usageTip?: string;
   priorReviews?: PimsleurPhrase[];
   recombinations?: PimsleurPhrase[];
   roleplay?: { stimulus: PimsleurLine; response: PimsleurPhrase };
 }): LessonSegment[] {
-  const estimate = input.estimateMs ?? estimateSpeechMs;
-  const names = input.names;
-  const lines = input.lines.slice(0, MAX_DIALOGUE_LINES);
-  const phrases = phrasesForLines(lines, input.phrases.slice(0, MAX_PHRASES));
-  const segments: LessonSegment[] = [];
-  const nextPrompt = promptPicker(
-    speakPromptPool(input.speakPrompts, input.cues, input.nativeLanguage),
-    input.seed ?? hashSeed(lines.map((line) => line.text).join("|")),
-    input.nativeLanguage,
-  );
-  const partnerName = (speaker: PimsleurPhrase["speaker"]): string => (
-    speaker === "speakerA" ? names.speakerB : names.speakerA
-  );
-  let clock = 0;
-  let ordinal = 0;
-  const plans: Array<{ phrase: PimsleurPhrase; chunks: ChunkNote[] }> = [];
-  for (const phrase of phrases) {
-    const drilled = drillPlan(phrase, names);
-    if (drilled) plans.push(drilled);
-  }
-  const taught = new Set(plans.map((plan) => normalizeChunk(plan.phrase.text)));
-  const prior = (input.priorReviews ?? [])
-    .map((phrase) => drillPlan(phrase, names)?.phrase)
-    .filter((phrase): phrase is PimsleurPhrase => Boolean(phrase))
-    .filter((phrase) => !taught.has(normalizeChunk(phrase.text)))
-    .slice(0, 3);
-  const warmup = prior.slice(0, 2);
-  const mixed = prior.slice(2, 3);
-  const fresh = (input.recombinations ?? [])
-    .filter((phrase) => phrase.translation && !taught.has(normalizeChunk(phrase.text)) && !isEmptyDrill(phrase.text, names))
-    .slice(0, 2);
-  const role = input.roleplay && !isEmptyDrill(input.roleplay.response.text, names)
-    && normalizeChunk(input.roleplay.stimulus.text) !== normalizeChunk(input.roleplay.response.text)
-    && lines.some((line) => normalizeChunk(line.text) === normalizeChunk(input.roleplay?.stimulus.text ?? ""))
-    ? input.roleplay
-    : undefined;
-  const responseAt = role ? plans.findIndex((plan) => normalizeChunk(plan.phrase.text) === normalizeChunk(role.response.text)) : -1;
-  const roleAt = role && responseAt >= 0 ? (responseAt + 1 < plans.length ? responseAt + 1 : plans.length) : -1;
-  const slots = scheduleReviewSlots(plans.length, Math.min(12, plans.length * 2));
-  const afterSlot = new Map<number, ReviewSlot[]>();
-  const ending: ReviewSlot[] = [];
-  for (const slot of slots) {
-    if (slot.afterItem >= plans.length) ending.push(slot);
-    else afterSlot.set(slot.afterItem, [...(afterSlot.get(slot.afterItem) ?? []), slot]);
-  }
-
-  const reserved = lines.length + 2;
-  const push = (
-    segment: Omit<LessonSegment, "id" | "delivery"> & { delivery?: LessonSegment["delivery"] },
-    pauseMs = 0,
-    essential = false,
-  ): boolean => {
-    const limit = essential ? MAX_PIMSLEUR_SEGMENTS : MAX_PIMSLEUR_SEGMENTS - reserved;
-    if (segments.length >= limit) return false;
-    ordinal += 1;
-    const pauseAfterMs = pauseMs > 0 ? pauseMs : undefined;
-    segments.push({
-      id: `seg_${String(ordinal).padStart(2, "0")}`,
-      delivery: segment.delivery ?? "warm",
-      ...segment,
-      ...(pauseAfterMs ? { pauseAfterMs } : {}),
-    });
-    clock += estimate(segment.text) + pauseMs;
-    return true;
-  };
-
-  const modeled = new Set<string>();
-  const practicedChunks = new Set<string>();
-  const echoes = uniquePrompts(input.cues.echo ?? []);
+  const pacing = conversationPacing[input.level];
+  const { cues, names, nativeLanguage, targetLanguage } = input;
+  const lines = input.lines.slice(0, pacing.turns);
+  const plans = focusPhrases(lines.filter((item) => item.language === targetLanguage), input.phrases, names, pacing.phrases);
+  const scene = new Set(lines.map((item) => normalizeChunk(item.text)));
+  const prior = (input.priorReviews ?? []).find((item) =>
+    item.language === targetLanguage && item.translation && !scene.has(normalizeChunk(item.text))
+    && !isEmptyDrill(item.text, names) && fitsTurn(item, pacing.wordsPerTurn));
+  const variation = pacing.variation ? input.recombinations?.find((item) =>
+    item.language === targetLanguage && item.translation && !scene.has(normalizeChunk(item.text))
+    && fitsTurn(item, pacing.wordsPerTurn) && reusesFocus(item, plans.map((plan) => plan.phrase))) : undefined;
+  const role = input.roleplay;
+  const seed = input.seed ?? hashSeed(lines.map((item) => item.text).join("|"));
+  const nextPrompt = promptPicker(speakPromptPool(input.speakPrompts, cues, nativeLanguage), seed, nativeLanguage);
+  const echoes = uniquePrompts(cues.echo ?? []);
   const nextEcho = linePicker(echoes.length >= 2 ? echoes : uniquePrompts([
-    input.cues.yourTurn, input.cues.sayIt, line(input.nativeLanguage, "echo1"),
-    line(input.nativeLanguage, "echo2"), line(input.nativeLanguage, "echo3"),
-  ]), input.seed ?? 0);
-  const canAdd = (count: number, phrasesLeft: number): boolean => (
-    segments.length + count + phrasesLeft * 4 <= MAX_PIMSLEUR_SEGMENTS - reserved
-  );
-  const present = (phrase: PimsleurPhrase, phase: string, explanation?: string): void => {
-    if (explanation) push({
-      kind: "explanation", speaker: "teacher", phase, language: input.nativeLanguage, text: explanation, delivery: "clear",
-    });
-    if (push({
-      kind: "example", speaker: phrase.speaker, phase, language: phrase.language,
-      text: phrase.text, ...(phrase.translation ? { translation: phrase.translation } : {}), delivery: "clear",
-    })) modeled.add(normalizeChunk(phrase.text));
-  };
+    cues.yourTurn, cues.sayIt, line(nativeLanguage, "echo1"), line(nativeLanguage, "echo2"), line(nativeLanguage, "echo3"),
+  ]), seed);
+  const segments: LessonSegment[] = [];
+  const modeled = new Set<string>();
 
-  const ask = (
-    phrase: PimsleurPhrase,
-    promptPhase: string,
-    answerPhase: string,
-    promptText?: string,
-  ): boolean => {
-    const meaning = meaningOf(phrase.translation);
-    if (!modeled.has(normalizeChunk(phrase.text)) || !meaning || !canAdd(2, 0)) return false;
-    const prompt = promptText ?? nextPrompt({ translation: meaning, name: partnerName(phrase.speaker) });
-    const precedingModel = segments.at(-1);
-    const canEcho = precedingModel?.kind === "example" && precedingModel.language === phrase.language &&
-      normalizeChunk(precedingModel.text) === normalizeChunk(phrase.text);
-    const prompted = push({
-      kind: "drill",
-      speaker: "teacher",
-      phase: promptPhase,
-      language: input.nativeLanguage,
-      text: cites(prompt, meaning) || (promptText && canEcho) ? prompt : meaningPrompt(meaning, input.nativeLanguage),
+  const push = (segment: Omit<LessonSegment, "id" | "delivery"> & { delivery?: LessonSegment["delivery"] }, pauseMs = 0): void => {
+    segments.push({
+      id: `seg_${String(segments.length + 1).padStart(2, "0")}`,
+      delivery: "warm",
+      ...segment,
+      ...(pauseMs > 0 ? { pauseAfterMs: pauseMs } : {}),
+    });
+  };
+  const narrate = (text: string, phase: string, kind: "narration" | "explanation" | "recap" = "narration", pauseMs = 0): void => {
+    push({ kind, speaker: "teacher", phase, language: nativeLanguage, text }, pauseMs);
+  };
+  const play = (item: PimsleurLine, phase: string, kind: "dialogue" | "example" | "drill"): void => {
+    const { speaker, language, text, translation, transliteration } = item;
+    push({
+      speaker, language, text, kind, phase, delivery: kind === "dialogue" ? "warm" : "clear",
+      ...(translation ? { translation } : {}),
+      ...(transliteration ? { transliteration } : {}),
+    });
+  };
+  const present = (item: PimsleurLine, phase: string): void => {
+    play(item, phase, "example");
+    modeled.add(normalizeChunk(item.text));
+  };
+  const ask = (item: PimsleurPhrase, phase: string, answerPhase = phase, cue?: string): void => {
+    const meaning = meaningOf(item.translation);
+    if (!meaning || !modeled.has(normalizeChunk(item.text))) return;
+    const partner = item.speaker === "speakerA" ? names.speakerB : names.speakerA;
+    const prompt = cue ?? nextPrompt({ translation: meaning, name: partner });
+    const previous = segments.at(-1);
+    const echo = previous?.kind === "example" && previous.language === item.language
+      && normalizeChunk(previous.text) === normalizeChunk(item.text);
+    push({
+      kind: "drill", speaker: "teacher", phase, language: nativeLanguage,
+      text: cites(prompt, meaning) || (cue && echo) ? prompt : meaningPrompt(meaning, nativeLanguage),
       delivery: "curious",
-    }, speakingPauseMs(phrase.text, phrase.language));
-    if (!prompted) return false;
-    push({
-      kind: "drill",
-      speaker: phrase.speaker,
-      phase: answerPhase,
-      language: phrase.language,
-      text: phrase.text,
-      ...(phrase.translation ? { translation: phrase.translation } : {}),
-      delivery: "clear",
-    });
-    return true;
+    }, speakingPauseMs(item.text, item.language) + pacing.thinkMs);
+    play(item, answerPhase, "drill");
   };
-  const nextLead = linePicker(priorLines(input.nativeLanguage, ["lead1", "lead2", "lead3", "lead4"]), input.seed ?? 0);
-  const nextReturn = linePicker(priorLines(input.nativeLanguage, ["return1", "return2", "return3", "return4"]), (input.seed ?? 0) + 1);
-  const nextRemember = linePicker(priorLines(input.nativeLanguage, ["remember1", "remember2", "remember3", "remember4"]), (input.seed ?? 0) + 2);
-  const nextBridge = linePicker(priorLines(input.nativeLanguage, ["bridge1", "bridge2", "bridge3", "bridge4"]), (input.seed ?? 0) + 3);
-  const recallPrior = (phrase: PimsleurPhrase, phase: string, bridge: boolean): boolean => {
-    const meaning = meaningOf(phrase.translation);
-    if (!meaning || !canAdd(2, 0)) return false;
-    // The learner tries before hearing the line. Mark it heard only so a later
-    // review in this lesson can ask for it again; the first audio is the answer after the pause.
-    modeled.add(normalizeChunk(phrase.text));
-    const template = bridge ? nextBridge() : nextRemember();
-    return ask(phrase, phase, phase, fillMeaning(template, meaning));
-  };
-  const practiceVariation = (phrase: PimsleurPhrase, phrasesLeft: number): boolean => {
-    if (!canAdd(4, phrasesLeft)) return false;
-    present(phrase, "recombine", explained(phrase, input.cues.listen));
-    return ask(phrase, "recombine", "recombine");
-  };
-  const playRole = (phrasesLeft: number): void => {
-    if (!role || !canAdd(3, phrasesLeft)) return;
-    const reply = meaningOf(role.response.translation);
-    if (!reply || !modeled.has(normalizeChunk(role.response.text))) return;
-    const previous = segments[segments.length - 1];
-    const repeated = previous
-      && previous.speaker !== "teacher"
-      && normalizeChunk(previous.text) === normalizeChunk(role.stimulus.text);
-    if (!repeated) {
-      push({
-        kind: "dialogue",
-        speaker: role.stimulus.speaker,
-        phase: "roleplay",
-        language: role.stimulus.language,
-        text: role.stimulus.text,
-        ...(role.stimulus.translation ? { translation: role.stimulus.translation } : {}),
-        delivery: "warm",
-      });
+
+  narrate(cues.welcome, "intro");
+  if (prior) {
+    const lead = linePicker(priorLines(nativeLanguage, ["lead1", "lead2", "lead3", "lead4"]), seed);
+    const remember = linePicker(priorLines(nativeLanguage, ["remember1", "remember2", "remember3", "remember4"]), seed + 1);
+    const transition = linePicker(priorLines(nativeLanguage, ["return1", "return2", "return3", "return4"]), seed + 2);
+    narrate(lead(), "warmup");
+    modeled.add(normalizeChunk(prior.text)); // This item was practiced in a completed lesson.
+    ask(prior, "warmup", "warmup", fillMeaning(remember(), meaningOf(prior.translation)));
+    narrate(transition(), "warmup");
+  }
+
+  for (const item of lines) play(item, "dialogue", "dialogue");
+  narrate(cues.afterDialogue, "breakdown", "narration", pacing.listenMs);
+
+  let brokeDownPhrase = false;
+  for (const [index, { phrase, chunks }] of plans.entries()) {
+    narrate(explained(phrase, cues.listen), "breakdown", "explanation", pacing.listenMs);
+    const chunk = chunks.find((item) => item.gloss) ?? chunks.find((item) => item.translation) ?? chunks[0];
+    if (chunk && !brokeDownPhrase) {
+      brokeDownPhrase = true;
+      narrate(cues.buildup, "buildup");
+      const translation = chunk.translation;
+      if (chunk.gloss) narrate(linkedGloss(chunk.text, chunk.gloss, translation, phrase.language, nativeLanguage), "buildup", "explanation", pacing.listenMs);
+      else if (translation) narrate(`“${meaningOf(translation)}.”`, "buildup", "explanation", pacing.listenMs);
+      present({ speaker: phrase.speaker, language: phrase.language, text: chunk.text, ...(translation ? { translation } : {}) }, "buildup");
     }
-    const asker = role.stimulus.speaker === "speakerA" ? names.speakerA : names.speakerB;
-    const pronoun = role.stimulus.speaker === "speakerA" ? "him" : "her";
-    const situation = meaningOf(role.stimulus.translation);
-    const prompt = input.nativeLanguage.startsWith("en") && situation
-      ? `${asker} asks you: ${situation}. Tell ${pronoun}: ${reply}.`
-      : `${asker}: ${situation ? `${situation}. ` : ""}${reply}.`;
-    push({
-      kind: "drill",
-      speaker: "teacher",
-      phase: "roleplay",
-      language: input.nativeLanguage,
-      text: prompt,
-      delivery: "curious",
-    }, speakingPauseMs(role.response.text, role.response.language));
-    push({
-      kind: "drill",
-      speaker: role.response.speaker,
-      phase: "roleplay",
-      language: role.response.language,
-      text: role.response.text,
-      ...(role.response.translation ? { translation: role.response.translation } : {}),
-      delivery: "clear",
-    });
-  };
+    present(phrase, "breakdown");
+    const echo = input.level === "A1" || (input.level === "A2" && index === 0);
+    ask(phrase, "recall", "answer", echo ? nextEcho() : phrase.recallCue);
 
-  push({
-    kind: "narration",
-    speaker: "teacher",
-    phase: "intro",
-    language: input.nativeLanguage,
-    text: input.cues.welcome,
-    delivery: "warm",
-  });
-  if (warmup.length > 0 && canAdd(warmup.length * 4 + 2 + lines.length + 1, plans.length)) {
-    push({
-      kind: "narration",
-      speaker: "teacher",
-      phase: "warmup",
-      language: input.nativeLanguage,
-      text: nextLead(),
-      delivery: "warm",
-    });
-    for (const phrase of warmup) recallPrior(phrase, "warmup", false);
-    push({
-      kind: "narration",
-      speaker: "teacher",
-      phase: "warmup",
-      language: input.nativeLanguage,
-      text: nextReturn(),
-      delivery: "warm",
-    });
+    // An intervening phrase gives the learner a chance to retrieve, without a fresh model.
+    const earlier = plans[index - 1]?.phrase;
+    if (earlier) ask(earlier, "review");
   }
 
-  for (const line of lines) {
-    push({
-      kind: "dialogue",
-      speaker: line.speaker,
-      phase: "dialogue",
-      language: line.language,
-      text: line.text,
-      ...(line.translation ? { translation: line.translation } : {}),
-      ...(line.transliteration ? { transliteration: line.transliteration } : {}),
-      delivery: "warm",
-    });
+  if (input.usageTip) narrate(input.usageTip, "usage", "explanation", pacing.listenMs);
+  if (variation) {
+    narrate(explained(variation, cues.listen), "recombine", "explanation", pacing.listenMs);
+    present(variation, "recombine");
+    ask(variation, "recombine");
   }
+  const last = plans.at(-1)?.phrase;
+  if (last && plans.length > 1) ask(last, "review");
 
-  push({
-    kind: "narration",
-    speaker: "teacher",
-    phase: "breakdown",
-    language: input.nativeLanguage,
-    text: input.cues.afterDialogue,
-    delivery: "warm",
-  });
-
-  let usedFresh = 0;
-  let mixedIn = false;
-  let playedRole = false;
-  let introducedBuildup = false;
-  for (let index = 0; index < plans.length; index += 1) {
-    const drilled = plans[index];
-    if (!drilled) continue;
-    const phrasesLeft = plans.length - index - 1;
-    push({
-      kind: "explanation",
-      speaker: "teacher",
-      phase: "breakdown",
-      language: input.nativeLanguage,
-      text: explained(drilled.phrase, input.cues.listen),
-      delivery: "clear",
-    });
-    let echoedChunk = false;
-    if (drilled.chunks.length > 0) {
-      if (!introducedBuildup && canAdd(3, phrasesLeft + 1)) {
-        introducedBuildup = push({
-          kind: "narration",
-          speaker: "teacher",
-          phase: "buildup",
-          language: input.nativeLanguage,
-          text: input.cues.buildup,
-          delivery: "clear",
-        });
+  // Hear the same exchange with context before using the small set independently.
+  narrate(cues.again, "closing");
+  for (const item of lines) play(item, "closing", "dialogue");
+  const first = plans[0]?.phrase;
+  const checkOrder = first && normalizeChunk(first.text) === normalizeChunk(lines.at(-1)?.text ?? "")
+    ? [...plans.slice(1), plans[0]!]
+    : plans;
+  for (const { phrase } of checkOrder) {
+    if (role && normalizeChunk(role.response.text) === normalizeChunk(phrase.text)
+      && normalizeChunk(role.stimulus.text) !== normalizeChunk(phrase.text)) {
+      const asker = role.stimulus.speaker === "speakerA" ? names.speakerA : names.speakerB;
+      const pronoun = role.stimulus.speaker === "speakerA" ? "him" : "her";
+      const situation = meaningOf(role.stimulus.translation);
+      const reply = meaningOf(phrase.translation);
+      if (normalizeChunk(segments.at(-1)?.text ?? "") !== normalizeChunk(role.stimulus.text)) {
+        play(role.stimulus, "roleplay", "dialogue");
       }
-      const echo = drilled.chunks.find((chunk) => chunk.gloss && chunkTranslation(chunk, drilled.phrase))
-        ?? drilled.chunks.find((chunk) => chunkTranslation(chunk, drilled.phrase));
-      for (const chunk of drilled.chunks) {
-        const translation = chunkTranslation(chunk, drilled.phrase);
-        const gloss = chunk.gloss ? linkedGloss(chunk.text, chunk.gloss, translation, drilled.phrase.language, input.nativeLanguage) : undefined;
-        const explanation = gloss ?? (translation ? `“${meaningOf(translation)}.”` : undefined);
-        if (!canAdd(explanation ? 2 : 1, phrasesLeft + 1)) break;
-        const part: PimsleurPhrase = {
-          speaker: drilled.phrase.speaker,
-          language: drilled.phrase.language,
-          text: chunk.text,
-          ...(translation ? { translation } : {}),
-        };
-        present(part, "buildup", explanation);
-        const key = normalizeChunk(part.text);
-        if (index % 3 !== 1 && chunk === echo && !practicedChunks.has(key) && canAdd(2, phrasesLeft + 1)) {
-          echoedChunk = ask(part, "buildup", "buildup", nextEcho());
-          if (echoedChunk) practicedChunks.add(key);
-        }
-      }
-    }
-    present(drilled.phrase, "breakdown");
-    const contextualCue = drilled.phrase.recallCue;
-    const recallCue = contextualCue && cites(contextualCue, meaningOf(drilled.phrase.translation)) ? contextualCue : undefined;
-    ask(drilled.phrase, "recall", "answer", !echoedChunk && index % 3 === 0 ? nextEcho() : recallCue);
-    for (const slot of afterSlot.get(index) ?? []) {
-      const earlier = plans[slot.item]?.phrase;
-      if (earlier && canAdd(2, phrasesLeft)) ask(earlier, "review", "review");
-    }
-    const freshPhrase = fresh[usedFresh];
-    if (index >= 1 && freshPhrase && practiceVariation(freshPhrase, phrasesLeft)) usedFresh += 1;
-    if (!mixedIn && mixed[0] && index >= 1 && canAdd(4, phrasesLeft)) {
-      mixedIn = recallPrior(mixed[0], "review", true);
-    }
-    if (!playedRole && roleAt === index) {
-      playRole(phrasesLeft);
-      playedRole = true;
+      const cue = nativeLanguage.startsWith("en") && situation
+        ? `${asker} asks you: ${situation}. Tell ${pronoun}: ${reply}.`
+        : line(nativeLanguage, "turn", { translation: reply });
+      ask(phrase, "roleplay", "roleplay", cue);
+    } else {
+      const cue = input.level === "A1" || (input.level === "A2" && phrase === first) ? phrase.recallCue : undefined;
+      ask(phrase, "quick", "quick", cue);
     }
   }
-  for (const slot of ending) {
-    const earlier = plans[slot.item]?.phrase;
-    if (!earlier || !canAdd(2, 0)) break;
-    ask(earlier, "review", "review");
-  }
-  const lastFresh = fresh[usedFresh];
-  if (lastFresh) practiceVariation(lastFresh, 0);
-  if (!mixedIn && mixed[0] && canAdd(4, 0)) mixedIn = recallPrior(mixed[0], "review", true);
-  if (!playedRole && roleAt === plans.length) playRole(0);
-
-  push({
-    kind: "narration",
-    speaker: "teacher",
-    phase: "closing",
-    language: input.nativeLanguage,
-    text: input.cues.again,
-    delivery: "warm",
-  }, 0, true);
-  for (const line of lines) {
-    push({
-      kind: "dialogue",
-      speaker: line.speaker,
-      phase: "closing",
-      language: line.language,
-      text: line.text,
-      ...(line.translation ? { translation: line.translation } : {}),
-      ...(line.transliteration ? { transliteration: line.transliteration } : {}),
-      delivery: "warm",
-    }, 0, true);
-  }
-  push({
-    kind: "recap",
-    speaker: "teacher",
-    phase: "closing",
-    language: input.nativeLanguage,
-    text: input.cues.closing,
-    delivery: "praise",
-  }, 0, true);
+  narrate(cues.closing, "closing", "recap");
   return enforcePromptAnswers(segments).map((segment) => ({ ...segment, text: clean(segment.text, names) || segment.text }));
 }
 
@@ -994,12 +784,6 @@ function roleplayFrom(
   return { stimulus, response: spoken ? { ...response, speaker: spoken.speaker } : response };
 }
 
-function chunkTranslation(chunk: ChunkNote, phrase: PimsleurPhrase): string | undefined {
-  if (chunk.translation) return chunk.translation;
-  if (normalizeChunk(chunk.text) === normalizeChunk(phrase.text)) return phrase.translation;
-  return undefined;
-}
-
 function needsBuildup(text: string): boolean {
   return needsWordSegment(text) && !/\s/u.test(text);
 }
@@ -1021,7 +805,7 @@ function drillPlan(phrase: PimsleurPhrase, names: SpeakerNames): { phrase: Pimsl
       text: presentChunk(stripVocatives(note.text, names), text),
     }))
     .filter((note) => note.text && !isEmptyDrill(note.text, names) && normalizeChunk(note.text) !== full);
-  const chunks = provided.length > 0 || !needsBuildup(text)
+  const chunks = provided.length > 0 || !needsBuildup(text) || spokenWords(drilled).length < 5
     ? provided
     : buildupChunks(text, phrase.language)
       .filter((part) => normalizeChunk(part) !== full)
@@ -1056,27 +840,48 @@ function phraseFor(line: PimsleurLine): PimsleurPhrase {
   return { ...line, ...(line.translation ? { note: line.translation } : {}) };
 }
 
-/** One phrase per dialogue turn. A model phrase fills the matching turn; every other turn is still drilled. */
-function phrasesForLines(lines: PimsleurLine[], explicit: PimsleurPhrase[]): PimsleurPhrase[] {
-  const used = new Set<number>();
-  const placed: Array<PimsleurPhrase | undefined> = lines.map(() => undefined);
-  for (const phrase of explicit) {
-    const index = lines.findIndex((line, position) => !used.has(position)
-      && line.text === phrase.text
-      && line.speaker === phrase.speaker);
-    const fallback = index >= 0
-      ? index
-      : lines.findIndex((line, position) => !used.has(position) && line.text === phrase.text);
-    if (fallback < 0) continue;
-    used.add(fallback);
-    placed[fallback] = { ...lines[fallback]!, ...phrase };
+/** Support turns stay in the scene. Only distinct, translated focus lines become questions. */
+function focusPhrases(lines: PimsleurLine[], explicit: PimsleurPhrase[], names: SpeakerNames, limit: number) {
+  const preferred = explicit.flatMap((candidate) => {
+    const matching = lines.find((item) => item.speaker === candidate.speaker
+      && normalizeChunk(item.text) === normalizeChunk(candidate.text));
+    return matching ? [{ ...candidate, ...matching }] : [];
+  });
+  const plans: Array<NonNullable<ReturnType<typeof drillPlan>>> = [];
+  const seen = new Set<string>();
+  for (const phrase of preferred.length > 0 ? preferred : lines.map(phraseFor)) {
+    const plan = drillPlan(phrase, names);
+    if (!plan || !meaningOf(plan.phrase.translation)) continue;
+    const key = normalizeChunk(plan.phrase.text);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    plans.push(plan);
+    if (plans.length === limit) break;
   }
-  return lines.map((line, position) => placed[position] ?? phraseFor(line));
+  return plans;
+}
+
+function spokenWords(item: PimsleurLine): string[] {
+  return segmentWords(lessonDisplayText(item.text), item.language).map((word) => word.toLocaleLowerCase(item.language));
+}
+
+function fitsTurn(item: PimsleurLine, limit: number): boolean {
+  return spokenWords(item).length <= limit;
+}
+
+function reusesFocus(item: PimsleurLine, phrases: PimsleurPhrase[]): boolean {
+  const words = spokenWords(item);
+  return phrases.some((phrase) => {
+    const known = new Set(spokenWords(phrase));
+    const reused = words.filter((word) => known.has(word)).length;
+    return reused >= 2 && reused >= words.length - 2;
+  });
 }
 
 export function shapePimsleurLesson(value: unknown, context: {
   nativeLanguage: LanguageId;
   targetLanguage: LanguageId;
+  level: CefrLevel;
   priorReviews?: PimsleurPhrase[];
 }): { title: string; topic: string; summary: string; conversationSkill?: ConversationSkill; speakerNames: SpeakerNames; segments: LessonSegment[] } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -1102,26 +907,32 @@ export function shapePimsleurLesson(value: unknown, context: {
   const lines = rawLines
     .map((line) => lineFrom(line, names, context.targetLanguage, allowed))
     .filter((line): line is PimsleurLine => Boolean(line));
-  if (lines.length === 0) return null;
+  const pacing = conversationPacing[context.level];
+  const keptLines = explicitLines.length > 0 ? lines : lines.slice(0, pacing.turns);
+  if (keptLines.length === 0) return null;
+  if (explicitLines.length > 0 && (keptLines.length < 2 || keptLines.length > pacing.turns
+      || keptLines.length !== explicitLines.length
+      || keptLines.some((item) => item.language !== context.targetLanguage || !meaningOf(item.translation) || !fitsTurn(item, pacing.wordsPerTurn)))) {
+    return null;
+  }
   const explicitPhrases = Array.isArray(record.phrases) ? record.phrases : [];
   const phrases = explicitPhrases.length > 0
     ? explicitPhrases
       .map((phrase) => {
         const line = lineFrom(phrase, names, context.targetLanguage, allowed);
         if (!line) return null;
-        const note = textOf((phrase as { note?: unknown }).note);
+        const note = splitSentences(clean(textOf((phrase as { note?: unknown }).note), names))[0];
         const recallCue = clean(textOf((phrase as { recallCue?: unknown }).recallCue), names).slice(0, 220);
         const chunks = notesFrom((phrase as { chunks?: unknown }).chunks ?? (phrase as { glosses?: unknown }).glosses, names);
         return {
           ...line,
-          ...(note ? { note: clean(note, names) } : {}),
+          ...(note && note.length <= 220 ? { note } : {}),
           ...(recallCue ? { recallCue } : {}),
           ...(chunks.length > 0 ? { chunks } : {}),
         };
       })
       .filter((phrase): phrase is PimsleurPhrase => Boolean(phrase))
     : [];
-  const keptLines = lines.slice(0, MAX_DIALOGUE_LINES);
   const recombinations = Array.isArray(record.recombinations)
     ? record.recombinations
       .map((item) => lineFrom(item, names, context.targetLanguage, allowed))
@@ -1129,19 +940,23 @@ export function shapePimsleurLesson(value: unknown, context: {
       .slice(0, 2)
     : [];
   const roleplay = roleplayFrom(record.roleplay, keptLines, names, context.targetLanguage, allowed);
+  const usageTip = splitSentences(clean(textOf(record.usageTip), names))[0];
   const arranged = arrangePimsleur({
     lines: keptLines,
-    phrases: phrasesForLines(keptLines, phrases),
+    phrases,
     cues,
     names,
     nativeLanguage: context.nativeLanguage,
     targetLanguage: context.targetLanguage,
+    level: context.level,
+    ...(usageTip && usageTip.length <= 220 ? { usageTip } : {}),
     ...(speakPrompts.length > 0 ? { speakPrompts } : {}),
     ...(context.priorReviews && context.priorReviews.length > 0 ? { priorReviews: context.priorReviews } : {}),
     ...(recombinations.length > 0 ? { recombinations } : {}),
     ...(roleplay ? { roleplay } : {}),
     seed: hashSeed(title),
   });
+  if (!arranged.some((segment) => segment.phase === "answer")) return null;
   const segments = applyTargetVoices(arranged, context.nativeLanguage, context.targetLanguage).segments;
   const skill = ConversationSkillSchema.safeParse(record.conversationSkill);
   return {

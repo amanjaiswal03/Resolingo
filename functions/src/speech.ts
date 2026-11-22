@@ -121,8 +121,9 @@ export function sceneSpeechContents(input: {
     const name = input.names[turn.speaker];
     return `${name}: ${performanceTag[turn.delivery]}${spokenLine(turn.text, name)}`;
   }).join("\n");
-  const pace = pacePhrase[paceForSpeech(input.level, input.language, input.targetLanguage)];
-  return `TTS the following conversation between ${input.names.speakerA} and ${input.names.speakerB}${who} in a natural voice, ${pace}, at a moderate, steady speaking volume, as native speakers of ${languageName}:\n${lines}`;
+  const pacing = paceForSpeech(input.level, input.language, input.targetLanguage);
+  const beat = only.size > 1 && pacing === "slow" ? " Leave a short, natural beat between speakers so a beginner can follow." : "";
+  return `TTS the following conversation between ${input.names.speakerA} and ${input.names.speakerB}${who} in a natural voice, ${pacePhrase[pacing]}, at a moderate, steady speaking volume, as native speakers of ${languageName}.${beat}\n${lines}`;
 }
 
 export function teacherSpeechConfig(language: LanguageId): GenerateContentConfig {

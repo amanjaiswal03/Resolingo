@@ -92,6 +92,20 @@ describe("Gemini speech requests", () => {
     expect(speech.voiceConfig).toBeUndefined();
   });
 
+  it("leaves a beat between speakers in a beginner dialogue", () => {
+    const scene = {
+      names: { teacher: "Mira", speakerA: "Lukas", speakerB: "Anna" },
+      turns: [
+        { speaker: "speakerA", text: "Einen Kaffee, bitte.", delivery: "warm" },
+        { speaker: "speakerB", text: "Sehr gern.", delivery: "warm" },
+      ] as const,
+      language: "de-DE" as const,
+      targetLanguage: "de-DE" as const,
+    };
+    expect(sceneSpeechRequest({ ...scene, turns: [...scene.turns], level: "A1" }).contents).toContain("beat between speakers");
+    expect(sceneSpeechRequest({ ...scene, turns: [...scene.turns], level: "C1" }).contents).not.toContain("beat between speakers");
+  });
+
   it("keeps Arabic on ar-XA for both Cloud TTS and Gemini", () => {
     expect(cloudLanguageCode("ar-EG")).toBe("ar-XA");
     const request = geminiSpeechRequest({

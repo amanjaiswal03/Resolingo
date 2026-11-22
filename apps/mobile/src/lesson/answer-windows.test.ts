@@ -36,6 +36,14 @@ describe("spoken answer windows", () => {
     expect(answerPlan(segments, playbackClips(segments), [7_000, 2_000])).toBeNull();
   });
 
+  it("passes over a listening pause and still opens the next speaking window", () => {
+    const listening: LessonSegment = { ...intro, kind: "explanation", text: "Let's hear what that means.", pauseAfterMs: 650 };
+    const segments = [listening, prompt, example];
+    expect(answerPlan(segments, playbackClips(segments), [1_900, 7_000, 2_000])?.windows.map(({ id, startSeconds }) => (
+      { id, startSeconds }
+    ))).toEqual([{ id: prompt.id, startSeconds: 3.96 }]);
+  });
+
   it("includes repeated phrases, short buildup prompts, and later lesson drills", () => {
     const phases = ["buildup", "recall", "review", "recombine", "warmup", "roleplay", "quick"];
     const segments = phases.flatMap((phase) => [

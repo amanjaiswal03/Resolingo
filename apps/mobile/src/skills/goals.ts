@@ -16,7 +16,7 @@ type GrammarGoal = keyof typeof grammarGoals;
 const grammarRules: Record<GrammarGoal, readonly string[]> = {
   sentences: ["de-v2", "de-separable", "de-nominal-style", "g-formal"],
   questions: ["de-questions", "g-questions"],
-  verbs: ["de-sein", "de-haben", "de-present", "de-passive", "de-passive-modal", "g-be-have", "g-present", "g-passive"],
+  verbs: ["de-sein", "de-haben", "de-present", "de-sein-plural", "de-haben-plural", "de-present-plural", "de-passive", "de-passive-modal", "g-be-have", "g-present", "g-passive"],
   negation: ["de-negation", "g-negation"],
   past: ["de-perfekt-haben", "de-perfekt-sein", "de-prateritum", "g-past", "g-past-contrast"],
   agreement: ["de-gender", "de-accusative", "de-dative", "de-possessive", "de-comparative", "de-prepositions", "de-adjective", "de-reflexive", "de-endings", "de-infinitive-noun", "de-participle", "g-articles", "g-pronouns", "g-objects", "g-comparative", "g-prepositions"],

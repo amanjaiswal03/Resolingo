@@ -17,11 +17,10 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("One teacher");
     expect(prompt).toContain("no second speaker");
     expect(prompt).toContain("Do not review phrases from earlier lessons");
-    expect(prompt).toContain("at least 12");
+    expect(prompt).toContain("at most 5 drills");
     expect(prompt).toContain("you, to a friend");
-    expect(prompt).toContain("at most twice");
-    expect(prompt).toContain("der Bahnhof");
-    expect(prompt).toContain("means");
+    expect(prompt).toContain("one specific difference");
+    expect(prompt).toContain("One practical caveat");
     expect(prompt).toContain("[[lang:de-DE]]");
     expect(prompt).toContain("[[lang:en-US]]");
     expect(prompt).not.toContain("listen-and-repeat drills");
@@ -35,15 +34,13 @@ describe("lesson prompts", () => {
       level: "A2",
       recentTopics: [],
     });
-    expect(prompt).toContain("one item for every line");
-    expect(prompt).toContain("speak is 6 to 8");
+    expect(prompt).toContain("at most 3 distinct useful lines");
+    expect(prompt).toContain("speak is 4 to 6");
     expect(prompt).toContain("realistic conversation");
-    expect(prompt).toContain("Before we start, let's see what you remember from last time.");
-    expect(prompt).toContain("Do you remember how to say");
-    expect(prompt).toContain("Now on to today's conversation.");
+    expect(prompt).toContain("at most 4 turns");
+    expect(prompt).toContain("Leave recombinations empty");
+    expect(prompt).toContain("Keep earlier lessons out of the dialogue");
     expect(prompt).toContain("closing is one short, calm, matter-of-fact wrap-up");
-    expect(prompt).toContain("Here's one from a previous lesson.");
-    expect(prompt).toContain("The same lead-in is not used twice");
   });
 
   it("keeps a phrase lesson on the learner's sentence", () => {

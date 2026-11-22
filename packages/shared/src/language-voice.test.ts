@@ -102,7 +102,7 @@ describe("target words use the target voice", () => {
         translation: "Where is the station?",
         chunks: [{ text: "Bahnhof", gloss: "Bahnhof means the station." }],
       }],
-    }, { nativeLanguage: "en-US", targetLanguage: "de-DE" });
+    }, { nativeLanguage: "en-US", targetLanguage: "de-DE", level: "A1" });
     const remembered = conversation?.segments.find((segment) => segment.text.includes("Remember this"))?.text ?? "";
     expect(languagesOf(remembered).filter((span) => span.startsWith("de-DE"))).toEqual(["de-DE:Wo ist der Bahnhof?"]);
     const gloss = conversation?.segments.find((segment) => segment.kind === "explanation" && segment.phase === "buildup")?.text ?? "";

@@ -45,10 +45,10 @@ describe("Gemini lesson generation", () => {
   it("asks Vertex for JSON mode with medium safety filters and no response schema", () => {
     const config = lessonGenerationConfig();
     expect(config.responseMimeType).toBe("application/json");
-    expect(config.systemInstruction).toContain("speak has 6 to 8 conversational recall cues");
+    expect(config.systemInstruction).toContain("speak has 4 to 6 conversational recall cues");
     expect(config.systemInstruction).toContain("echo is 4 different brief");
-    expect(config.systemInstruction).toContain("lines is an array of 4 to 6");
-    expect(config.systemInstruction).toContain("one item for every line");
+    expect(config.systemInstruction).toContain("provided level limits");
+    expect(config.systemInstruction).toContain("highest-value lines");
     expect(config.systemInstruction).toContain("[[lang:BCP-47]]");
     expect(config.systemInstruction).toContain("speakerNames");
     expect(config.responseJsonSchema).toBeUndefined();
@@ -96,6 +96,23 @@ describe("Gemini lesson generation", () => {
     ]);
     const result = await generateLessonContent(input, model);
     expect(result.topic).toBe("Asking for directions");
+    expect(model.contents[1]).toContain("REPAIR");
+  });
+
+  it("regenerates a conversation when an A1 turn exceeds the level budget", async () => {
+    const model = client([
+      { text: JSON.stringify({
+        title: "Asking the way",
+        lines: [
+          { speaker: "speakerA", text: "Könnten Sie mir bitte erklären, wie ich am schnellsten zu Fuß zum Hauptbahnhof komme?", translation: "Could you explain the fastest way to walk to the station?" },
+          { speaker: "speakerB", text: "Immer geradeaus.", translation: "Straight ahead." },
+        ],
+      }) },
+      { text: JSON.stringify(lesson("Asking for directions")) },
+    ]);
+    await expect(generateLessonContent(input, model)).resolves.toMatchObject({ topic: "Asking for directions" });
+    expect(model.contents[0]).toContain("at most 10 words per turn");
+    expect(model.contents[0]).toContain("at most 2 distinct useful lines");
     expect(model.contents[1]).toContain("REPAIR");
   });
 

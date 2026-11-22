@@ -91,7 +91,10 @@ describe("grammar lessons", () => {
     expect(oldest.title).toBe(german[0]?.title);
     expect(grammarTopics("de-DE", "A2")[2]?.prerequisites).toContain("The Perfekt with haben");
     expect(german[0]?.insight).toMatch(/bin/);
-    expect(german[0]?.forms).toContain("ihr seid");
+    expect(german[0]?.forms).toContain("du bist");
+    const next = german.find((topic) => topic.id === "de-sein-plural");
+    expect(next?.forms).toContain("ihr seid");
+    expect(next?.prerequisites).toContain(german[0]!.title);
   });
 
   it("names which you, she, or they the form is", () => {
@@ -108,106 +111,66 @@ describe("grammar lessons", () => {
     expect(disambiguateTranslation("you are", "ustedes están.", "es-MX")).toMatch(/you all/);
   });
 
-  it("teaches the whole sein paradigm in one voice, without a second rule", () => {
+  it("teaches singular sein with modeled examples, spaced recall, and one transfer", () => {
     const parsed = lessonFor("de-sein");
     const script = scriptOf(parsed.segments);
-    const spoken = script.toLocaleLowerCase();
-    expect(script).not.toContain("Danke");
-    expect(script).not.toContain("Thanks");
-    expect(parsed.segments.some((segment) => segment.phase === "warmup")).toBe(false);
+    expect(script).not.toMatch(/Danke|second position|wir sind|ihr seid/iu);
     expect(parsed.topic).toBe("Present tense of sein");
     expect(parsed.ruleId).toBe("de-sein");
-    expect(parsed.segments.every((segment) => segment.speaker === "teacher")).toBe(true);
-    for (const form of ["ich bin", "du bist", "er ist", "sie ist", "es ist", "wir sind", "ihr seid", "sie sind", "sie sind"]) {
-      expect(spoken).toContain(form);
-    }
-    expect(script).toContain("Sie sind");
-    const singularRule = parsed.segments.find((segment) => segment.phase === "rule" && segment.text.includes("ich bin"));
-    expect(singularRule?.text).toMatch(/du bist/);
-    expect(singularRule?.text).toMatch(/sie ist/);
-    expect(singularRule?.text.toLocaleLowerCase()).not.toMatch(/second position|word order/);
-    const pluralAt = parsed.segments.findIndex((segment) => segment.text.includes("ihr seid"));
-    const singularAt = parsed.segments.findIndex((segment) => segment.phase === "rule" && segment.text.includes("du bist"));
-    expect(pluralAt).toBeGreaterThan(singularAt);
-    const notices = parsed.segments.filter((segment) => segment.phase === "notice" && !segment.pauseAfterMs).map((segment) => segment.text);
-    expect(notices.join(" ").toLocaleLowerCase()).not.toContain("ending changes");
-    expect(notices.some((line) => /bin/.test(line) && /bist/.test(line))).toBe(true);
-    expect(notices.some((line) => /she/.test(line) && /they/.test(line))).toBe(true);
-    expect(spoken).not.toContain("second position");
-    expect(spoken).not.toContain("where does the verb");
+    expect(parsed.segments.every((item) => item.speaker === "teacher")).toBe(true);
+    for (const form of ["ich bin", "du bist", "er ist", "sie ist", "es ist"]) expect(script.toLowerCase()).toContain(form);
     expect(script).toContain('Ich bin müde.\nThat means "I am tired".');
-    expect(lessonDisplayText(parsed.segments[0]?.text ?? "")).toBe("Today we'll learn how to use sein, to be.");
-    expect(parsed.segments.some((segment) => segment.phase === "summary" && lessonDisplayText(segment.text).startsWith("Here is sein"))).toBe(true);
-    expect(recallAnswersFollowPrompts(parsed.segments)).toBe(true);
-    expect(parsed.segments.at(-1)?.text).toMatch(/That's it for today/);
-    expect(parsed.segments.at(-1)?.text).not.toMatch(/Nice work/);
-    expect(parsed.segments.at(-1)?.text).toMatch(/out loud/);
+    const notice = parsed.segments.findIndex((item) => item.phase === "notice" && item.kind === "drill");
+    const rule = parsed.segments.findIndex((item) => item.phase === "rule");
+    const anchor = parsed.segments.findIndex((item) => item.phase === "answer" && item.text === "Ich bin müde.");
+    const later = parsed.segments.findIndex((item) => item.phase === "review" && item.text === "Ich bin müde.");
+    expect(parsed.segments.slice(0, notice).filter((item) => item.kind === "example")).toHaveLength(3);
+    expect(rule).toBeGreaterThan(notice);
+    expect(anchor).toBeGreaterThan(rule);
+    expect(parsed.segments.slice(anchor + 1, later).some((item) => item.phase === "answer" && item.text === "Du bist müde.")).toBe(true);
+    expect(parsed.segments.filter((item) => item.phase === "answer")).toHaveLength(3);
+    expect(parsed.segments.filter((item) => item.phase === "recombine" && item.language === "de-DE").map((item) => item.text))
+      .toEqual(["Er ist müde."]);
+    expect(parsed.segments.at(-1)?.phase).toBe("closing");
+    expect(cues(parsed.segments).some((cue) => cue.includes("___"))).toBe(true);
     expect(grammarPromptsAreClear(parsed.segments)).toBe(true);
-    const prompts = cues(parsed.segments);
-    const counts = new Map<string, number>();
-    for (const cue of prompts) counts.set(cue, (counts.get(cue) ?? 0) + 1);
-    expect(Math.max(...counts.values())).toBeLessThanOrEqual(2);
-    expect(prompts.some((cue) => /to a friend/i.test(cue))).toBe(true);
-    expect(prompts.some((cue) => /you all/i.test(cue))).toBe(true);
-    expect(prompts.some((cue) => /formally/i.test(cue))).toBe(true);
-    expect(prompts.some((cue) => /\bshe\b/i.test(cue))).toBe(true);
-    expect(prompts.some((cue) => /\bthey\b/i.test(cue))).toBe(true);
-    expect(prompts.some((cue) => cue.includes("___"))).toBe(true);
-    expect(prompts.some((cue) => /change |now make it|put this in the/i.test(cue))).toBe(true);
-    expect(prompts.some((cue) => /which form/i.test(cue))).toBe(true);
-    expect(prompts.filter((cue) => cue.startsWith("How would you say")).length).toBeLessThan(prompts.length / 2);
-    expect(parsed.segments.length).toBeGreaterThanOrEqual(80);
-    expect(parsed.segments.length).toBeLessThanOrEqual(120);
-    const minutes = durationMs(parsed.segments) / 60_000;
-    expect(minutes).toBeGreaterThanOrEqual(8);
-    expect(minutes).toBeLessThanOrEqual(12);
-    const remembered = phrasesToRemember(parsed.segments, DEFAULT_SPEAKER_NAMES, "de-DE");
-    expect(remembered.map((phrase) => phrase.text)).toContain("Ich bin");
-    expect(remembered.every((phrase) => phrase.speaker === "speakerA")).toBe(true);
+    expect(recallAnswersFollowPrompts(parsed.segments)).toBe(true);
+    expect(durationMs(parsed.segments)).toBeLessThan(4 * 60_000);
+    expect(phrasesToRemember(parsed.segments, DEFAULT_SPEAKER_NAMES, "de-DE").map((phrase) => phrase.text)).toContain("Ich bin müde.");
   });
 
-  it("covers every haben and regular-present form", () => {
-    const haben = scriptOf(lessonFor("de-haben").segments).toLocaleLowerCase();
-    for (const form of ["ich habe", "du hast", "er hat", "sie hat", "es hat", "wir haben", "ihr habt", "sie haben"]) {
-      expect(haben).toContain(form);
-    }
-    expect(scriptOf(lessonFor("de-haben").segments)).toContain("Sie haben");
-    const regular = lessonFor("de-present");
-    const text = scriptOf(regular.segments);
-    const lower = text.toLocaleLowerCase();
-    for (const form of ["ich mache", "du machst", "er macht", "wir machen", "ihr macht", "sie machen"]) {
-      expect(lower).toContain(form);
-    }
-    expect(text).toContain("Sie machen");
-    expect(lower).not.toContain("second position");
-    for (const lesson of [lessonFor("de-haben"), regular]) {
-      const prompts = cues(lesson.segments);
-      const counts = new Map<string, number>();
-      for (const cue of prompts) counts.set(cue, (counts.get(cue) ?? 0) + 1);
-      expect(Math.max(...counts.values())).toBeLessThanOrEqual(2);
-      expect(prompts.some((cue) => /to a friend/i.test(cue))).toBe(true);
-      expect(prompts.some((cue) => /you all/i.test(cue))).toBe(true);
-      expect(prompts.some((cue) => /formally/i.test(cue))).toBe(true);
-      expect(lesson.segments.length).toBeLessThanOrEqual(120);
+  it("teaches the group and formal forms in distinct follow-up lessons", () => {
+    const patterns = [
+      ["de-sein", ["wir sind", "ihr seid", "sie sind"], "Sie sind zu Hause."],
+      ["de-haben", ["wir haben", "ihr habt", "sie haben"], "Sie haben Zeit."],
+      ["de-present", ["wir machen", "ihr macht", "sie machen"], "Sie machen das."],
+    ] as const;
+    for (const [id, forms, formal] of patterns) {
+      const single = scriptOf(lessonFor(id).segments).toLowerCase();
+      const group = lessonFor(`${id}-plural`);
+      for (const form of forms) {
+        expect(single).not.toContain(form);
+        expect(scriptOf(group.segments).toLowerCase()).toContain(form);
+      }
+      expect(group.segments.find((item) => item.kind === "example" && item.text === formal)?.translation).toContain("formally");
+      expect(group.segments.filter((item) => item.phase === "answer")).toHaveLength(3);
+      expect(grammarPromptsAreClear(group.segments)).toBe(true);
     }
   });
 
-  it("models each hook once and speaks stems, irregular forms, and endings in German", () => {
-    for (const [id, stem] of [["de-haben", "hab-"], ["de-present", "mach-"]] as const) {
-      const { segments } = lessonFor(id);
-      const hook = segments.find((segment) => segment.kind === "example" && segment.phase === "hook")!;
-      expect(segments.filter((segment) => segment.kind === "example" && segment.text === hook.text)).toHaveLength(1);
-      expect(segments[segments.indexOf(hook) + 1]?.text).toBe(`That means "${hook.translation!.slice(0, -1)}".`);
-      const stemLine = segments.find((segment) => lessonDisplayText(segment.text).includes(stem))!;
-      const spans = speechSpans(stemLine.text, stemLine.language);
-      expect(spans).toContainEqual({ language: "de-DE", text: stem });
-      expect(spans.filter((span) => span.language === "en-US").map((span) => span.text).join("")).not.toContain(stem);
-    }
-    const script = lessonFor("de-present").segments;
-    const check = script.find((segment) => segment.phase === "check" && !segment.pauseAfterMs)!;
+  it("models the hook once and speaks German stems and endings in German", () => {
+    const { segments } = lessonFor("de-present");
+    const hook = segments.find((segment) => segment.kind === "example" && segment.phase === "hook")!;
+    expect(segments.filter((segment) => segment.kind === "example" && segment.text === hook.text)).toHaveLength(1);
+    expect(segments[segments.indexOf(hook) + 1]?.text).toBe('That means "I make coffee".');
+    const stemLine = segments.find((segment) => segment.phase === "rule")!;
+    const spans = speechSpans(stemLine.text, stemLine.language);
+    expect(spans).toContainEqual({ language: "de-DE", text: expect.stringMatching(/^mach-/u) });
+    expect(spans.filter((span) => span.language === "en-US").map((span) => span.text).join("")).not.toContain("mach-");
+    const check = segments.find((segment) => segment.phase === "check" && segment.kind === "explanation")!;
     expect(speechSpans(check.text, check.language)).toEqual([{ language: "de-DE", text: "st. du machst." }]);
-    const ending = script.find((segment) => lessonDisplayText(segment.text).startsWith("Hold onto the endings"))!;
-    expect(speechSpans(ending.text, ending.language).at(-1)).toMatchObject({ language: "de-DE", text: "e, st, t, en, t, en." });
+    const ending = segments.find((segment) => segment.phase === "usage")!;
+    expect(speechSpans(ending.text, ending.language)).toContainEqual({ language: "de-DE", text: "-e, -st, -t." });
   });
 
   it("repairs untagged grammar terms and affixes in a generated lesson", () => {
@@ -236,9 +199,47 @@ describe("grammar lessons", () => {
     const models = segments.filter((segment) => segment.kind === "example");
     expect(models.map((segment) => segment.text)).toEqual(["Je parle.", "Tu parles.", "Il parle."]);
     expect(segments.filter((segment) => segment.phase === "answer").map((segment) => segment.text))
-      .toEqual(["Je parle.", "Tu parles.", "Il parle.", "Nous parlons."]);
+      .toEqual(["Je parle.", "Tu parles.", "Il parle."]);
     const rule = segments.find((segment) => lessonDisplayText(segment.text).startsWith("Keep parl- and add"))!;
     expect(speechSpans(rule.text, rule.language).filter((span) => span.language === "fr-FR").map((span) => span.text.trim()))
       .toEqual(["parl-", "-e", "parler"]);
+  });
+
+  it("scales generated practice and thinking time while keeping one use of the rule", () => {
+    const topic = grammarTopics("fr-FR", "A1").find((item) => item.id === "g-present")!;
+    const examples = [
+      { text: "Je parle.", translation: "I speak." },
+      { text: "Tu parles.", translation: "You speak." },
+      { text: "Elle parle.", translation: "She speaks." },
+    ];
+    const source = {
+      title: "Saying who is speaking",
+      goal: "Say who is speaking in French.",
+      hook: examples[0],
+      examples: examples.slice(1),
+      noticeCue: "Listen for what changes when you talk to a friend.",
+      notice: "You hear the subject change.",
+      rule: "Use the matching subject and verb form for each person.",
+      usageTip: "With a friend, use the informal form. This extra detail goes beyond the lesson.",
+      drills: [...examples, { text: "Il parle.", translation: "He speaks." }, { text: "On parle.", translation: "People speak." }],
+      recombinations: [
+        { text: "Je parle avec elle.", translation: "I speak with her." },
+        { text: "Je parle avec lui.", translation: "I speak with him." },
+      ],
+    };
+    const build = (level: "A1" | "C1") => shapeGrammarLesson(source, {
+      topic, level, nativeLanguage: "en-US", targetLanguage: "fr-FR",
+    })!.segments;
+    const a1 = build("A1");
+    const c1 = build("C1");
+    expect(a1[0]?.text).toBe(source.goal);
+    expect(a1.filter((part) => part.phase === "answer")).toHaveLength(3);
+    expect(c1.filter((part) => part.phase === "answer")).toHaveLength(5);
+    expect(a1.find((part) => part.phase === "practice")?.pauseAfterMs).toBeGreaterThan(c1.find((part) => part.phase === "practice")!.pauseAfterMs!);
+    expect(a1.find((part) => part.phase === "notice" && part.kind === "drill")?.pauseAfterMs)
+      .toBeGreaterThan(c1.find((part) => part.phase === "notice" && part.kind === "drill")!.pauseAfterMs!);
+    expect(a1.filter((part) => part.phase === "usage").map((part) => part.text)).toEqual(["With a friend, use the informal form."]);
+    expect(c1.filter((part) => part.phase === "recombine" && part.language === "fr-FR")).toHaveLength(1);
+    expect(grammarPromptsAreClear(a1) && grammarPromptsAreClear(c1)).toBe(true);
   });
 });
