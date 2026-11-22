@@ -15,6 +15,7 @@ import {
   MAX_STORED_PHRASES,
   phraseIdFor,
   phraseLookupLimit,
+  speechCheckLimit,
   reusablePhraseLesson,
   RegisterPushDeviceRequestSchema,
   SetTelemetryConsentRequestSchema,
@@ -318,6 +319,25 @@ async function chargePhraseLookup(usageRef: DocumentReference, limit: number): P
   if (!charged) throw new HttpsError("resource-exhausted", "You've reached today's phrase lookups.");
 }
 
+async function assertSpeechCheckQuota(uid: string, profile: DocumentData): Promise<{ usageRef: DocumentReference; limit: number }> {
+  const usageRef = db.doc(`users/${uid}/dailyUsage/${localDate(profile.timezone as string)}`);
+  const usage = (await usageRef.get()).data() ?? {};
+  const limit = speechCheckLimit(profile.unlimitedLessons);
+  if (Number(usage.speechChecks ?? 0) >= limit) {
+    throw new HttpsError("resource-exhausted", "You've reached today's spoken checks. You can still reveal and rate.");
+  }
+  return { usageRef, limit };
+}
+
+async function chargeSpeechCheck(usageRef: DocumentReference, limit: number): Promise<void> {
+  await db.runTransaction(async (transaction) => {
+    const current = await transaction.get(usageRef);
+    const count = Number(current.data()?.speechChecks ?? 0);
+    if (count >= limit) return;
+    transaction.set(usageRef, { speechChecks: count + 1, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  });
+}
+
 export const translatePhrase = onCall({ ...callableOptions, timeoutSeconds: 120 }, async (request) => {
   const uid = requireUid(request);
   const parsed = TranslatePhraseRequestSchema.safeParse(request.data);
@@ -332,6 +352,24 @@ export const translatePhrase = onCall({ ...callableOptions, timeoutSeconds: 120 
   const audio = parsed.data.audioBase64 && parsed.data.mimeType
     ? { audioBase64: parsed.data.audioBase64, mimeType: parsed.data.mimeType }
     : null;
+  if (audio && parsed.data.mode === "practice") {
+    const quota = await assertSpeechCheckQuota(uid, profile);
+    let heard: string;
+    try {
+      try {
+        heard = await transcribeWithSpeechToText({ ...audio, nativeLanguage: targetLanguage, projectId: vertexProjectId() });
+      } catch (error) {
+        if (error instanceof PhraseTranslationError) throw error;
+        logger.warn("speech_check_fallback", { message: error instanceof Error ? error.message : "stt_failed" });
+        heard = await transcribePhraseAudio({ ...audio, nativeLanguage: targetLanguage });
+      }
+    } catch (error) {
+      throw translationFailure(error);
+    }
+    await chargeSpeechCheck(quota.usageRef, quota.limit);
+    return { mode: "practice" as const, heard };
+  }
+
   if (audio && parsed.data.mode === "transcribe") {
     const quota = await assertPhraseQuota(uid, profile);
     let nativeText: string;

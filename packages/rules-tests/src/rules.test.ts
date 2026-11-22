@@ -92,6 +92,9 @@ describe("Firestore owner rules", () => {
     await assertFails(setDoc(bob, progress));
     await assertFails(updateDoc(alice, { recallRating: "got-it" }));
     await assertFails(updateDoc(alice, { dueAt: 0 }));
+    // A spoken answer in a lesson keeps the earlier recall rating.
+    await assertSucceeds(setDoc(alice, { ...progress, lastRating: "got-it", lastMode: "lesson", intervalDays: 2, dueAt: reviewedAt + 2 * 86_400_000 }));
+    await assertFails(setDoc(alice, { ...progress, lastMode: "listening" }));
   });
 
   it("makes lessons available after completion and keeps synced review progress with its language pair", async () => {

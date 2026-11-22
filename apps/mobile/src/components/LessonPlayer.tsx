@@ -14,6 +14,7 @@ import { percentWidth } from "@/lesson/navigation";
 import { joinLessonAudio } from "@/lesson/join-lesson-audio";
 import { stopOwnedPlayer } from "@/lesson/player-lifecycle";
 import { useAnswerChecks } from "@/lesson/use-answer-checks";
+import { useLessonCredits } from "@/skills/use-lesson-credits";
 import {
 	elapsedMs,
 	formatClock,
@@ -124,6 +125,7 @@ export function LessonPlayer({
 		available: canCheckAnswers, enable: enableChecks, isArmed, recording, partial, skip, results,
 		feedbackPlaying, cancelFeedback, state: checkState, toggle: toggleChecks, rewind: rewindChecks,
 	} = useAnswerChecks(player, lesson.id, checks, status.isLoaded, allowAnswerChecks);
+	const flushCredits = useLessonCredits(lesson, checks, results);
 	const playing = status.playing || feedbackPlaying;
 	const loadingAudio = playable.length > 0 && !playing && !status.error && status.playbackState !== "failed" &&
 		(opening || status.timeControlStatus === "waitingToPlayAtSpecifiedRate");
@@ -298,6 +300,7 @@ export function LessonPlayer({
 		if (continuous) {
 			if (completed.current) return;
 			completed.current = true;
+			flushCredits();
 			onComplete();
 			return;
 		}
@@ -315,8 +318,9 @@ export function LessonPlayer({
 		}
 		if (completed.current) return;
 		completed.current = true;
+		flushCredits();
 		onComplete();
-	}, [continuous, onComplete, playable, player, status.currentTime, status.didJustFinish, status.duration]);
+	}, [continuous, flushCredits, onComplete, playable, player, status.currentTime, status.didJustFinish, status.duration]);
 	useEffect(() => {
 		const currentGeneration = ++generation.current;
 		return () => {

@@ -65,7 +65,7 @@ service cloud.firestore {
         && data.keys().hasAll(['attemptId', 'lastRating', 'lastMode', 'recallRating', 'reviewedAt', 'dueAt', 'intervalDays'])
         && data.attemptId is string && data.attemptId.size() == 36
         && data.lastRating in ['got-it', 'almost', 'forgot']
-        && data.lastMode in ['recall', 'recognition']
+        && data.lastMode in ['recall', 'recognition', 'lesson']
         && (data.recallRating == null || data.recallRating in ['got-it', 'almost', 'forgot'])
         && (data.lastMode != 'recall' || data.recallRating == data.lastRating)
         && data.reviewedAt is int && data.reviewedAt >= 0

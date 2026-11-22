@@ -42,6 +42,9 @@ describe("shared contracts", () => {
       mimeType: "audio/webm",
       durationMs: 2_000,
     }).success).toBe(false);
+    // A spoken answer in a Skills review uses the same audio rules and needs audio.
+    expect(TranslatePhraseRequestSchema.safeParse({ mode: "practice", audioBase64: spoken, mimeType: "audio/m4a", durationMs: 2_000 }).success).toBe(true);
+    expect(TranslatePhraseRequestSchema.safeParse({ mode: "practice", text: "Die Rechnung, bitte." }).success).toBe(false);
     const oversized = Buffer.alloc(MAX_PHRASE_AUDIO_BYTES + 1, 1).toString("base64");
     const tooBig = TranslatePhraseRequestSchema.safeParse({
       mode: "transcribe",

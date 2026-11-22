@@ -8,21 +8,51 @@ export const grammarGoals = {
   past: "Talk about the past",
   agreement: "Describe people and things",
   modals: "Talk about wants, needs, and possibilities",
+  future: "Talk about plans and the future",
   connections: "Connect your ideas",
   hypotheticals: "Talk about what could happen",
 } as const;
 type GrammarGoal = keyof typeof grammarGoals;
 
-const grammarRules: Record<GrammarGoal, readonly string[]> = {
-  sentences: ["de-v2", "de-separable", "de-nominal-style", "g-formal"],
-  questions: ["de-questions", "g-questions"],
-  verbs: ["de-sein", "de-haben", "de-present", "de-sein-plural", "de-haben-plural", "de-present-plural", "de-passive", "de-passive-modal", "g-be-have", "g-present", "g-passive"],
-  negation: ["de-negation", "g-negation"],
-  past: ["de-perfekt-haben", "de-perfekt-sein", "de-prateritum", "g-past", "g-past-contrast"],
-  agreement: ["de-gender", "de-accusative", "de-dative", "de-possessive", "de-comparative", "de-prepositions", "de-adjective", "de-reflexive", "de-endings", "de-infinitive-noun", "de-participle", "g-articles", "g-pronouns", "g-objects", "g-comparative", "g-prepositions"],
-  modals: ["de-modals", "de-modal-subjective", "g-modals"],
-  connections: ["de-weil", "de-verb-final", "de-relative", "de-da-compounds", "de-reported", "de-connectors", "de-concession", "g-subordinate", "g-relative", "g-reported", "g-connectors"],
-  hypotheticals: ["de-wurde", "de-konjunktiv-ii", "de-hypothetical", "g-conditional", "g-mood"],
+export const grammarRules: Record<GrammarGoal, readonly string[]> = {
+  sentences: [
+    "de-v2", "de-separable", "de-nominal-style",
+    "es-formal-register", "fr-formal-register",
+    "g-formal", "g-register", "g-emphasis", "g-polite", "g-imperative", "g-hedging", "g-time-words",
+  ],
+  questions: ["de-questions", "es-questions", "fr-questions", "g-questions"],
+  verbs: [
+    "de-sein", "de-haben", "de-present", "de-sein-plural", "de-haben-plural", "de-present-plural", "de-passive", "de-passive-modal",
+    "es-ar-verbs", "es-er-ir-verbs", "es-ser", "es-estar", "es-tener", "es-plural-verbs", "es-gustar", "es-passive-se", "es-periphrasis",
+    "fr-etre", "fr-avoir", "fr-aller", "fr-faire", "fr-er-verbs", "fr-plural-verbs", "fr-passive", "fr-gerondif",
+    "g-be-have", "g-present", "g-passive", "g-like",
+  ],
+  negation: ["de-negation", "es-negation", "fr-negation", "g-negation"],
+  past: [
+    "de-perfekt-haben", "de-perfekt-sein", "de-prateritum",
+    "es-preterite-regular", "es-preterite-irregular", "es-imperfect", "es-preterite-imperfect", "es-present-perfect",
+    "fr-passe-compose-avoir", "fr-passe-compose-etre", "fr-imparfait", "fr-pc-imparfait",
+    "g-past", "g-past-contrast", "g-experience",
+  ],
+  agreement: [
+    "de-gender", "de-accusative", "de-dative", "de-possessive", "de-comparative", "de-prepositions", "de-adjective", "de-reflexive", "de-endings", "de-infinitive-noun", "de-participle",
+    "es-gender", "es-comparative", "es-object-pronouns", "es-indirect-pronouns", "es-por-para", "es-reflexive",
+    "fr-gender", "fr-comparative", "fr-object-pronouns", "fr-indirect-pronouns", "fr-partitive", "fr-y-en", "fr-reflexive",
+    "g-articles", "g-pronouns", "g-objects", "g-comparative", "g-prepositions", "g-possession", "g-location", "g-numbers-plural",
+  ],
+  modals: ["de-modals", "de-modal-subjective", "es-subjunctive-wishes", "fr-modals", "g-modals", "g-wishes"],
+  future: ["es-ir-a", "es-future", "fr-futur-proche", "fr-futur-simple", "g-future-plans"],
+  connections: [
+    "de-weil", "de-verb-final", "de-relative", "de-da-compounds", "de-reported", "de-connectors", "de-concession",
+    "es-connectors", "es-relative", "es-reported", "fr-connectors", "fr-relative", "fr-dont", "fr-reported",
+    "g-subordinate", "g-relative", "g-reported", "g-connectors", "g-because",
+  ],
+  hypotheticals: [
+    "de-wurde", "de-konjunktiv-ii", "de-hypothetical",
+    "es-conditional", "es-si-clauses", "es-subjunctive-emotion", "es-imperfect-subjunctive", "es-pluperfect-subjunctive", "es-nuanced-subjunctive",
+    "fr-conditionnel", "fr-past-conditional", "fr-si-clauses", "fr-subjonctif", "fr-subjonctif-emotion", "fr-nuanced-subjonctif",
+    "g-conditional", "g-mood", "g-unreal", "g-past-unreal",
+  ],
 };
 
 export function grammarGoal(ruleId: string): GrammarGoal {

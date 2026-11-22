@@ -105,6 +105,18 @@ export function phraseLookupLimit(unlimitedLessons: unknown): number {
   return unlimitedLessons === true ? PHRASE_LOOKUP_UNLIMITED : PHRASE_LOOKUP_LIMIT;
 }
 
+/**
+ * Spoken answers checked in Skills reviews each day. A session asks up to five
+ * phrases with one retry each, so this covers many sessions. It is counted
+ * apart from phrase lookups.
+ */
+export const SPEECH_CHECK_LIMIT = 150;
+export const SPEECH_CHECK_UNLIMITED = 400;
+
+export function speechCheckLimit(unlimitedLessons: unknown): number {
+  return unlimitedLessons === true ? SPEECH_CHECK_UNLIMITED : SPEECH_CHECK_LIMIT;
+}
+
 function normalize(value: string): string {
   return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/gu, " ").trim();
 }

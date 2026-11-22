@@ -113,6 +113,43 @@ export function phraseMatch(expected: string, result: VoiceResult, language: Lan
   return { level, heard, ...(detail ? { detail } : {}) };
 }
 
+export type WordMatch = { text: string; matched: boolean };
+
+/**
+ * The model answer split into its written words, each marked as heard or not,
+ * in order. Articles count here even though grading forgives them, so the
+ * learner still sees a dropped "der". Languages written without spaces come
+ * back as one piece marked by the overall grade.
+ */
+export function wordMatches(expected: string, heard: string, language: LanguageId): WordMatch[] {
+  const words = expected.trim().split(/\s+/u).filter(Boolean);
+  if (scriptOf(language) === "characters") {
+    return [{ text: expected.trim(), matched: gradePhrase(expected, heard, language).level === "matched" }];
+  }
+  const keys = words.map((word) => tokenize(word, language).join(""));
+  const spoken = tokenize(heard, language);
+  // Longest common subsequence with the same fuzzy word test the grader uses.
+  const table = keys.map(() => Array<number>(spoken.length + 1).fill(0));
+  table.push(Array<number>(spoken.length + 1).fill(0));
+  for (let i = keys.length - 1; i >= 0; i -= 1) {
+    for (let j = spoken.length - 1; j >= 0; j -= 1) {
+      table[i]![j] = keys[i] && tokensClose(keys[i]!, spoken[j]!)
+        ? table[i + 1]![j + 1]! + 1
+        : Math.max(table[i + 1]![j]!, table[i]![j + 1]!);
+    }
+  }
+  const matched = Array<boolean>(words.length).fill(false);
+  let i = 0, j = 0;
+  while (i < keys.length && j < spoken.length) {
+    if (keys[i] && tokensClose(keys[i]!, spoken[j]!) && table[i]![j] === table[i + 1]![j + 1]! + 1) {
+      matched[i] = true; i += 1; j += 1;
+    } else if (table[i + 1]![j]! >= table[i]![j + 1]!) i += 1;
+    else j += 1;
+  }
+  // Punctuation-only pieces such as "—" are never "missed".
+  return words.map((text, index) => ({ text, matched: matched[index]! || !keys[index] }));
+}
+
 function scriptOf(language: LanguageId): "words" | "characters" {
   const code = language.split("-")[0];
   return code === "zh" || code === "ja" || code === "th" ? "characters" : "words";

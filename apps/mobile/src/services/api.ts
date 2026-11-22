@@ -31,6 +31,11 @@ export const api = {
     mode: "transcribe";
     nativeText: string;
   }>("translatePhrase", { mode: "transcribe", ...audio }),
+  /** Transcribes a spoken answer in the learner's target language for a Skills review. */
+  checkSpokenPhrase: (audio: { audioBase64: string; mimeType: "audio/m4a" | "audio/mp4" | "audio/aac" | "audio/wav"; durationMs: number }) => call<unknown, {
+    mode: "practice";
+    heard: string;
+  }>("translatePhrase", { mode: "practice", ...audio }),
   createPhraseLesson: (phraseId: string, idempotencyKey: string) => call<unknown, { lessonId: string }>("createPhraseLesson", { phraseId, idempotencyKey }),
   retryFailedLesson: (lessonId: string) => call("retryFailedLesson", { lessonId }),
   deleteLesson: (lessonId: string) => call("deleteLesson", { lessonId }),
