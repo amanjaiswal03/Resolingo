@@ -30,6 +30,7 @@ export const MAX_WARMUP_REVIEWS = 2;
 const REMEMBERED_PHASES = new Set(["answer", "review", "warmup", "recombine", "roleplay", "hook", "example"]);
 const REMEMBERED_SPEAKERS = new Set(["speakerA", "speakerB", "teacher"]);
 
+/** Punctuation becomes a space. CJK characters stay together, so an id does not depend on inserted spaces. */
 function normalize(value: string): string {
   return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").replace(/\s+/gu, " ").trim();
 }

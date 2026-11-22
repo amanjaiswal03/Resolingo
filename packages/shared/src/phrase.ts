@@ -2,6 +2,7 @@ import type { LanguageId } from "./languages.js";
 import type { CefrLevel, LessonSegment } from "./schemas.js";
 import { MAX_LESSON_SEGMENTS } from "./schemas.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
+import { isClitic, needsWordSegment, segmentWords, splitSentences } from "./segment.js";
 import { REVIEW_GAPS } from "./pimsleur.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 import { normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
@@ -167,16 +168,15 @@ function gloss(text: string, translation: string, language: LanguageId, teaching
 }
 
 function contentWords(text: string): string[] {
-  return normalize(text).split(" ").filter((word) => word.length >= 3);
+  return segmentWords(text)
+    .map((word) => word.normalize("NFC").toLocaleLowerCase("en-US"))
+    .filter((word) => word.length >= 3 || needsWordSegment(word));
 }
 
 /** New content words in an alternative, grouped into short glosses of at most three words. */
-function novelFocuses(answer: string, core: string): string[] {
-  const known = new Set(spokenWords(core));
-  const tokens = answer
-    .split(/\s+/u)
-    .map((token) => token.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
-    .filter((token) => token.length > 0);
+function novelFocuses(answer: string, core: string, locale: LanguageId | string = "en-US"): string[] {
+  const known = new Set(spokenWords(core, locale));
+  const tokens = segmentWords(answer, locale);
   const groups: string[][] = [];
   let current: string[] = [];
   const flush = () => {
@@ -185,8 +185,8 @@ function novelFocuses(answer: string, core: string): string[] {
     current = [];
   };
   for (const token of tokens) {
-    const key = normalize(token);
-    if (key.length < 2 || known.has(key)) {
+    const key = token.normalize("NFC").toLocaleLowerCase(locale);
+    if (isClitic(key, locale) || known.has(key) || (key.length < 2 && !needsWordSegment(key))) {
       flush();
       continue;
     }
@@ -194,7 +194,8 @@ function novelFocuses(answer: string, core: string): string[] {
     if (current.length === MAX_GLOSS_WORDS) flush();
   }
   flush();
-  return groups.map((group) => group.join(" "));
+  const joiner = /\s/u.test(answer) ? " " : "";
+  return groups.map((group) => group.join(joiner));
 }
 
 function shortWordGlosses(words: PhraseLine[] | undefined): PhraseLine[] {
@@ -216,7 +217,8 @@ function registerGloss(alternative: PhraseAlternative, core: string, teaching: L
     };
   }
   const phrases = novelFocuses(alternative.text, core);
-  const [first, ...rest] = phrases.length > 0 ? phrases : [alternative.text.split(/\s+/u).slice(0, MAX_GLOSS_WORDS).join(" ")];
+  const fallback = segmentWords(alternative.text).slice(0, MAX_GLOSS_WORDS).join(/\s/u.test(alternative.text) ? " " : "");
+  const [first, ...rest] = phrases.length > 0 ? phrases : [fallback];
   const label = alternative.label.trim() || line(teaching, "moreFormal");
   return {
     focus: first!,
@@ -226,22 +228,25 @@ function registerGloss(alternative: PhraseAlternative, core: string, teaching: L
 }
 
 /** The words a gloss or same-word note actually teaches, ignoring a full-sentence translation. */
-function taughtWords(segment: LessonSegment): string[] {
+function taughtWords(segment: LessonSegment, locale: LanguageId | string = "en-US"): string[] {
   const shown = lessonDisplayText(segment.text);
   const span = (glossSubject(shown, segment.language) ?? "").trim();
   if (!span) return [];
-  const words = spokenWords(span);
+  const words = spokenWords(span, locale);
   if (words.length === 0 || words.length > MAX_GLOSS_WORDS) return [];
   return words;
 }
 
 /** Every spoken token, including short pronouns and function words such as es, du, and zu. */
-function spokenWords(text: string): string[] {
-  return normalize(text).split(" ").filter((word) => word.length >= 2);
+function spokenWords(text: string, locale: LanguageId | string = "en-US"): string[] {
+  return segmentWords(text, locale)
+    .map((word) => word.normalize("NFC").toLocaleLowerCase(locale))
+    .filter((word) => word.length >= 2 || needsWordSegment(word))
+    .filter((word) => !isClitic(word, locale));
 }
 
 function sentenceParts(text: string): string[] {
-  return text.split(/(?<=[.!?？。])\s+/u).map((part) => part.trim()).filter((part) => part.length > 0);
+  return splitSentences(text);
 }
 
 /** Pair each target sentence with the native sentence in the same position. */
@@ -256,19 +261,21 @@ function pairedSentences(core: string, native: string): PhraseLine[] {
  * A situation has to keep the target phrase. For more than one sentence, reusing
  * the verb or main word of any one sentence is enough.
  */
-function sharesCorePattern(answer: string, core: string): boolean {
+function sharesCorePattern(answer: string, core: string, locale: LanguageId | string = "en-US"): boolean {
   const parts = sentenceParts(core);
-  return (parts.length > 1 ? parts : [core]).some((part) => sharesPart(answer, part));
+  return (parts.length > 1 ? parts : [core]).some((part) => sharesPart(answer, part, locale));
 }
 
-function sharesPart(answer: string, part: string): boolean {
-  const keys = spokenWords(part).filter((word) => word.length >= 4).flatMap((word) => {
+function sharesPart(answer: string, part: string, locale: LanguageId | string = "en-US"): boolean {
+  const source = spokenWords(part, locale);
+  const keys = source.filter((word) => word.length >= 4 || needsWordSegment(word)).flatMap((word) => {
+    if (needsWordSegment(word)) return [word];
     const stemmed = word.replace(/(en|st)$/u, "");
     return stemmed.length >= 3 && stemmed !== word ? [word, stemmed] : [word];
   });
-  const words = spokenWords(answer);
-  if (keys.length === 0) return words.some((word) => spokenWords(part).includes(word));
-  return keys.some((key) => words.some((word) => word === key || (key.length >= 3 && word.startsWith(key))));
+  const words = spokenWords(answer, locale);
+  if (keys.length === 0) return words.some((word) => source.includes(word));
+  return keys.some((key) => words.some((word) => word === key || (!needsWordSegment(key) && key.length >= 3 && word.startsWith(key))));
 }
 
 function formatCue(frame: string, translation: string, teaching: LanguageId, extra: { from?: string; to?: string } = {}): string {
@@ -431,7 +438,7 @@ export function phraseLinesAreDistinct(segments: readonly LessonSegment[]): bool
 export function focusesAreGlossedFirst(segments: readonly LessonSegment[], focuses: readonly string[]): boolean {
   for (const focus of focuses) {
     const needle = normalize(focus);
-    if (needle.length < 2) continue;
+    if (needle.length < 2 && !needsWordSegment(needle)) continue;
     const glossAt = segments.findIndex((segment) => {
       const shown = lessonDisplayText(segment.text);
       return isGlossLine(shown, segment.language) && normalize(shown).includes(needle);
@@ -450,17 +457,17 @@ export function focusesAreGlossedFirst(segments: readonly LessonSegment[], focus
  * earlier short gloss. Translating the whole answer does not teach a new word.
  */
 export function answerWordsAreGlossed(segments: readonly LessonSegment[], language: LanguageId, core: string): boolean {
-  const known = new Set(spokenWords(core));
+  const known = new Set(spokenWords(core, language));
   for (let index = 0; index < segments.length; index += 1) {
     const segment = segments[index];
     const previous = segments[index - 1];
     if ((previous?.pauseAfterMs ?? 0) > 0 && segment?.language === language && segment.phase !== "warmup") {
-      for (const word of spokenWords(segment.text)) {
+      for (const word of spokenWords(segment.text, language)) {
         if (!known.has(word)) return false;
       }
     }
     if (segment) {
-      for (const word of taughtWords(segment)) known.add(word);
+      for (const word of taughtWords(segment, language)) known.add(word);
     }
   }
   return true;
@@ -507,7 +514,7 @@ function closingFor(meaning: string, situations: readonly PhraseSituation[], tea
  * A long phrase sometimes needs a third short gloss on its own cue, so the
  * lesson is rejected only when four or more new glosses pile up before one cue.
  */
-function glossesStaySparse(segments: readonly LessonSegment[]): { ok: true } | { ok: false; detail: string } {
+function glossesStaySparse(segments: readonly LessonSegment[], locale: LanguageId | string = "en-US"): { ok: true } | { ok: false; detail: string } {
   const fresh: string[] = [];
   const reset = () => { fresh.length = 0; };
   for (const segment of segments) {
@@ -517,7 +524,7 @@ function glossesStaySparse(segments: readonly LessonSegment[]): { ok: true } | {
       }
       reset();
     }
-    if (taughtWords(segment).length > 0) fresh.push(lessonDisplayText(segment.text));
+    if (taughtWords(segment, locale).length > 0) fresh.push(lessonDisplayText(segment.text));
   }
   if (fresh.length > 3) return { ok: false, detail: fresh.join(" | ") };
   return { ok: true };
@@ -567,9 +574,9 @@ export function shapePhraseLesson(
   const source = asRecord(value) ?? {};
   const limits = budget(context.level);
   const note = textOf(context.note);
-  const pattern = textOf(source.pattern).split(/(?<=[.!?])\s+/u)[0]?.trim() ?? "";
+  const pattern = splitSentences(textOf(source.pattern))[0]?.trim() ?? "";
   const sentenceLines = pairedSentences(core, context.nativeText);
-  const longLine = spokenWords(core).length > 8;
+  const longLine = spokenWords(core, context.targetLanguage).length > 8;
   const chunkLimit = sentenceLines.length > 1 || longLine
     ? Math.min(10, Math.max(limits.chunks, sentenceLines.length > 1 ? sentenceLines.length * 4 : 6))
     : limits.chunks;
@@ -579,15 +586,15 @@ export function shapePhraseLesson(
   const swaps = readSwaps(source.swaps, core).filter((swap) => !isLiteral(swap.answer, note)).slice(0, limits.swaps);
   if (swaps.length < limits.swaps) return reject("swaps_short");
   const read = readSituations(source.situations, core).filter((item) => !isLiteral(item.answer, note));
-  const onPattern = read.filter((item) => sharesCorePattern(item.answer, core));
+  const onPattern = read.filter((item) => sharesCorePattern(item.answer, core, context.targetLanguage));
   if (onPattern.length < limits.situations) {
-    const missed = read.filter((item) => !sharesCorePattern(item.answer, core)).map((item) => item.answer).join(" | ");
+    const missed = read.filter((item) => !sharesCorePattern(item.answer, core, context.targetLanguage)).map((item) => item.answer).join(" | ");
     return reject(read.length >= limits.situations ? "situation_off_pattern" : "situations_short", missed || `${onPattern.length} on pattern`);
   }
   const chosenSituations = onPattern.slice(0, limits.situations);
   for (const alternative of context.alternatives ?? []) {
     if (chosenSituations.some((item) => same(item.answer, alternative.text)) || same(alternative.text, core)) continue;
-    if (isLiteral(alternative.text, note) || !sharesCorePattern(alternative.text, core)) continue;
+    if (isLiteral(alternative.text, note) || !sharesCorePattern(alternative.text, core, context.targetLanguage)) continue;
     const glossed = registerGloss(alternative, core, context.nativeLanguage);
     const register = alternative.label.trim();
     const formalRegister = template(context.nativeLanguage, "formalHint").split("|").some((word) => (
@@ -851,7 +858,7 @@ export function shapePhraseLesson(
   if (!focusesAreGlossedFirst(segments, focuses)) return reject("focus_unglossed");
   if (!phraseAnswersStayVaried(segments, context.targetLanguage)) return reject("answers_repeated");
   if (!answerWordsAreGlossed(segments, context.targetLanguage, core)) return reject("answer_words_unglossed");
-  const sparse = glossesStaySparse(segments);
+  const sparse = glossesStaySparse(segments, context.targetLanguage);
   if (!sparse.ok) return reject("glosses_bunched", sparse.detail);
   if (segments.filter((segment) => segment.phase === "pattern").length > 1) return reject("pattern_repeated");
   const title = clip(textOf(source.title) || `Saying: ${meaning}`, 90);

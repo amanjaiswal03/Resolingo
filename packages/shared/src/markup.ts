@@ -1,4 +1,5 @@
 import { languageIds, type LanguageId } from "./languages.js";
+import { needsWordSegment, segmentWords } from "./segment.js";
 import { stopwords } from "./teaching.js";
 
 const TAG = /\[\[lang:([A-Za-z0-9-]+)\]\]|\[\[\/lang\]\]/g;
@@ -85,13 +86,16 @@ function foldToken(value: string, language: LanguageId): string {
 }
 
 function letterTokens(text: string): string[] {
-  return text.normalize("NFC").match(/\p{L}[\p{L}'’-]*|\p{N}+/gu) ?? [];
+  const normalized = text.normalize("NFC");
+  if (needsWordSegment(normalized)) return segmentWords(normalized);
+  return normalized.match(/\p{L}[\p{L}'’-]*|\p{N}+/gu) ?? [];
 }
 
 function distinctive(token: string, nativeWords: ReadonlySet<string>, nativeLanguage: LanguageId): boolean {
   const folded = foldToken(token, nativeLanguage);
   const stops = stopwords(nativeLanguage);
-  return folded.length >= 2 && !(stops?.has(folded)) && !nativeWords.has(folded);
+  const singleForeign = [...folded].length === 1 && (folded.codePointAt(0) ?? 0) > 0x7f;
+  return (folded.length >= 2 || singleForeign) && !(stops?.has(folded)) && !nativeWords.has(folded);
 }
 
 function tagRanges(text: string): Array<{ start: number; end: number }> {
@@ -116,6 +120,37 @@ function phrasePattern(phrase: string): RegExp | null {
   const body = words.map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s.,!?;:…]+");
   const boundary = isAffix ? "[\\p{L}\\p{M}\\p{N}\\p{Pd}]" : "[\\p{L}\\p{M}\\p{N}]";
   return new RegExp(`(?<!${boundary})${body}(?!${boundary})`, "giu");
+}
+
+const QUOTE_PAIRS: ReadonlyArray<readonly [string, string]> = [
+  ["\"", "\""],
+  ["“", "”"],
+  ["„", "“"],
+  ["「", "」"],
+  ["『", "』"],
+  ["«", "»"],
+];
+
+function quoteInteriors(text: string): Array<{ start: number; end: number; interior: string }> {
+  const found: Array<{ start: number; end: number; interior: string }> = [];
+  let index = 0;
+  while (index < text.length) {
+    const opener = QUOTE_PAIRS.filter(([open]) => text.startsWith(open, index))
+      .sort((left, right) => right[0].length - left[0].length)[0];
+    if (!opener) {
+      index += 1;
+      continue;
+    }
+    const closeAt = text.indexOf(opener[1], index + opener[0].length);
+    if (closeAt < 0) {
+      index += opener[0].length;
+      continue;
+    }
+    const start = index + opener[0].length;
+    found.push({ start, end: closeAt, interior: text.slice(start, closeAt) });
+    index = closeAt + opener[1].length;
+  }
+  return found;
 }
 
 /**
@@ -147,18 +182,15 @@ export function tagTargetLanguage(
       matches.push({ start, end });
     }
   }
-  for (const match of text.matchAll(/"([^"]+)"|“([^”]+)”/g)) {
-    const interiorStart = (match.index ?? 0) + 1;
-    const interior = match[1] ?? match[2] ?? "";
-    const interiorEnd = interiorStart + interior.length;
-    const tokens = letterTokens(interior);
+  for (const quote of quoteInteriors(text)) {
+    const tokens = letterTokens(quote.interior);
     if (tokens.length === 0 || !tokens.every((token) => distinctive(token, nativeWords, base))) continue;
-    if (overlaps(interiorStart, interiorEnd, occupied)) continue;
+    if (overlaps(quote.start, quote.end, occupied)) continue;
     for (let index = matches.length - 1; index >= 0; index -= 1) {
       const item = matches[index]!;
-      if (item.start >= interiorStart && item.end <= interiorEnd) matches.splice(index, 1);
+      if (item.start >= quote.start && item.end <= quote.end) matches.splice(index, 1);
     }
-    matches.push({ start: interiorStart, end: interiorEnd });
+    matches.push({ start: quote.start, end: quote.end });
   }
   matches.sort((left, right) => left.start - right.start);
   const merged: Array<{ start: number; end: number }> = [];
