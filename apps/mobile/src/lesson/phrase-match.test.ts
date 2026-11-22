@@ -59,6 +59,9 @@ describe("phrase match", () => {
       expected: "Ja.", heard: "", language: "de-DE", audibleSeconds: 0.02, confidenceKnown: false, wasQuiet: true,
     })).toEqual({ result: { verdict: "skipped" }, clip: "skipped" });
     expect(decideAttempt({
+      expected: "Ja.", heard: "Ja", language: "de-DE", audibleSeconds: 0.01, confidenceKnown: false, wasQuiet: true,
+    })).toEqual({ result: { verdict: "skipped" }, clip: "skipped" });
+    expect(decideAttempt({
       expected: "Ich möchte einen Kaffee.", heard: "Ich möchte einen Kaffee.", language: "de-DE",
       audibleSeconds: 0.15, confidenceKnown: false, wasQuiet: false,
     })).toMatchObject({ clip: "unclear", result: { verdict: "unclear" } });
