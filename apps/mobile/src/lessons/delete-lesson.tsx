@@ -138,7 +138,7 @@ export function LessonDeleteProvider({ children }: PropsWithChildren) {
           <View style={[styles.snackbar, { backgroundColor: theme.navy, bottom: insets.bottom + 74 }]}>
             <Body style={styles.snackbarText} numberOfLines={1}>Lesson deleted</Body>
             <Pressable accessibilityRole="button" accessibilityLabel="Undo delete" onPress={undo} hitSlop={8}>
-              <Body style={[styles.undo, { color: theme.amber }]}>Undo</Body>
+              <Body style={[styles.undo, { color: theme.onDark }]}>Undo</Body>
             </Pressable>
           </View>
         ) : null}

@@ -26,6 +26,7 @@ import {
 import { SkipIcon } from "./SkipIcon";
 import { SpeakingPractice } from "./SpeakingPractice";
 import { Body } from "./Typography";
+import { lessonAccent } from "@/theme/colors";
 import { useTheme } from "@/theme/tokens";
 import { usePlayback } from "@/playback/PlaybackProvider";
 
@@ -411,12 +412,12 @@ export function LessonPlayer({
 		return (
 			<View style={[styles.mini, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
 				<View style={[styles.miniTrack, { backgroundColor: theme.border }]}>
-					<View style={[styles.miniFill, { backgroundColor: theme.primary, width: percentWidth(progress * 100) }]} />
+					<View style={[styles.miniFill, { backgroundColor: theme.brand, width: percentWidth(progress * 100) }]} />
 				</View>
 				<View style={styles.miniRow}>
 					<Pressable accessibilityRole="button" accessibilityLabel={`Open ${lesson.title}`} onPress={onOpen} style={styles.miniOpen}>
 						<Text style={[styles.miniChevron, { color: theme.text }]}>⌃</Text>
-						<View style={[styles.miniBadge, { backgroundColor: lesson.type === "grammar" ? theme.mint : lesson.type === "phrase" ? theme.coral : theme.amber }]}>
+						<View style={[styles.miniBadge, { backgroundColor: lessonAccent(theme, lesson.type) }]}>
 							<Body style={styles.miniBadgeText}>{lesson.type.slice(0, 1).toUpperCase()}</Body>
 						</View>
 						<View style={styles.miniCopy}>
@@ -493,7 +494,7 @@ export function LessonPlayer({
 						style={[
 							styles.fill,
 							{
-								backgroundColor: theme.primary,
+								backgroundColor: theme.brand,
 								width: percentWidth(progress * 100),
 							},
 						]}
@@ -505,7 +506,7 @@ export function LessonPlayer({
 					style={[
 						styles.thumb,
 						{
-							backgroundColor: theme.primary,
+							backgroundColor: theme.brand,
 							borderColor: theme.surface,
 							left: percentWidth(progress * 100),
 						},
@@ -523,7 +524,7 @@ export function LessonPlayer({
 				<Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.skip}>
 					<SkipIcon direction="back" color={theme.text} />
 				</Pressable>
-				<Pressable accessibilityRole="button" accessibilityLabel={playLabel} accessibilityState={{ busy: loadingAudio }} disabled={loadingAudio} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
+				<Pressable accessibilityRole="button" accessibilityLabel={playLabel} accessibilityState={{ busy: loadingAudio }} disabled={loadingAudio} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primaryFill }]}>
 					{loadingAudio ? <ActivityIndicator size="large" color={theme.onPrimary} /> : <Text style={[styles.bigPlayIcon, { color: theme.onPrimary }, !playing && styles.playNudge]}>{playing ? "Ⅱ" : "▶"}</Text>}
 				</Pressable>
 				<Pressable accessibilityRole="button" accessibilityLabel="Forward ten seconds" onPress={() => seekBy(10)} style={styles.skip}>

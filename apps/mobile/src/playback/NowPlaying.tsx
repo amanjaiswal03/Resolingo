@@ -192,7 +192,7 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
                   </View>
                   <View style={styles.transport}>
                     <View style={styles.skip}><SkipIcon direction="back" color={theme.text} /></View>
-                    <View accessible accessibilityRole="progressbar" accessibilityLabel="Loading lesson audio" style={[styles.bigPlay, { backgroundColor: theme.primary }]}>
+                    <View accessible accessibilityRole="progressbar" accessibilityLabel="Loading lesson audio" style={[styles.bigPlay, { backgroundColor: theme.primaryFill }]}>
                       <ActivityIndicator size="large" color={theme.onPrimary} />
                     </View>
                     <View style={styles.skip}><SkipIcon direction="forward" color={theme.text} /></View>

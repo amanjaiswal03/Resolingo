@@ -7,14 +7,19 @@ export function Button({ label, loading = false, variant = "primary", disabled, 
   variant?: "primary" | "secondary" | "danger" | "ghost";
 }) {
   const theme = useTheme();
-  const background = variant === "primary" ? theme.primary : variant === "danger" ? theme.danger : variant === "secondary" ? theme.surfaceMuted : "transparent";
   const color = variant === "primary" ? theme.onPrimary : variant === "danger" ? theme.surface : theme.text;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
       disabled={disabled || loading}
-      style={({ pressed }) => [styles.button, { backgroundColor: background, borderColor: theme.border, opacity: disabled ? 0.45 : pressed ? 0.75 : 1 }]}
+      style={({ pressed }) => {
+        const background = variant === "primary" ? (pressed ? theme.primaryPressed : theme.primaryFill)
+          : variant === "danger" ? theme.danger
+            : variant === "secondary" ? theme.surfaceMuted
+              : "transparent";
+        return [styles.button, { backgroundColor: background, borderColor: theme.border, opacity: disabled ? 0.45 : pressed && variant !== "primary" ? 0.75 : 1 }];
+      }}
       {...props}
     >
       {loading ? <ActivityIndicator color={color} /> : <Text maxFontSizeMultiplier={1.5} style={[styles.label, { color }]}>{label}</Text>}

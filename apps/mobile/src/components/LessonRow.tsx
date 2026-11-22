@@ -7,6 +7,7 @@ import { runOnJS, useAnimatedReaction, type SharedValue } from "react-native-rea
 import { lessonCanBeDeleted, type Lesson } from "@resolingo/shared";
 import { useLessonDelete } from "@/lessons/delete-lesson";
 import { usePlayback } from "@/playback/PlaybackProvider";
+import { lessonAccent } from "@/theme/colors";
 import { useTheme } from "@/theme/tokens";
 import { Card } from "./Card";
 import { Body, Heading } from "./Typography";
@@ -106,7 +107,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
         onLongPress={confirm}
       >
         <Card style={styles.card}>
-          <View style={[styles.badge, { backgroundColor: lesson.type === "grammar" ? theme.mint : lesson.type === "phrase" ? theme.coral : theme.amber }]}><Body style={styles.badgeText}>{kindMark[lesson.type]}</Body></View>
+          <View style={[styles.badge, { backgroundColor: lessonAccent(theme, lesson.type) }]}><Body style={styles.badgeText}>{kindMark[lesson.type]}</Body></View>
           <View style={styles.copy}><Heading numberOfLines={2} style={styles.title}>{lesson.title}</Heading><Body muted style={styles.meta}>{playing ? <Body style={[styles.meta, { color: theme.primary }]}>Playing</Body> : statusLabel[lesson.status]} · {kindLabel[lesson.type]}</Body></View>
           <Body muted>›</Body>
         </Card>
