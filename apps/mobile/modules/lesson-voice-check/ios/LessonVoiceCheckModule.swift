@@ -195,6 +195,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var latestCapture: [String: UUID] = [:]
   /// After a seek, open the microphone if playback is already inside a pause.
   private var replay = false
+  /// The last tone for a cue. A pause rate change must not sound it again.
+  private var lastCue: (id: String, at: TimeInterval)?
   private var reachedEnd = false
   private var previousMode: (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)?
   private var checkingOptions: AVAudioSession.CategoryOptions?
@@ -292,8 +294,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     let center = NotificationCenter.default
     notifications = [
       center.addObserver(forName: AVPlayerItem.timeJumpedNotification, object: item, queue: .main) { [weak self] _ in
-        self?.endFeedback(resume: true)
-        self?.abandonAttempts()
+        self?.noteTimeJump()
       },
       center.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
         guard let self, self.sessionId == sessionId else { return }
@@ -357,6 +358,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     feedbackVariant = 0
     latestCapture.removeAll()
     replay = false
+    lastCue = nil
     reachedEnd = false
     interrupted = false
     restoreAudioMode()
@@ -439,11 +441,10 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
       previousUptime = now
     }
     guard let previousTime, let previousUptime else { return }
-    // A jump abandons the attempt. A delayed callback can still finish a pause
-    // we played through, but any audio from beyond the pause must be discarded.
-    let advance = time - previousTime
+    // A real skip abandons the attempt. Slowing the pause, or a coarse clock,
+    // must not. A delayed callback can still finish a pause we played through.
     let elapsed = now - previousUptime
-    guard advance >= 0, advance <= elapsed * Double(player.rate) + 0.14 else {
+    guard !playheadJumped(from: previousTime, to: time, elapsed: elapsed, rate: player.rate) else {
       abandonAttempts()
       return
     }
@@ -471,24 +472,47 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
 
     if replay, let window = windows.first(where: {
       time >= $0.startSeconds && time < $0.endSeconds - 0.65
-    }), let cue {
-      cue.currentTime = 0
-      guard cue.play() else { return }
-      replay = false
-      pending = window
-      extendSpeakingPause(window, on: player, at: time)
-      armedAt = now + 0.30
+    }) {
+      soundCue(window, on: player, at: time, now: now)
       return
     }
 
     guard let window = windows.first(where: {
             previousTime < $0.startSeconds && time >= $0.startSeconds &&
             time <= $0.startSeconds + 0.40 && time < $0.endSeconds - 0.65
-          }),
-          let cue else { return }
-    replay = false
+          }) else { return }
+    soundCue(window, on: player, at: time, now: now)
+  }
+
+  /// Pause, resume, and the slower answer rate all post a time jump. Only a real skip counts.
+  private func noteTimeJump() {
+    guard let player else { return }
+    let time = player.currentTime().seconds
+    let elapsed = previousUptime.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
+    guard playheadJumped(from: previousTime, to: time, elapsed: elapsed, rate: player.rate) else { return }
+    endFeedback(resume: true)
+    abandonAttempts()
+  }
+
+  /// Same thresholds as apps/mobile/src/lesson/answer-cue.ts.
+  private func playheadJumped(from previous: Double?, to time: Double, elapsed: TimeInterval, rate: Float) -> Bool {
+    guard let previous, time.isFinite, previous.isFinite else { return false }
+    let advance = time - previous
+    if advance < -0.2 { return true }
+    let allowance = max(0, elapsed) * Double(max(rate, 0)) + 0.35
+    return advance > allowance
+  }
+
+  private func soundCue(_ window: AnswerWindow, on player: AVPlayer, at time: Double, now: TimeInterval) {
+    if let lastCue, lastCue.id == window.id, now - lastCue.at < 0.9 {
+      replay = false
+      return
+    }
+    guard let cue else { return }
     cue.currentTime = 0
     guard cue.play() else { return }
+    lastCue = (window.id, now)
+    replay = false
     pending = window
     extendSpeakingPause(window, on: player, at: time)
     // Let the cue clear the output before opening the input, including Bluetooth latency.
