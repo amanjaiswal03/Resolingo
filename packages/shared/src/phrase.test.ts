@@ -13,6 +13,7 @@ import {
   shapePhraseLesson,
   type PhraseLessonContext,
 } from "./phrase.js";
+import { recallAnswersFollowPrompts } from "./pimsleur.js";
 import { phrasesToRemember } from "./review.js";
 import { normalizeSpeakerNames } from "./speakers.js";
 
@@ -166,6 +167,7 @@ describe("phrase lessons", () => {
     const quickCues = lesson.segments.filter((segment) => segment.phase === "quick" && segment.pauseAfterMs).map((segment) => segment.text);
     expect(new Set(quickCues).size).toBe(quickCues.length);
     expect(quickCues[0]).toContain("Quick check");
+    expect(recallAnswersFollowPrompts(lesson.segments)).toBe(true);
     const closing = lesson.segments.find((segment) => segment.phase === "closing")?.text ?? "";
     expect(closing).toContain("I would like to buy a pair of shoes");
     expect(closing).toContain("I still need to buy shoes");

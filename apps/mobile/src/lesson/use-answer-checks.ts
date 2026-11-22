@@ -5,13 +5,15 @@ import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
 import { api, type LessonVoiceClips } from "@/services/api";
+import { clearAttemptsFrom, reduceAnswerAttempts, type AnswerAttemptEvent } from "./answer-attempts";
 import type { AnswerPlan, AnswerWindow } from "./answer-windows";
 import type { VoiceResult, VoiceVerdict } from "./phrase-match";
 
-type AnswerEvent = { sessionId: string; id: string; verdict: VoiceVerdict; heard?: string };
+type AnswerEvent = { sessionId: string; id: string; captureId?: string; verdict: VoiceVerdict; heard?: string };
 type WindowEvent = {
   sessionId: string;
   id: string;
+  captureId?: string;
   recording: boolean;
   state?: "recording" | "cancelled" | "skipped" | "checking" | "unclear";
 };
@@ -29,6 +31,7 @@ type NativeChecks = InstanceType<typeof NativeModule<AnswerEvents>> & {
   start(player: AudioPlayer, id: string, language: string, windows: CheckedWindow[]): Promise<void>;
   installFeedback?(id: string, clips: LessonVoiceClips): Promise<void>;
   cancelFeedback?(id: string, resume: boolean): Promise<void>;
+  abandon?(id: string): Promise<void>;
   stop(id: string): Promise<void>;
 };
 
@@ -45,6 +48,8 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
   const [recording, setRecording] = useState<string | null>(null);
   const [feedbackPlaying, setFeedbackPlaying] = useState(false);
   const feedbackClips = useRef<Promise<LessonVoiceClips | null> | null>(null);
+  const attempts = useRef<Record<string, string>>({});
+  const resultsRef = useRef(results);
 
   useEffect(() => { planRef.current = plan; }, [plan]);
 
@@ -56,21 +61,40 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
       if (timeout !== undefined) clearTimeout(timeout);
       pending.delete(id);
     };
-    const recordResult = (id: string, result: VoiceResult) => {
-      setResults((previous) => ({ ...previous, [id]: result }));
+    const apply = (event: AnswerAttemptEvent) => {
+      const next = reduceAnswerAttempts({ attempts: attempts.current, results: resultsRef.current }, event);
+      attempts.current = next.attempts;
+      resultsRef.current = next.results;
+      setResults(next.results);
     };
     const subscription = native?.addListener("onAnswer", (event) => {
-      if (session.current !== event.sessionId) return;
+      if (session.current !== event.sessionId || !event.captureId) return;
       clearPending(event.id);
-      recordResult(event.id, { verdict: event.verdict, ...(event.heard ? { heard: event.heard } : {}) });
+      apply({
+        type: "answer",
+        id: event.id,
+        captureId: event.captureId,
+        result: { verdict: event.verdict, ...(event.heard ? { heard: event.heard } : {}) },
+      });
     });
     const window = native?.addListener("onWindow", (event) => {
       if (session.current !== event.sessionId) return;
       setRecording((current) => event.recording ? event.id : current === event.id ? null : current);
-      if (event.recording || event.state === "cancelled") return;
+      if (event.state === "cancelled") {
+        clearPending(event.id);
+        apply({ type: "cancelled", id: event.id });
+        return;
+      }
+      if (event.recording) {
+        if (!event.captureId) return;
+        clearPending(event.id);
+        apply({ type: "recording", id: event.id, captureId: event.captureId });
+        return;
+      }
+      if (!event.captureId) return;
       if (event.state === "skipped" || event.state === "unclear") {
         clearPending(event.id);
-        recordResult(event.id, { verdict: event.state });
+        apply({ type: "status", id: event.id, captureId: event.captureId, result: { verdict: event.state } });
         return;
       }
       if (!event.state) {
@@ -80,12 +104,12 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
         if (end == null || time < end - 0.05 || time > end + 0.4) return;
       }
       clearPending(event.id);
-      recordResult(event.id, { verdict: "checking" });
+      apply({ type: "status", id: event.id, captureId: event.captureId, result: { verdict: "checking" } });
+      const captureId = event.captureId;
       pending.set(event.id, setTimeout(() => {
         pending.delete(event.id);
-        setResults((previous) => previous[event.id]?.verdict === "checking"
-          ? { ...previous, [event.id]: { verdict: "unclear" } }
-          : previous);
+        if (attempts.current[event.id] !== captureId || resultsRef.current[event.id]?.verdict !== "checking") return;
+        apply({ type: "status", id: event.id, captureId, result: { verdict: "unclear" } });
       }, 4_500));
     });
     const stopped = native?.addListener("onStopped", (event) => {
@@ -126,6 +150,14 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
   }, [allowed]);
 
   const isArmed = useCallback(() => session.current !== null, []);
+  const rewind = useCallback((ids: readonly string[]) => {
+    const id = session.current;
+    if (id) void native?.abandon?.(id).catch(() => undefined);
+    const next = clearAttemptsFrom({ attempts: attempts.current, results: resultsRef.current }, ids);
+    attempts.current = next.attempts;
+    resultsRef.current = next.results;
+    setResults(next.results);
+  }, []);
   const cancelFeedback = useCallback(() => {
     const id = session.current;
     if (id) void native?.cancelFeedback?.(id, false).catch(() => undefined);
@@ -233,6 +265,7 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
     toggle,
     enable,
     isArmed,
+    rewind,
     recording,
     feedbackPlaying,
     cancelFeedback,
