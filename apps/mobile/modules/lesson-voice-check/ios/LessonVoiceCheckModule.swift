@@ -259,7 +259,13 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var feedbackAudio: AVAudioPlayer?
   private var feedbackClips: [String: [Data]] = [:]
   private var feedbackVariant = 0
-  private var feedbackBreak: (id: UUID, rate: Float)?
+  private struct FeedbackBreak {
+    let id: UUID
+    let rate: Float
+    /// End of the listening pause. Same rule as resume-after-feedback.ts.
+    let pauseEnd: Double
+  }
+  private var feedbackBreak: FeedbackBreak?
   private var feedbackSpoken = false
   private var onFeedback: ((Bool) -> Void)?
 
@@ -877,7 +883,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     } else {
       resumeRate = player.rate
     }
-    feedbackBreak = (captureId, resumeRate)
+    feedbackBreak = FeedbackBreak(id: captureId, rate: resumeRate, pauseEnd: window.endSeconds)
     player.pause()
     onFeedback?(true)
   }
@@ -913,7 +919,19 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     previousTime = nil
     previousUptime = nil
     onFeedback?(false)
-    if resume && !interrupted && !reachedEnd { player?.playImmediately(atRate: previous.rate) }
+    guard resume, !interrupted, !reachedEnd, let player else { return }
+    // The pause is baked silence. After the line, continue at its end instead of waiting it out.
+    let resumeAt = max(player.currentTime().seconds, previous.pauseEnd)
+    ignoreJumpsUntil = ProcessInfo.processInfo.systemUptime + 1
+    let target = CMTime(seconds: max(0, resumeAt), preferredTimescale: 1_000)
+    player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+      DispatchQueue.main.async {
+        guard let self, !self.interrupted, !self.reachedEnd else { return }
+        self.previousTime = self.player?.currentTime().seconds
+        self.previousUptime = ProcessInfo.processInfo.systemUptime
+        self.player?.playImmediately(atRate: previous.rate)
+      }
+    }
   }
 
   private func stopIfFinished() {
