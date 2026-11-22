@@ -14,7 +14,7 @@ const feedback = {
   close: { label: "Close match", color: "amber", order: 1, tip: "Compare the two lines and try the full phrase once more." },
   unclear: { label: "Couldn’t check", color: "surfaceMuted", order: 2, tip: "Try saying the phrase again somewhere quieter." },
   skipped: { label: "Skipped", color: "surfaceMuted", order: 3, tip: "" },
-  matched: { label: "Matched", color: "mint", order: 4, tip: "" },
+  matched: { label: "Matched", color: "successFill", order: 4, tip: "" },
   checking: { label: "Checking…", color: "surfaceMuted", order: 5, tip: "" },
 } as const;
 
@@ -51,7 +51,7 @@ export function SpeakingPractice({ plan, state, available, recording, results, o
         onPress={onToggle}
         style={styles.practiceToggle}
       >
-        <View style={[styles.stateDot, { backgroundColor: recording ? theme.primary : enabled ? theme.mint : theme.textMuted }]} />
+        <View style={[styles.stateDot, { backgroundColor: recording ? theme.brand : enabled ? theme.primary : theme.textMuted }]} />
         <View style={styles.practiceText}>
           <Body style={styles.controlLabel}>Check my answers</Body>
           <Body muted style={styles.small}>

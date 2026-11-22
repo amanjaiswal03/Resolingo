@@ -221,7 +221,7 @@ function SayLookup() {
           accessibilityLabel={listening ? "Stop recording" : "Start recording"}
           disabled={phase === "transcribing" || submitting}
           onPress={() => { if (listening) void finishRecording("user"); else void startRecording(); }}
-          style={({ pressed }) => [styles.mic, { backgroundColor: listening ? theme.danger : theme.primary, opacity: phase === "transcribing" || submitting ? 0.5 : pressed ? 0.75 : 1 }]}
+          style={({ pressed }) => [styles.mic, { backgroundColor: listening ? theme.danger : pressed ? theme.primaryPressed : theme.primaryFill, opacity: phase === "transcribing" || submitting ? 0.5 : 1 }]}
         >
           <Body style={{ color: listening ? theme.background : theme.onPrimary }}>{listening ? "Stop" : "Speak"}</Body>
         </Pressable>
@@ -230,7 +230,7 @@ function SayLookup() {
           {listening ? (
             <View accessibilityElementsHidden style={styles.level}>
               {[0.55, 0.8, 1, 0.8, 0.55].map((shape, index) => (
-                <View key={index} style={[styles.levelBar, { backgroundColor: theme.primary, height: 6 + levelRatio(recording.metering) * 22 * shape }]} />
+                <View key={index} style={[styles.levelBar, { backgroundColor: theme.brand, height: 6 + levelRatio(recording.metering) * 22 * shape }]} />
               ))}
             </View>
           ) : null}

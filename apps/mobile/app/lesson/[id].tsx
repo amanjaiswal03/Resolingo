@@ -83,10 +83,10 @@ export default function LessonScreen() {
   };
   return (
     <Screen style={styles.center}>
-      <View style={[styles.orb, { backgroundColor: lesson.status === "failed" ? theme.danger : theme.primary }]}><Body style={styles.orbText}>{lesson.status === "failed" ? "!" : "✦"}</Body></View>
+      <View style={[styles.orb, { backgroundColor: lesson.status === "failed" ? theme.danger : theme.primaryFill }]}><Body style={styles.orbText}>{lesson.status === "failed" ? "!" : "✦"}</Body></View>
       <Title style={styles.centerText}>{lesson.status === "failed" ? "This lesson hit a snag" : lesson.title}</Title>
       <Body muted style={styles.centerText}>{lesson.status === "queued" ? "Your lesson is safely queued." : lesson.status === "generating_content" ? "Choosing a fresh topic and writing your script." : lesson.status === "synthesizing_audio" ? "Giving every part a natural voice." : "No daily quota was used. You can try again."}</Body>
-      {lesson.status !== "failed" ? <View style={[styles.progress, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.primary, width: percentWidth(lesson.progress) }]} /></View> : null}
+      {lesson.status !== "failed" ? <View style={[styles.progress, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.brand, width: percentWidth(lesson.progress) }]} /></View> : null}
       <Body muted>{lesson.status === "failed" ? lesson.failureCode : `${lesson.progress}% complete · You can leave this screen`}</Body>
       {lesson.status === "failed" ? <Button label="Try again" loading={retrying} onPress={() => void retry()} /> : null}
       <Button label="Back to today" variant="secondary" onPress={leave} />

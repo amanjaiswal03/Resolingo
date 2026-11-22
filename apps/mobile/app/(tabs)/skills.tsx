@@ -17,6 +17,7 @@ import { buildSkills, languagePairKey, progressForCard, reviewIsDue, reviewQuest
 import { subscribeSkillProgress } from "@/skills/progress";
 import { SkillReviewModal, type SkillSession } from "@/skills/SkillReview";
 import { useExampleAudio } from "@/skills/use-example-audio";
+import { lessonAccent } from "@/theme/colors";
 import { useTheme } from "@/theme/tokens";
 
 const HISTORY_PAGE_SIZE = 40;
@@ -147,7 +148,7 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
             </Body>
           </View>
           {recalled > 0 ? (
-            <View style={[styles.recalled, { backgroundColor: theme.mint }]}>
+            <View style={[styles.recalled, { backgroundColor: theme.successFill }]}>
               <Heading style={{ color: theme.navy }}>{recalled}</Heading>
               <Body style={[styles.small, { color: theme.navy }]}>Recalled</Body>
             </View>
@@ -222,7 +223,7 @@ function SkillTile({ group, kind, expanded, onToggle, progress, now, audio, onPr
 }) {
   const theme = useTheme();
   const [visibleCount, setVisibleCount] = useState(PAGE_EXAMPLES);
-  const color = kind === "grammar" ? theme.mint : kind === "conversation" ? theme.amber : theme.coral;
+  const color = lessonAccent(theme, kind === "phrases" ? "phrase" : kind);
   const count = group.cards.length;
   const practiceCards = group.reviewCards ?? group.cards;
   const due = now === null ? 0 : practiceCards.filter((card) => reviewIsDue(progress[card.id], now)).length;

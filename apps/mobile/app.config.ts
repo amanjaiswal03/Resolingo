@@ -56,7 +56,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         recordAudioAndroid: true,
         microphonePermission,
       }],
-      ["expo-notifications", { color: "#FF775F", defaultChannel: "lessons" }],
+      ["expo-notifications", { color: "#0F9D8A", defaultChannel: "lessons" }],
       "expo-apple-authentication",
       "expo-secure-store",
       "@react-native-firebase/app",

@@ -118,7 +118,7 @@ function QuestionCard({ question, number, total, audio, save, onNext }: {
         <>
           {question.options.map((option) => (
             <Pressable key={option} accessibilityRole="radio" accessibilityState={{ checked: choice === option }} onPress={() => setChoice(option)}
-              style={[styles.option, { backgroundColor: choice === option ? theme.surfaceMuted : theme.surface, borderColor: choice === option ? theme.primary : theme.border }]}>
+              style={[styles.option, { backgroundColor: choice === option ? theme.primaryTint : theme.surface, borderColor: choice === option ? theme.primary : theme.border }]}>
               <Body>{option}</Body>
             </Pressable>
           ))}
@@ -167,7 +167,7 @@ function ReviewRecap({ completed, onClose }: { completed: Reviewed[]; onClose: (
   const unsaved = completed.filter((entry) => !entry.progress).length;
   return (
     <>
-      <Card style={{ backgroundColor: theme.mint, borderWidth: 0 }}>
+      <Card style={{ backgroundColor: theme.successFill, borderWidth: 0 }}>
         <Title style={{ color: theme.navy }}>{revisit.length ? "Keep these in rotation" : "Nice work"}</Title>
         {recall.length ? <Body style={{ color: theme.navy }}>Recalled {gotIt(recall)} of {recall.length} phrases</Body> : null}
         {recognition.length ? <Body style={{ color: theme.navy }}>Recognized {gotIt(recognition)} of {recognition.length} meanings</Body> : null}
