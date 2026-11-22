@@ -314,7 +314,7 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
     }
     Alert.alert(
       "Check my answers?",
-      "Speak after the tone for brief feedback, or let the pause pass. You can review your answers later. Your voice stays on this iPhone. The first setup may download a speech model.",
+      "Speak after the tone for brief feedback, or let the pause pass. You can review your answers later. Speech is recognized on this iPhone when the language supports it. The first setup may download a speech model.",
       [{ text: "Cancel", style: "cancel" }, { text: "Turn on", onPress: () => void start(plan, onEnabled) }],
     );
   };

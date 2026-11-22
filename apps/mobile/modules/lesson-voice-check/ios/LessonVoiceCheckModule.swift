@@ -182,7 +182,6 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     let id = UUID()
     let window: AnswerWindow
     let request = SFSpeechAudioBufferRecognitionRequest()
-    let audio = AVAudioEngine()
     let level = AnswerAudioLevel()
     var task: SFSpeechRecognitionTask?
     var analysis: Task<Void, Never>?
@@ -195,9 +194,10 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     var partialSince = ProcessInfo.processInfo.systemUptime
     var lastPartialSent: TimeInterval = 0
 
-    init(window: AnswerWindow) {
+    init(window: AnswerWindow, onDevice: Bool) {
       self.window = window
-      request.requiresOnDeviceRecognition = true
+      // On-device when the locale has a model. Otherwise Apple's recognizer may use the network.
+      request.requiresOnDeviceRecognition = onDevice
       request.shouldReportPartialResults = true
       // Full phrases, not yes/no. The expected line is a hint, and the grader
       // rejects a short exact echo when confidence is missing.
@@ -206,9 +206,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
       if !hint.isEmpty { request.contextualStrings = [hint] }
     }
 
-    func closeMic() {
-      audio.stop()
-      audio.inputNode.removeTap(onBus: 0)
+    func endRequest() {
       request.endAudio()
     }
 
@@ -252,7 +250,11 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var lastCue: (id: String, at: TimeInterval)?
   private var reachedEnd = false
   private var previousMode: (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)?
-  private var checkingOptions: AVAudioSession.CategoryOptions?
+  /// Kept running for the whole checked lesson. Starting it again from the background fails.
+  private let microphone = AVAudioEngine()
+  private var microphoneTap = false
+  private let feedLock = NSLock()
+  private var feed: (level: AnswerAudioLevel, recording: SpokenClip?, request: SFSpeechAudioBufferRecognitionRequest)?
   private var interrupted = false
   private var feedbackAudio: AVAudioPlayer?
   private var feedbackClips: [String: [Data]] = [:]
@@ -264,8 +266,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   static func legacyRecognizer(language: String) -> SFSpeechRecognizer? {
     let requested = Locale(identifier: language)
     guard let recognizer = SFSpeechRecognizer(locale: requested),
-          recognizer.locale.language.languageCode == requested.language.languageCode,
-          recognizer.supportsOnDeviceRecognition else { return nil }
+          recognizer.locale.language.languageCode == requested.language.languageCode else { return nil }
     return recognizer
   }
 
@@ -311,13 +312,16 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
 
     previousMode = (session.category, session.mode, session.categoryOptions)
     do {
-      // Keep Bluetooth media output available. iOS can use the phone mic with A2DP.
+      // One playAndRecord session for the whole checked lesson. iOS will not
+      // start a fresh microphone after the screen locks, so the engine stays up.
       try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothA2DP])
-      checkingOptions = session.categoryOptions
+      try session.setActive(true)
+      try startMicrophone()
       let cue = try AVAudioPlayer(data: Self.cueAudio())
       guard cue.prepareToPlay() else { throw VoiceCheckError.unavailable }
       self.cue = cue
     } catch {
+      stopMicrophone()
       restoreAudioMode()
       throw error
     }
@@ -363,16 +367,22 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
       },
       center.addObserver(forName: AVAudioSession.routeChangeNotification, object: session, queue: .main) { [weak self] event in
         let reason = event.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+        // Locking the screen can change the route. Keep the engine; only refresh the tap.
         if reason != AVAudioSession.RouteChangeReason.categoryChange.rawValue {
-          self?.endFeedback(resume: false)
-          self?.resetWindow()
+          try? self?.startMicrophone()
         }
       },
       center.addObserver(forName: AVAudioSession.interruptionNotification, object: session, queue: .main) { [weak self] event in
-        let kind = event.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-        self?.interrupted = kind == AVAudioSession.InterruptionType.began.rawValue
-        self?.endFeedback(resume: false)
-        self?.resetWindow()
+        guard let self else { return }
+        let began = (event.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
+        self.interrupted = began
+        if began {
+          self.endFeedback(resume: false)
+          self.resetWindow()
+        } else {
+          try? self.session.setActive(true)
+          try? self.startMicrophone()
+        }
       }
     ]
     period = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.05, preferredTimescale: 1_000), queue: .main) { [weak self] _ in
@@ -422,10 +432,64 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     lastCue = nil
     reachedEnd = false
     interrupted = false
+    stopMicrophone()
     restoreAudioMode()
     let onStopped = self.onStopped
     self.onStopped = nil
     if announce { onStopped?() }
+  }
+
+  /// Refresh the input tap without stopping the engine, so a locked screen can still record.
+  private func startMicrophone() throws {
+    let input = microphone.inputNode
+    let format = input.outputFormat(forBus: 0)
+    guard format.sampleRate > 0, format.channelCount > 0 else { throw VoiceCheckError.unavailable }
+    if microphoneTap {
+      input.removeTap(onBus: 0)
+      microphoneTap = false
+    }
+    input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
+      self?.consume(buffer)
+    }
+    microphoneTap = true
+    if !microphone.isRunning {
+      microphone.prepare()
+      try microphone.start()
+    }
+  }
+
+  private func stopMicrophone() {
+    feedLock.lock()
+    feed = nil
+    feedLock.unlock()
+    if microphoneTap {
+      microphone.inputNode.removeTap(onBus: 0)
+      microphoneTap = false
+    }
+    if microphone.isRunning { microphone.stop() }
+  }
+
+  private func consume(_ buffer: AVAudioPCMBuffer) {
+    feedLock.lock()
+    let current = feed
+    feedLock.unlock()
+    guard let current else { return }
+    current.level.measure(buffer)
+    if let recording = current.recording { recording.append(buffer) }
+    else { current.request.append(buffer) }
+  }
+
+  private func attach(_ capture: Capture) {
+    feedLock.lock()
+    feed = (capture.level, capture.recording, capture.request)
+    feedLock.unlock()
+  }
+
+  private func releaseCapture(_ capture: Capture) {
+    feedLock.lock()
+    if feed?.request === capture.request { feed = nil }
+    feedLock.unlock()
+    capture.endRequest()
   }
 
   private func restoreAudioMode() {
@@ -433,11 +497,10 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
       try? session.setCategory(category, mode: mode, options: options)
     }
     previousMode = nil
-    checkingOptions = nil
   }
 
   private var ownsAudioMode: Bool {
-    session.category == .playAndRecord && session.categoryOptions == checkingOptions
+    session.category == .playAndRecord
   }
 
   /// Retire every in-flight capture. A transcript that resolves afterwards no longer matches latestCapture.
@@ -446,7 +509,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     if let active {
       let capture = active
       self.active = nil
-      capture.closeMic()
+      releaseCapture(capture)
       capture.cancelRecognition()
       onWindow?(capture.window.id, capture.id.uuidString, .cancelled)
     }
@@ -476,7 +539,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     cue?.stop()
     if let active {
       self.active = nil
-      active.closeMic()
+      releaseCapture(active)
       onWindow?(active.window.id, active.id.uuidString, .cancelled)
       active.cancelRecognition()
     }
@@ -593,23 +656,17 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     defer {
       if active == nil { restoreSpeakingRate() }
     }
-    let capture = Capture(window: window)
-    let input = capture.audio.inputNode
-    let format = input.outputFormat(forBus: 0)
+    do { try startMicrophone() } catch { return }
+    let format = microphone.inputNode.outputFormat(forBus: 0)
     guard format.sampleRate > 0, format.channelCount > 0 else { return }
+    let capture = Capture(window: window, onDevice: recognizer?.supportsOnDeviceRecognition == true)
     if dictation != nil {
       guard let recording = SpokenClip(format: format) else { return }
       capture.recording = recording
     }
-    input.installTap(onBus: 0, bufferSize: 1024, format: format) { [level = capture.level, recording = capture.recording, request = capture.request] buffer, _ in
-      level.measure(buffer)
-      if let recording { recording.append(buffer) }
-      else { request.append(buffer) }
-    }
-    do {
-      try capture.audio.start()
-    } catch {
-      capture.closeMic()
+    attach(capture)
+    guard microphone.isRunning else {
+      releaseCapture(capture)
       return
     }
     capture.started = ProcessInfo.processInfo.systemUptime
@@ -645,7 +702,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     if canTranscribe && (capture.level.hasVoiceActivity || hasTranscript) {
       holdForFeedback(capture.window, captureId: capture.id)
     }
-    capture.closeMic()
+    releaseCapture(capture)
     restoreSpeakingRate()
     if capture.level.wasQuiet && !hasTranscript {
       capture.cancelRecognition()
@@ -762,7 +819,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     let end = active.window.endSeconds
     let capture = active
     self.active = nil
-    capture.closeMic()
+    releaseCapture(capture)
     capture.cancelRecognition()
     onWindow?(capture.window.id, capture.id.uuidString, .skipped)
     restoreSpeakingRate()

@@ -33,6 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       usesAppleSignIn: true,
       ...(googleInfoPlist ? { googleServicesFile: googleInfoPlist } : {}),
       infoPlist: {
+        // audio keeps lesson playback and the answer microphone alive with the screen locked.
         UIBackgroundModes: ["audio", "remote-notification"],
         NSMicrophoneUsageDescription: microphonePermission,
         NSSpeechRecognitionUsageDescription: "Resolingo uses speech recognition on this iPhone to check your spoken lesson answers.",
