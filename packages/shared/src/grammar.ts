@@ -451,7 +451,7 @@ const SEIN: Paradigm = {
     `Here is ${german("sein")}, to be. One person: ${german("ich bin, du bist, er ist, sie ist, es ist")}. More than one: ${german("wir sind, ihr seid, sie sind")}, and ${german("Sie sind")} when you are formal.`,
     `Hold onto the chant: ${german("bin, bist, ist, sind, seid")}.`,
   ],
-  closing: "Nice work. The next time you say how you are, or how someone else is, use these out loud. That's how they stay with you.",
+  closing: "That's it for today. The next time you say how you are, or how someone else is, use these out loud.",
   hook: { text: "Ich bin müde.", translation: "I am tired." },
   singularExamples: [
     { text: "Du bist müde.", translation: "You are tired, to a friend." },
@@ -517,7 +517,7 @@ const HABEN: Paradigm = {
     `Here is ${german("haben")}, to have. One person: ${german("ich habe, du hast, er hat, sie hat, es hat")}. More than one: ${german("wir haben, ihr habt, sie haben")}, and ${german("Sie haben")} when you are formal.`,
     `Hold onto the chant: ${german("habe, hast, hat, haben, habt")}.`,
   ],
-  closing: "Nice work. The next time you say what you have, or what someone else has, use these out loud. That's how they stay with you.",
+  closing: "That's it for today. The next time you say what you have, or what someone else has, use these out loud.",
   hook: { text: "Ich habe Zeit.", translation: "I have time." },
   singularExamples: [
     { text: "Ich habe Zeit.", translation: "I have time." },
@@ -578,7 +578,7 @@ const REGULAR: Paradigm = {
     `A regular verb keeps its stem. ${german("machen: ich mache, du machst, er macht, sie macht, es macht, wir machen, ihr macht, sie machen")}, and ${german("Sie machen")} when you are formal.`,
     `Hold onto the endings: ${german("e, st, t, en, t, en")}.`,
   ],
-  closing: "Nice work. The next time you use a regular verb, start with the stem and add the ending out loud. That's how the pattern sticks.",
+  closing: "That's it for today. The next time you use a regular verb, start with the stem and add the ending out loud.",
   hook: { text: "Ich mache Kaffee.", translation: "I make coffee." },
   singularExamples: [
     { text: "Ich mache Kaffee.", translation: "I make coffee." },
