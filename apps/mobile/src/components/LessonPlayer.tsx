@@ -41,6 +41,14 @@ const playbackMode = {
 	interruptionMode: "doNotMix",
 	allowsRecording: false,
 } as const;
+// Checking keeps playAndRecord for the whole lesson. Switching back to playback
+// while the screen is locked stops the microphone, and iOS will not start it again.
+const checkingMode = {
+	playsInSilentMode: true,
+	shouldPlayInBackground: true,
+	interruptionMode: "doNotMix",
+	allowsRecording: true,
+} as const;
 
 export function LessonPlayer({
 	lesson,
@@ -175,8 +183,7 @@ export function LessonPlayer({
 	);
 	useEffect(() => {
 		const apply = () => {
-			if (isArmed()) return;
-			void setAudioModeAsync(playbackMode).catch(() => undefined);
+			void setAudioModeAsync(isArmed() ? checkingMode : playbackMode).catch(() => undefined);
 		};
 		apply();
 		const subscription = AppState.addEventListener("change", apply);
@@ -201,7 +208,7 @@ export function LessonPlayer({
 		if (!sourceUri) return;
 		let cancelled = false;
 		void (async () => {
-			await setAudioModeAsync(playbackMode).catch(() => undefined);
+			await setAudioModeAsync(isArmed() ? checkingMode : playbackMode).catch(() => undefined);
 			if (cancelled || !alive.current) return;
 			player.replace({ uri: sourceUri });
 			player.setPlaybackRate(1);
