@@ -38,6 +38,8 @@ describe("backward buildup", () => {
     expect(word[0]?.length).toBeLessThan("Bahnhof".length);
     expect(backwardChunks("Hi")).toEqual(["Hi"]);
     expect(buildupChunks("Wo ist der Bahnhof?")).toEqual(["Bahnhof", "der Bahnhof", "Wo ist der Bahnhof?"]);
+    expect(backwardChunks("駅はどこですか。", "ja-JP")).toEqual(["どこですか", "駅はどこですか"]);
+    expect(backwardChunks("火車站在哪裡？", "zh-TW")).toEqual(["哪裡", "在哪裡", "火車站在哪裡"]);
   });
 });
 

@@ -39,6 +39,8 @@ describe("cross-lesson reviews", () => {
     expect(second.strength).toBe(2);
     expect(second.intervalDays).toBe(2);
     expect(reviewItemId("de-DE", "Danke.")).toBe(reviewItemId("de-DE", "danke"));
+    expect(reviewItemId("ja-JP", "駅はどこですか。")).toBe(reviewItemId("ja-JP", "駅はどこですか"));
+    expect(reviewItemId("ja-JP", "駅はどこですか")).not.toBe(reviewItemId("ja-JP", "駅 は ど こ で す か"));
   });
 
   it("picks the most overdue items and ignores other languages and future cards", () => {

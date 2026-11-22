@@ -32,6 +32,24 @@ describe("pronunciation markup", () => {
     expect(speechSpans("Hello there.", "en-US")).toEqual([{ language: "en-US", text: "Hello there." }]);
   });
 
+  it("tags a single Japanese word and a quoted Japanese line", () => {
+    const { segments } = applyTargetVoices([
+      { language: "ja-JP", text: "駅" },
+      { language: "en-US", text: "The word 駅 is a station." },
+      { language: "en-US", text: "Say 「駅はどこですか」 here." },
+      { language: "en-US", text: "The French line is «gare»." },
+      { language: "en-US", text: "German quotes look like „Bahnhof“." },
+    ], "en-US", "ja-JP");
+    expect(speechSpans(segments[1]!.text, "en-US")).toEqual([
+      { language: "en-US", text: "The word " },
+      { language: "ja-JP", text: "駅" },
+      { language: "en-US", text: " is a station." },
+    ]);
+    expect(segments[2]!.text).toContain("[[lang:ja-JP]]駅はどこですか[[/lang]]");
+    expect(segments[3]!.text).toContain("[[lang:ja-JP]]gare[[/lang]]");
+    expect(segments[4]!.text).toContain("[[lang:ja-JP]]Bahnhof[[/lang]]");
+  });
+
   it("keeps an accented teaching-language translation in its own language", () => {
     const { segments } = applyTargetVoices([
       { language: "de-DE", text: "müde", translation: "fatigué" },

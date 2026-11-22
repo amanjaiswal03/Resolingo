@@ -2,6 +2,7 @@ import type { LanguageId } from "./languages.js";
 import { applyTargetVoices, repairMarkup } from "./markup.js";
 import { ConversationSkillSchema, type ConversationSkill } from "./conversation-skills.js";
 import { MAX_LESSON_SEGMENTS, type LessonSegment } from "./schemas.js";
+import { groupBunsetsu, needsWordSegment, segmentWords } from "./segment.js";
 import { dialogueText, normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 import { line, template, type TeachingKey } from "./teaching.js";
 import { speakingPauseMs } from "./speaking-timing.js";
@@ -134,8 +135,8 @@ export function scheduleReviewSlots(itemCount: number, maxSlots: number): Review
 }
 
 function estimateSpeechMs(text: string): number {
-  const words = text.trim().split(/\s+/u).filter(Boolean).length;
-  return Math.max(700, Math.round((words / 2.4) * 1_000));
+  const words = segmentWords(text).length;
+  return Math.max(700, Math.round((Math.max(words, 1) / 2.4) * 1_000));
 }
 
 function splitSyllables(word: string): string[] {
@@ -167,8 +168,8 @@ export function presentChunk(chunk: string, phrase: string): string {
  * Last word, then the last two words, then the whole line when it is longer.
  * The final step is always the full phrase, so the buildup ends on the sentence.
  */
-export function buildupChunks(phrase: string): string[] {
-  const raw = backwardChunks(phrase);
+export function buildupChunks(phrase: string, locale = "en-US"): string[] {
+  const raw = backwardChunks(phrase, locale);
   if (raw.length === 0) return [];
   const spoken = raw.map((chunk) => presentChunk(chunk, phrase)).filter(Boolean);
   const full = presentChunk(phrase.trim(), phrase);
@@ -220,13 +221,15 @@ export function drillsAreUnique(segments: LessonSegment[]): boolean {
 }
 
 /** Last word (or syllable) first, then a longer ending, then the whole phrase. */
-export function backwardChunks(phrase: string): string[] {
-  const words = phrase.trim().split(/\s+/u).filter(Boolean);
+export function backwardChunks(phrase: string, locale = "en-US"): string[] {
+  const segmented = groupBunsetsu(segmentWords(phrase, locale), locale);
+  const words = segmented.length > 0 ? segmented : phrase.trim().split(/\s+/u).filter(Boolean);
   if (words.length === 0) return [];
+  const joiner = /\s/u.test(phrase) ? " " : "";
   if (words.length > 1) {
     const chunks: string[] = [];
     const start = Math.max(0, words.length - MAX_BUILDUP_CHUNKS);
-    for (let index = words.length - 1; index >= start; index -= 1) chunks.push(words.slice(index).join(" "));
+    for (let index = words.length - 1; index >= start; index -= 1) chunks.push(words.slice(index).join(joiner));
     return chunks;
   }
   const word = words[0]!;
@@ -974,7 +977,11 @@ function chunkTranslation(chunk: ChunkNote, phrase: PimsleurPhrase): string | un
   return undefined;
 }
 
-/** The model's pieces, in the model's order. No automatic word-by-word split. */
+function needsBuildup(text: string): boolean {
+  return needsWordSegment(text) && !/\s/u.test(text);
+}
+
+/** The model's pieces, in the model's order. An unspaced line with no pieces is split into buildup chunks. */
 function drillPlan(phrase: PimsleurPhrase, names: SpeakerNames): { phrase: PimsleurPhrase; chunks: ChunkNote[] } | null {
   const text = stripVocatives(phrase.text, names);
   if (isEmptyDrill(text, names)) return null;
@@ -985,12 +992,17 @@ function drillPlan(phrase: PimsleurPhrase, names: SpeakerNames): { phrase: Pimsl
     ...(translation ? { translation } : {}),
   };
   const full = normalizeChunk(text);
-  const chunks = (phrase.chunks ?? [])
+  const provided = (phrase.chunks ?? [])
     .map((note) => ({
       ...note,
       text: presentChunk(stripVocatives(note.text, names), text),
     }))
     .filter((note) => note.text && !isEmptyDrill(note.text, names) && normalizeChunk(note.text) !== full);
+  const chunks = provided.length > 0 || !needsBuildup(text)
+    ? provided
+    : buildupChunks(text, phrase.language)
+      .filter((part) => normalizeChunk(part) !== full)
+      .map((part) => ({ text: part }));
   return { phrase: drilled, chunks };
 }
 
