@@ -8,6 +8,7 @@ import { Card } from "@/components/Card";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
+import { HOW_WOULD_YOU_SAY_ENABLED } from "@/features";
 import { usePlayback } from "@/playback/PlaybackProvider";
 import { subscribeCompletedLessons } from "@/services/lessons";
 import { subscribePhrases } from "@/services/phrases";
@@ -26,6 +27,7 @@ const views = [
   { id: "phrases", label: "Saved" },
 ] as const;
 type SkillView = (typeof views)[number]["id"];
+const shownViews = views.filter((item) => HOW_WOULD_YOU_SAY_ENABLED || item.id !== "phrases");
 
 export default function SkillsRoute() {
   const { profile, user } = useSession();
@@ -78,14 +80,22 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
     setError((previous) => previous.reviews ? { ...previous, reviews: false } : previous);
   }, () => setError((previous) => ({ ...previous, reviews: true }))), [pair, refresh, uid]);
 
-  const skills = useMemo(() => buildSkills(lessons ?? [], phrases ?? [], pair), [lessons, pair, phrases]);
+  const skills = useMemo(
+    () => buildSkills(lessons ?? [], HOW_WOULD_YOU_SAY_ENABLED ? (phrases ?? []) : [], pair),
+    [lessons, pair, phrases],
+  );
   const marked = useMemo(() => Object.fromEntries(skills.cards.flatMap((card) => {
     const result = progressForCard(card, progress ?? {});
     return result ? [[card.id, result] as const] : [];
   })), [progress, skills.cards]);
   const due = progress ? skills.cards.filter((card) => reviewIsDue(marked[card.id], now)).length : 0;
   const recalled = skills.cards.filter((card) => marked[card.id]?.recallRating === "got-it").length;
-  const view = selected ?? (skills.conversations.length ? "conversation" : skills.grammar.length ? "grammar" : skills.phrases.length ? "phrases" : "conversation");
+  const view = selected && shownViews.some((item) => item.id === selected)
+    ? selected
+    : skills.conversations.length ? "conversation"
+    : skills.grammar.length ? "grammar"
+    : HOW_WOULD_YOU_SAY_ENABLED && skills.phrases.length ? "phrases"
+    : "conversation";
   const start = (title: string, pool: SkillCard[], onlyDue = false) => {
     const questions = reviewQuestions(pool, marked, pair, now, onlyDue);
     if (!questions.length) return;
@@ -117,7 +127,7 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
     );
   };
 
-  if ((!lessons && !error.history) || (!phrases && !error.phrases)) return <LoadingScreen />;
+  if ((!lessons && !error.history) || (HOW_WOULD_YOU_SAY_ENABLED && !phrases && !error.phrases)) return <LoadingScreen />;
 
   return (
     <Screen>
@@ -130,7 +140,7 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
           <View style={styles.heroCopy}>
             <Heading>{!skills.cards.length ? "Start your skill map" : !progress ? "Practice your skills" : due ? "Review today" : "You’re caught up"}</Heading>
             <Body muted style={styles.small}>
-              {!skills.cards.length ? "Finish a lesson or save a phrase in Say to start practicing."
+              {!skills.cards.length ? HOW_WOULD_YOU_SAY_ENABLED ? "Finish a lesson or save a phrase in Say to start practicing." : "Finish a lesson to start practicing."
                 : !progress ? `${skills.cards.length} ${skills.cards.length === 1 ? "phrase" : "phrases"} to practice`
                 : due ? `${due} ${due === 1 ? "phrase is" : "phrases are"} ready to review`
                 : "You can practice again whenever you like."}
@@ -150,14 +160,14 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
           />
         ) : <Button label="Go to Today" onPress={() => router.navigate("/(tabs)")} />}
       </Card>
-      {error.history || error.phrases || error.reviews ? (
+      {error.history || (HOW_WOULD_YOU_SAY_ENABLED && error.phrases) || error.reviews ? (
         <Card>
           <Body muted>{error.reviews ? "Review progress couldn’t sync. You can still practice." : "Some learning history couldn’t load."}</Body>
           <Button label="Try again" variant="secondary" onPress={() => { setError({}); setRefresh((value) => value + 1); }} />
         </Card>
       ) : null}
       <View accessibilityRole="tablist" style={[styles.viewPicker, { backgroundColor: theme.surfaceMuted }]}>
-        {views.map(({ id, label }) => (
+        {shownViews.map(({ id, label }) => (
           <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: view === id }}
             onPress={() => { stopAudio(); setExpanded(null); setSelected(id); }}
             style={[styles.viewButton, view === id && { backgroundColor: theme.surface }]}>

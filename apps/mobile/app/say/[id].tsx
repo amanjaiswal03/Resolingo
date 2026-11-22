@@ -9,6 +9,7 @@ import { Card } from "@/components/Card";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
+import { HOW_WOULD_YOU_SAY_ENABLED } from "@/features";
 import { firstRouteParam } from "@/lesson/navigation";
 import { usePlayback } from "@/playback/PlaybackProvider";
 import { api } from "@/services/api";
@@ -25,6 +26,17 @@ function messageOf(error: unknown): string {
 }
 
 export default function PhraseScreen() {
+  if (!HOW_WOULD_YOU_SAY_ENABLED) return <HiddenPhrase />;
+  return <PhraseDetail />;
+}
+
+function HiddenPhrase() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/(tabs)"); }, [router]);
+  return null;
+}
+
+function PhraseDetail() {
   const phraseId = firstRouteParam(useLocalSearchParams<{ id?: string | string[] }>().id);
   const { user } = useSession();
   const { open } = usePlayback();
