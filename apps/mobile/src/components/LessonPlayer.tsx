@@ -540,7 +540,7 @@ export function LessonPlayer({
 					partial={partial}
 					results={results}
 					onToggle={toggleChecks}
-					onSkip={recording ? skip : undefined}
+					onSkip={skip}
 					onPauseLesson={pauseLesson}
 					onPlayInLesson={playSegmentInLesson}
 					onRetry={(id, close) => enableChecks(() => { close(); playSegmentInLesson(id); })}
