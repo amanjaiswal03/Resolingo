@@ -9,6 +9,7 @@ import {
   phraseLessonPace,
   phraseLinesAreDistinct,
   phraseLookupLimit,
+  speechCheckLimit,
   phrasePromptsAreClear,
   shapePhraseLesson,
   type PhraseLessonContext,
@@ -80,6 +81,8 @@ describe("phrase lookup ids", () => {
     expect(phraseLookupLimit(false)).toBe(30);
     expect(phraseLookupLimit(undefined)).toBe(30);
     expect(phraseLookupLimit(true)).toBe(100);
+    expect(speechCheckLimit(undefined)).toBe(150);
+    expect(speechCheckLimit(true)).toBe(400);
     expect(phraseLessonPace("A1")).toBe("slow");
     expect(phraseLessonPace("A2")).toBe("slow");
     expect(phraseLessonPace("B1")).toBe("moderate");

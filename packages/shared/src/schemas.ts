@@ -144,7 +144,7 @@ export function phraseAudioByteLength(audioBase64: string): number {
 }
 
 export const TranslatePhraseRequestSchema = z.object({
-  mode: z.enum(["translate", "transcribe"]).default("translate"),
+  mode: z.enum(["translate", "transcribe", "practice"]).default("translate"),
   text: z.string().trim().max(280).optional(),
   audioBase64: z.string().min(1).max(2_000_000).optional(),
   mimeType: z.string().optional(),
@@ -167,7 +167,7 @@ export const TranslatePhraseRequestSchema = z.object({
     }
     return;
   }
-  if (value.mode === "transcribe" || value.mimeType || value.durationMs !== undefined) {
+  if (value.mode === "transcribe" || value.mode === "practice" || value.mimeType || value.durationMs !== undefined) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Record a short sentence.", path: ["audioBase64"] });
     return;
   }

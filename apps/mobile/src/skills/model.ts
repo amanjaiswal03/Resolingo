@@ -1,13 +1,15 @@
-import { conversationSkills, grammarTopics, isEmptyDrill, lessonDisplayText, type CefrLevel, type LanguageId, type Lesson, type Phrase } from "@resolingo/shared";
+import { conversationSkills, grammarTopics, isEmptyDrill, lessonDisplayText, phraseSimilarity, type CefrLevel, type LanguageId, type Lesson, type Phrase } from "@resolingo/shared";
 import { grammarGoal, grammarGoals, inferConversationGoal, phraseConversationGoal } from "./goals";
 
 export type LanguagePair = { nativeLanguage: LanguageId; targetLanguage: LanguageId };
 export type ReviewRating = "got-it" | "almost" | "forgot";
 export type ReviewMode = "recall" | "recognition";
+/** A lesson credit comes from a spoken answer checked inside a lesson. */
+export type ProgressMode = ReviewMode | "lesson";
 export type ReviewProgress = {
   attemptId: string;
   lastRating: ReviewRating;
-  lastMode: ReviewMode;
+  lastMode: ProgressMode;
   recallRating: ReviewRating | null;
   reviewedAt: number;
   dueAt: number;
@@ -78,7 +80,8 @@ function belongsTo(value: LanguagePair | null, pair: LanguagePair): boolean {
   return value?.nativeLanguage === pair.nativeLanguage && value.targetLanguage === pair.targetLanguage;
 }
 
-function makeCard(target: string, meaning: string, pair: LanguagePair): SkillCard | null {
+/** The card a lesson line or saved phrase becomes, so progress from a lesson lands on the same card. */
+export function makeCard(target: string, meaning: string, pair: LanguagePair): SkillCard | null {
   const spoken = lessonDisplayText(target).trim();
   const translated = lessonDisplayText(meaning).trim();
   const targetKey = normalize(spoken, pair.targetLanguage);
@@ -264,7 +267,7 @@ function clearlyDifferent(left: string, right: string) {
   return !contains(left, right) && !contains(right, left);
 }
 
-export function reviewQuestions(pool: readonly SkillCard[], progress: ProgressByCard, pair: LanguagePair, now: number, dueOnly: boolean): ReviewQuestion[] {
+export function reviewQuestions(pool: readonly SkillCard[], progress: ProgressByCard, pair: LanguagePair, now: number, dueOnly: boolean, families?: ReadonlyMap<string, string>): ReviewQuestion[] {
   const status = (card: SkillCard) => progressForCard(card, progress);
   const candidates = pool.filter((card) => !dueOnly || reviewIsDue(status(card), now));
   const priority = (card: SkillCard) => {
@@ -275,7 +278,17 @@ export function reviewQuestions(pool: readonly SkillCard[], progress: ProgressBy
   };
   candidates.sort((left, right) => priority(left) - priority(right)
     || (status(left)?.dueAt ?? now) - (status(right)?.dueAt ?? now));
-  return candidates.slice(0, MAX_SESSION_QUESTIONS).map((card, index) => {
+  // One phrase from each family of variations, so a near-twin is never a giveaway.
+  const picked: SkillCard[] = [];
+  const usedFamilies = new Set<string>();
+  for (const card of candidates) {
+    if (picked.length === MAX_SESSION_QUESTIONS) break;
+    const family = families?.get(card.id) ?? card.id;
+    if (usedFamilies.has(family)) continue;
+    usedFamilies.add(family);
+    picked.push(card);
+  }
+  return picked.map((card, index) => {
     if (index !== 2 || card.otherMeanings?.length) return { card, mode: "recall" };
     const target = normalize(card.target, pair.targetLanguage);
     const used = new Set([normalize(card.meaning, pair.nativeLanguage)]);
@@ -291,4 +304,116 @@ export function reviewQuestions(pool: readonly SkillCard[], progress: ProgressBy
     alternatives.splice(Math.floor(Math.random() * 3), 0, card.meaning);
     return { card, mode: "recognition", options: alternatives };
   });
+}
+
+
+export const MASTERY_LEVELS = ["New", "Learning", "Familiar", "Strong", "Mastered"] as const;
+export type MasteryLevel = 0 | 1 | 2 | 3 | 4;
+
+/**
+ * Strength of one phrase from its spaced-review state. A correct recall sets a
+ * 3-day interval (Familiar), and each on-time correct recall doubles it, so
+ * Strong takes two spaced recalls in a row and Mastered takes four.
+ */
+export function masteryLevel(progress: ReviewProgress | undefined): MasteryLevel {
+  if (!progress) return 0;
+  if (progress.lastRating !== "got-it" || progress.intervalDays <= 2) return 1;
+  if (progress.intervalDays >= 24) return 4;
+  if (progress.intervalDays >= 6) return 3;
+  return 2;
+}
+
+export type SkillMastery = { percent: number; level: MasteryLevel; counts: [number, number, number, number, number] };
+
+export function skillMastery(cards: readonly SkillCard[], progress: ProgressByCard): SkillMastery {
+  const counts: SkillMastery["counts"] = [0, 0, 0, 0, 0];
+  let total = 0;
+  for (const card of cards) {
+    const level = masteryLevel(progressForCard(card, progress));
+    counts[level] += 1;
+    total += level;
+  }
+  if (!cards.length) return { percent: 0, level: 0, counts };
+  const average = total / cards.length;
+  return { percent: Math.round(average / 4 * 100), level: Math.floor(average + 1e-9) as MasteryLevel, counts };
+}
+
+const HOUR_MS = 3_600_000;
+/** Lessons alone can lift a phrase to Familiar. Strong and Mastered need spaced reviews. */
+export const LESSON_CREDIT_CAP: MasteryLevel = 2;
+
+/**
+ * Progress from a spoken answer in a lesson. Saying a line seconds after
+ * hearing it is easier than recalling it days later, so a match counts as a
+ * step toward Familiar and never lifts a phrase past it. A miss brings the
+ * phrase back first in tomorrow's review. Returns null when nothing changes.
+ */
+export function scheduleLessonCredit(previous: ReviewProgress | undefined, input: {
+  attemptId: string; matched: boolean; now: number;
+}): ReviewProgress | null {
+  const { attemptId, matched, now } = input;
+  // One credit per phrase per sitting, since a lesson repeats its lines.
+  if (previous?.lastMode === "lesson" && now - previous.reviewedAt < 12 * HOUR_MS) return null;
+  if (previous && previous.reviewedAt > now) return null;
+  const recallRating = previous?.recallRating ?? null;
+  if (matched) {
+    if (masteryLevel(previous) >= LESSON_CREDIT_CAP) return null;
+    const intervalDays = previous?.lastRating === "got-it" ? 3 : 2;
+    return { attemptId, lastRating: "got-it", lastMode: "lesson", recallRating, intervalDays, reviewedAt: now, dueAt: now + intervalDays * DAY_MS };
+  }
+  if (previous && previous.dueAt - now <= DAY_MS && previous.lastRating !== "got-it") return null;
+  return { attemptId, lastRating: "almost", lastMode: "lesson", recallRating, intervalDays: 1, reviewedAt: now, dueAt: now + DAY_MS };
+}
+
+const MAX_FAMILY_CARDS = 800;
+const FAMILY_SIMILARITY = 0.6;
+const FAMILY_MIN_WORDS = 4;
+
+/**
+ * Near-duplicates such as "Ich hätte gern einen Kaffee" and "… einen Tee".
+ * Each stays its own card with its own strength. The map gives every card in
+ * a family the id of the family's first card; a card with no variations maps
+ * to itself.
+ */
+export function phraseFamilies(cards: readonly SkillCard[], pair: LanguagePair): Map<string, string> {
+  const families = new Map(cards.map((card) => [card.id, card.id]));
+  const list = cards.slice(0, MAX_FAMILY_CARDS);
+  const words = list.map((card) => normalize(card.target, pair.targetLanguage).split(" ").length);
+  const root = (id: string): string => {
+    let current = id;
+    while (families.get(current) !== current) current = families.get(current)!;
+    return current;
+  };
+  for (let left = 0; left < list.length; left += 1) {
+    if (words[left]! < FAMILY_MIN_WORDS) continue;
+    for (let right = left + 1; right < list.length; right += 1) {
+      if (words[right]! < FAMILY_MIN_WORDS) continue;
+      const a = list[left]!, b = list[right]!;
+      if (phraseSimilarity(a.target, b.target, pair.targetLanguage) < FAMILY_SIMILARITY) continue;
+      const ra = root(a.id), rb = root(b.id);
+      if (ra !== rb) families.set(rb, ra);
+    }
+  }
+  for (const id of families.keys()) families.set(id, root(id));
+  return families;
+}
+
+export const WEEKLY_GOAL_DAYS = 5;
+
+/**
+ * Which days of the current week (Monday first, device time) had a Skills
+ * review. Only the latest review of each phrase is stored, so a day can drop
+ * out only when every phrase reviewed that day was reviewed again later.
+ */
+export function reviewDaysThisWeek(progress: ProgressByCard, now: number): boolean[] {
+  const today = new Date(now);
+  const weekday = (today.getDay() + 6) % 7;
+  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - weekday).getTime();
+  const days = Array<boolean>(7).fill(false);
+  for (const review of Object.values(progress)) {
+    if (review.lastMode === "lesson" || review.reviewedAt < monday || review.reviewedAt > now) continue;
+    const date = new Date(review.reviewedAt);
+    days[(date.getDay() + 6) % 7] = true;
+  }
+  return days;
 }
