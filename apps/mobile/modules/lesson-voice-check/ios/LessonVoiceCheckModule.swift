@@ -44,11 +44,13 @@ public final class LessonVoiceCheckModule: Module {
     }.runOnQueue(.main)
 
     AsyncFunction("start") { (player: AudioPlayer, sessionId: String, language: String, windows: [AnswerWindow]) in
-      try self.checks.start(player: player.ref, sessionId: sessionId, language: language, windows: windows) { [weak self] id, verdict, heard in
-        self?.sendEvent("onAnswer", ["sessionId": sessionId, "id": id, "verdict": verdict, "heard": heard])
-      } onWindow: { [weak self] id, state in
+      try self.checks.start(player: player.ref, sessionId: sessionId, language: language, windows: windows) { [weak self] id, captureId, verdict, heard in
+        self?.sendEvent("onAnswer", [
+          "sessionId": sessionId, "id": id, "captureId": captureId, "verdict": verdict, "heard": heard,
+        ])
+      } onWindow: { [weak self] id, captureId, state in
         self?.sendEvent("onWindow", [
-          "sessionId": sessionId, "id": id, "recording": state == .recording, "state": state.rawValue,
+          "sessionId": sessionId, "id": id, "captureId": captureId, "recording": state == .recording, "state": state.rawValue,
         ])
       } onFeedback: { [weak self] playing in
         self?.sendEvent("onFeedback", ["sessionId": sessionId, "playing": playing])
@@ -63,6 +65,10 @@ public final class LessonVoiceCheckModule: Module {
 
     AsyncFunction("cancelFeedback") { (sessionId: String, resume: Bool) in
       self.checks.cancelFeedback(sessionId: sessionId, resume: resume)
+    }.runOnQueue(.main)
+
+    AsyncFunction("abandon") { (sessionId: String) in
+      self.checks.abandon(sessionId: sessionId)
     }.runOnQueue(.main)
 
     AsyncFunction("stop") { (sessionId: String) in
@@ -171,8 +177,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var dictation: OnDeviceDictation?
   private var cue: AVAudioPlayer?
   private var windows: [AnswerWindow] = []
-  private var notify: ((String, String, String) -> Void)?
-  private var onWindow: ((String, AnswerWindowState) -> Void)?
+  private var notify: ((String, String, String, String) -> Void)?
+  private var onWindow: ((String, String, AnswerWindowState) -> Void)?
   private var onStopped: (() -> Void)?
   private var period: Any?
   private var boundary: Any?
@@ -187,6 +193,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var active: Capture?
   private var finishing: [UUID: Capture] = [:]
   private var latestCapture: [String: UUID] = [:]
+  /// After a seek, open the microphone if playback is already inside a pause.
+  private var replay = false
   private var reachedEnd = false
   private var previousMode: (AVAudioSession.Category, AVAudioSession.Mode, AVAudioSession.CategoryOptions)?
   private var checkingOptions: AVAudioSession.CategoryOptions?
@@ -227,8 +235,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
 
   func start(
     player: AVPlayer, sessionId: String, language: String, windows: [AnswerWindow],
-    notify: @escaping (String, String, String) -> Void,
-    onWindow: @escaping (String, AnswerWindowState) -> Void,
+    notify: @escaping (String, String, String, String) -> Void,
+    onWindow: @escaping (String, String, AnswerWindowState) -> Void,
     onFeedback: @escaping (Bool) -> Void,
     onStopped: @escaping () -> Void
   ) throws {
@@ -285,7 +293,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     notifications = [
       center.addObserver(forName: AVPlayerItem.timeJumpedNotification, object: item, queue: .main) { [weak self] _ in
         self?.endFeedback(resume: true)
-        self?.resetWindow()
+        self?.abandonAttempts()
       },
       center.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
         guard let self, self.sessionId == sessionId else { return }
@@ -348,6 +356,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     feedbackClips.removeAll()
     feedbackVariant = 0
     latestCapture.removeAll()
+    replay = false
     reachedEnd = false
     interrupted = false
     restoreAudioMode()
@@ -368,6 +377,35 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     session.category == .playAndRecord && session.categoryOptions == checkingOptions
   }
 
+  /// Retire every in-flight capture. A transcript that resolves afterwards no longer matches latestCapture.
+  private func abandonAttempts() {
+    replay = true
+    if let active {
+      let capture = active
+      self.active = nil
+      capture.closeMic()
+      capture.cancelRecognition()
+      onWindow?(capture.window.id, capture.id.uuidString, .cancelled)
+    }
+    for capture in finishing.values {
+      capture.cancelRecognition()
+      capture.analysis?.cancel()
+      onWindow?(capture.window.id, capture.id.uuidString, .cancelled)
+    }
+    finishing.removeAll()
+    latestCapture.removeAll()
+    pending = nil
+    cue?.stop()
+    previousTime = nil
+    previousUptime = nil
+    restoreSpeakingRate()
+  }
+
+  func abandon(sessionId: String) {
+    guard self.sessionId == sessionId else { return }
+    abandonAttempts()
+  }
+
   private func resetWindow() {
     previousTime = nil
     previousUptime = nil
@@ -376,7 +414,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     if let active {
       self.active = nil
       active.closeMic()
-      onWindow?(active.window.id, .cancelled)
+      onWindow?(active.window.id, active.id.uuidString, .cancelled)
       active.cancelRecognition()
     }
     restoreSpeakingRate()
@@ -406,7 +444,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     let advance = time - previousTime
     let elapsed = now - previousUptime
     guard advance >= 0, advance <= elapsed * Double(player.rate) + 0.14 else {
-      resetWindow()
+      abandonAttempts()
       return
     }
 
@@ -431,11 +469,24 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
       return
     }
 
+    if replay, let window = windows.first(where: {
+      time >= $0.startSeconds && time < $0.endSeconds - 0.65
+    }), let cue {
+      cue.currentTime = 0
+      guard cue.play() else { return }
+      replay = false
+      pending = window
+      extendSpeakingPause(window, on: player, at: time)
+      armedAt = now + 0.30
+      return
+    }
+
     guard let window = windows.first(where: {
             previousTime < $0.startSeconds && time >= $0.startSeconds &&
             time <= $0.startSeconds + 0.40 && time < $0.endSeconds - 0.65
           }),
           let cue else { return }
+    replay = false
     cue.currentTime = 0
     guard cue.play() else { return }
     pending = window
@@ -469,7 +520,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     }
     active = capture
     latestCapture[window.id] = capture.id
-    onWindow?(window.id, .recording)
+    onWindow?(window.id, capture.id.uuidString, .recording)
     guard capture.recording == nil, let recognizer else { return }
     capture.task = recognizer.recognitionTask(with: capture.request) { [weak self, weak capture] result, error in
       DispatchQueue.main.async {
@@ -495,17 +546,17 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     restoreSpeakingRate()
     if capture.level.wasQuiet && !hasTranscript {
       capture.cancelRecognition()
-      onWindow?(capture.window.id, .skipped)
+      onWindow?(capture.window.id, capture.id.uuidString, .skipped)
       if feedbackBreak?.id == capture.id { endFeedback(resume: true) }
       return
     }
     guard canTranscribe else {
       capture.cancelRecognition()
-      onWindow?(capture.window.id, .unclear)
+      onWindow?(capture.window.id, capture.id.uuidString, .unclear)
       return
     }
     finishing[capture.id] = capture
-    onWindow?(capture.window.id, .checking)
+    onWindow?(capture.window.id, capture.id.uuidString, .checking)
 #if compiler(>=6.2)
     if #available(iOS 26.0, *), let dictation, let recording = capture.recording {
       if let audio = recording.close() {
@@ -593,7 +644,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   }
 
   private func sendResult(_ capture: Capture, verdict: String, heard: String, maySpeak: Bool = true) {
-    notify?(capture.window.id, verdict, heard)
+    notify?(capture.window.id, capture.id.uuidString, verdict, heard)
     guard feedbackBreak?.id == capture.id else { return }
     guard maySpeak && verdict != "skipped" else {
       endFeedback(resume: true)
@@ -616,7 +667,9 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   }
 
   private func holdForFeedback(_ window: AnswerWindow, captureId: UUID) {
-    guard let player, !feedbackClips.isEmpty, !reachedEnd, !interrupted, feedbackBreak == nil,
+    // Stop before the model answer even when the feedback clips are still loading,
+    // so the answer is heard only after this attempt, following the feedback.
+    guard let player, !reachedEnd, !interrupted, feedbackBreak == nil,
           player.timeControlStatus == .playing, player.rate > 0 else { return }
     // Older plans placed the feedback time after the model answer. Always stop within the pause.
     let latest = min(window.feedbackAtSeconds, window.endSeconds + 0.12)

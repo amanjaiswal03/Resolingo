@@ -8,6 +8,7 @@ import {
 } from "expo-audio";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { lessonDisplayText, type Lesson } from "@resolingo/shared";
+import { cuesRewoundTo } from "@/lesson/answer-attempts";
 import { answerPlan } from "@/lesson/answer-windows";
 import { percentWidth } from "@/lesson/navigation";
 import { joinLessonAudio } from "@/lesson/join-lesson-audio";
@@ -112,7 +113,7 @@ export function LessonPlayer({
 	);
 	const {
 		available: canCheckAnswers, enable: enableChecks, isArmed, recording, results,
-		feedbackPlaying, cancelFeedback, state: checkState, toggle: toggleChecks,
+		feedbackPlaying, cancelFeedback, state: checkState, toggle: toggleChecks, rewind: rewindChecks,
 	} = useAnswerChecks(player, lesson.id, checks, status.isLoaded, allowAnswerChecks);
 	const playing = status.playing || feedbackPlaying;
 	const loadingAudio = playable.length > 0 && !playing && !status.error && status.playbackState !== "failed" &&
@@ -327,6 +328,7 @@ export function LessonPlayer({
 	};
 	const seekToLessonMs = (targetMs: number) => {
 		if (timeline.totalMs <= 0) return;
+		rewindChecks(cuesRewoundTo(checks?.windows ?? [], targetMs / 1_000));
 		completed.current = false;
 		const target = seekInTimeline(timeline, targetMs);
 		const clip = playable[target.index];
@@ -397,6 +399,7 @@ export function LessonPlayer({
 		const index = playable.findIndex((clip) => clip.segmentIds.includes(segmentId));
 		const start = timeline.startsMs[index];
 		if (start == null || !continuous || timeline.totalMs <= 0) return;
+		rewindChecks(cuesRewoundTo(checks?.windows ?? [], start / 1_000));
 		const duration = status.duration > 0 ? status.duration : timeline.totalMs / 1_000;
 		completed.current = false;
 		pauseLesson();

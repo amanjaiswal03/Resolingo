@@ -24,6 +24,16 @@ describe("teaching lines", () => {
     expect(line("en-AU", "how", { translation: "hello" })).toBe("How would you say hello?");
     expect(line("fr-CA", "how", { translation: "bonjour" })).toBe(line("fr-FR", "how", { translation: "bonjour" }));
     expect(line("es-MX", "lead1")).toBe(line("es-ES", "lead1"));
+    expect(line("en-US", "matchYes")).toBe("Yes, that's right.");
+    expect(line("en-GB", "matchGood")).toBe("Good.");
+    expect(line("fr-FR", "matchYes")).toBe("Oui, c'est ça.");
+    expect(line("de-DE", "matchGood")).toBe("Gut.");
+    expect(line("en-US", "cueClosing")).toBe("That's the conversation.");
+    expect(line("de-DE", "cueClosing")).toBe("Das war das Gespräch.");
+    for (const key of ["matchYes", "matchGood", "nice", "cueClosing"] as const) {
+      expect(line("en-US", key)).not.toMatch(/!/);
+      expect(line("fr-FR", key)).not.toMatch(/!/);
+    }
     expect(speakPrefix("en-US")).toBe("How would you say");
     expect(stripSpeakPrefix("How would you say I need shoes", "en-US")).toBe("I need shoes");
     expect(stripSpeakPrefix(`${speakPrefix("de-DE")}: Ich brauche Schuhe`, "de-DE")).toBe("Ich brauche Schuhe");

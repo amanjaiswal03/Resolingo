@@ -8,6 +8,7 @@ import {
 } from "./grammar.js";
 import { lessonDisplayText, speechSpans } from "./markup.js";
 import { GeneratedLessonSchema, type LessonSegment } from "./schemas.js";
+import { recallAnswersFollowPrompts } from "./pimsleur.js";
 import { phrasesToRemember } from "./review.js";
 import { DEFAULT_SPEAKER_NAMES } from "./speakers.js";
 
@@ -137,7 +138,9 @@ describe("grammar lessons", () => {
     expect(script).toContain('Ich bin müde.\nThat means "I am tired".');
     expect(lessonDisplayText(parsed.segments[0]?.text ?? "")).toBe("Today we'll learn how to use sein, to be.");
     expect(parsed.segments.some((segment) => segment.phase === "summary" && lessonDisplayText(segment.text).startsWith("Here is sein"))).toBe(true);
-    expect(parsed.segments.at(-1)?.text).toMatch(/Nice work/);
+    expect(recallAnswersFollowPrompts(parsed.segments)).toBe(true);
+    expect(parsed.segments.at(-1)?.text).toMatch(/That's it for today/);
+    expect(parsed.segments.at(-1)?.text).not.toMatch(/Nice work/);
     expect(parsed.segments.at(-1)?.text).toMatch(/out loud/);
     expect(grammarPromptsAreClear(parsed.segments)).toBe(true);
     const prompts = cues(parsed.segments);

@@ -10,6 +10,7 @@ import {
   drillsAreUnique,
   priorReviewsAreIntroduced,
   shapePimsleurLesson,
+  recallAnswersFollowPrompts,
   recallPromptsCiteMeanings,
   scheduleReviewSlots,
   speakPromptsMatchAnswers,
@@ -153,6 +154,18 @@ describe("recall prompts", () => {
       line("Wo ist der Bahnhof?", { phase: "review", translation: "Where is the station?" }),
     ];
     expect(recallPromptsCiteMeanings(cited)).toBe(true);
+    expect(recallAnswersFollowPrompts(cited)).toBe(true);
+    const answerFirst = [
+      line("Wo ist der Bahnhof?", { phase: "review", translation: "Where is the station?" }),
+      line("How would you say Where is the station?", { speaker: "teacher", language: "en-US", phase: "review", pauseAfterMs: 5000 }),
+      line("Wo ist der Bahnhof?", { phase: "review", translation: "Where is the station?" }),
+    ];
+    expect(recallAnswersFollowPrompts(answerFirst)).toBe(false);
+    const quick = [
+      line("Quick check. How would you say Where is the station?", { speaker: "teacher", language: "en-US", phase: "quick", pauseAfterMs: 5000 }),
+      line("Wo ist der Bahnhof?", { speaker: "teacher", phase: "quick", translation: "Where is the station?" }),
+    ];
+    expect(recallAnswersFollowPrompts(quick)).toBe(true);
   });
 });
 
@@ -501,7 +514,8 @@ describe("model shaping", () => {
     const priorTexts = ["Einen Kaffee, bitte.", "Die Rechnung, bitte.", "Wo ist die Toilette?"];
     const warmup = segments.findIndex((segment) => segment.phase === "warmup" && segment.pauseAfterMs);
     expect(segments.slice(0, warmup).some((segment) => /remember|recall|earlier|last time/i.test(segment.text))).toBe(true);
-    expect(segments[warmup - 1]).toMatchObject({ kind: "example", text: "Einen Kaffee, bitte." });
+    expect(segments[warmup - 1]?.text).not.toBe("Einen Kaffee, bitte.");
+    expect(segments[warmup]?.speaker).toBe("teacher");
     expect(segments[warmup]?.text.toLowerCase()).toContain("a coffee, please");
     expect(segments[warmup + 1]).toMatchObject({ text: "Einen Kaffee, bitte.", phase: "warmup" });
     expect(segments[warmup + 1]?.speaker).not.toBe("teacher");
@@ -539,6 +553,7 @@ describe("model shaping", () => {
       return answer?.translation && segment.text.toLowerCase().includes(answer.translation.replace(/[.!?？。]+$/u, "").trim().toLowerCase());
     })).toBe(true);
     expect(recallPromptsCiteMeanings(segments)).toBe(true);
+    expect(recallAnswersFollowPrompts(segments)).toBe(true);
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
     for (const [index, prompt] of segments.entries()) {
@@ -546,9 +561,14 @@ describe("model shaping", () => {
       const answer = segments[index + 1]!;
       expect(prompt.speaker).toBe("teacher");
       expect(prompt.pauseAfterMs).toBe(speakingPauseMs(answer.text, answer.language));
-      expect(segments.slice(0, index)).toContainEqual(expect.objectContaining({
-        kind: "example", text: answer.text, language: answer.language,
-      }));
+      const fromEarlierLesson = priorTexts.includes(answer.text);
+      if (fromEarlierLesson) {
+        expect(segments.slice(0, index).some((segment) => segment.kind === "example" && segment.text === answer.text)).toBe(false);
+      } else {
+        expect(segments.slice(0, index)).toContainEqual(expect.objectContaining({
+          kind: "example", text: answer.text, language: answer.language,
+        }));
+      }
     }
   });
 });

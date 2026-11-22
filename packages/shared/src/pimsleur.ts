@@ -56,7 +56,7 @@ export const DEFAULT_CUES: LessonCues = {
   sayIt: "Say it out loud.",
   yourTurn: "Now you say it.",
   again: "Let's hear the conversation once more.",
-  closing: "That's the conversation. Nice work.",
+  closing: "That's the conversation.",
 };
 
 /**
@@ -350,6 +350,27 @@ function longestMeaning(prompt: string, meanings: string[]): string | undefined 
 }
 
 const RECALL_PHASES = new Set(["recall", "review", "warmup", "recombine", "roleplay"]);
+/** Cues that ask for something the learner should already know, without a fresh model. */
+const MEMORY_CUE_PHASES = new Set(["review", "quick", "warmup"]);
+
+/**
+ * A memory cue is a native-language prompt, then a pause, then the target line.
+ * The target line is not played again immediately before that prompt.
+ */
+export function recallAnswersFollowPrompts(segments: LessonSegment[]): boolean {
+  for (let index = 0; index < segments.length; index += 1) {
+    const prompt = segments[index];
+    if (!prompt?.pauseAfterMs || prompt.speaker !== "teacher") continue;
+    if (!MEMORY_CUE_PHASES.has(prompt.phase ?? "")) continue;
+    const answer = segments[index + 1];
+    if (!answer || answer.language === prompt.language) return false;
+    const meaning = meaningOf(answer.translation);
+    if (!meaning || !cites(prompt.text, meaning)) return false;
+    const previous = segments[index - 1];
+    if (previous && previous.language === answer.language && normalizeChunk(previous.text) === normalizeChunk(answer.text)) return false;
+  }
+  return true;
+}
 
 /** Narrator lines that open a block of phrases from earlier lessons. */
 function priorLines(teaching: LanguageId, keys: readonly TeachingKey[]): readonly string[] {
@@ -715,9 +736,11 @@ export function arrangePimsleur(input: {
   const nextBridge = linePicker(priorLines(input.nativeLanguage, ["bridge1", "bridge2", "bridge3", "bridge4"]), (input.seed ?? 0) + 3);
   const recallPrior = (phrase: PimsleurPhrase, phase: string, bridge: boolean): boolean => {
     const meaning = meaningOf(phrase.translation);
-    if (!meaning) return false;
+    if (!meaning || !canAdd(2, 0)) return false;
+    // The learner tries before hearing the line. Mark it heard only so a later
+    // review in this lesson can ask for it again; the first audio is the answer after the pause.
+    modeled.add(normalizeChunk(phrase.text));
     const template = bridge ? nextBridge() : nextRemember();
-    present(phrase, phase, `“${meaning}.”`);
     return ask(phrase, phase, phase, fillMeaning(template, meaning));
   };
   const practiceVariation = (phrase: PimsleurPhrase, phrasesLeft: number): boolean => {

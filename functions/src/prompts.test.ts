@@ -40,7 +40,8 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("realistic conversation");
     expect(prompt).toContain("Before we start, let's see what you remember from last time.");
     expect(prompt).toContain("Do you remember how to say");
-    expect(prompt).toContain("Great, now on to today's conversation.");
+    expect(prompt).toContain("Now on to today's conversation.");
+    expect(prompt).toContain("closing is one short, calm, matter-of-fact wrap-up");
     expect(prompt).toContain("Here's one from a previous lesson.");
     expect(prompt).toContain("The same lead-in is not used twice");
   });

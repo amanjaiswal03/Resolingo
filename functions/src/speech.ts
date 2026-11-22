@@ -31,7 +31,7 @@ export type LessonSpeaker = keyof typeof roleVoices;
 
 const deliveryStyle: Record<Delivery, string> = {
   warm: "soft, calm, and soothing",
-  praise: "soft, warm, and brightly pleased",
+  praise: "soft, calm, and warm",
   gentle: "soft, patient, and gentle",
   curious: "soft, calm, and curious",
   clear: "soft and clear",
@@ -40,7 +40,7 @@ const deliveryStyle: Record<Delivery, string> = {
 
 const performanceTag: Record<Delivery, string> = {
   warm: "",
-  praise: "[excited] ",
+  praise: "",
   gentle: "[gently] ",
   curious: "[curious] ",
   clear: "",
