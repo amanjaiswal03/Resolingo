@@ -25,7 +25,7 @@ public final class LessonVoiceCheckModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("LessonVoiceCheck")
-    Events("onAnswer", "onWindow", "onFeedback", "onStopped")
+    Events("onAnswer", "onWindow", "onFeedback", "onStopped", "onGrade")
 
     Function("supports") { (language: String) -> Bool in
       LessonVoiceCheck.legacyRecognizer(language: language) != nil
@@ -48,6 +48,11 @@ public final class LessonVoiceCheckModule: Module {
         self?.sendEvent("onAnswer", [
           "sessionId": sessionId, "id": id, "captureId": captureId, "verdict": verdict, "heard": heard,
         ])
+      } onGrade: { [weak self] id, captureId, heard, alternate, audible, confidenceKnown, wasQuiet in
+        self?.sendEvent("onGrade", [
+          "sessionId": sessionId, "id": id, "captureId": captureId, "heard": heard, "alternate": alternate,
+          "audibleSeconds": audible, "confidenceKnown": confidenceKnown, "wasQuiet": wasQuiet,
+        ])
       } onWindow: { [weak self] id, captureId, state in
         self?.sendEvent("onWindow", [
           "sessionId": sessionId, "id": id, "captureId": captureId, "recording": state == .recording, "state": state.rawValue,
@@ -69,6 +74,10 @@ public final class LessonVoiceCheckModule: Module {
 
     AsyncFunction("abandon") { (sessionId: String) in
       self.checks.abandon(sessionId: sessionId)
+    }.runOnQueue(.main)
+
+    AsyncFunction("speak") { (sessionId: String, captureId: String, verdict: String) in
+      self.checks.speak(sessionId: sessionId, captureId: captureId, verdict: verdict)
     }.runOnQueue(.main)
 
     AsyncFunction("stop") { (sessionId: String) in
@@ -127,6 +136,12 @@ private final class AnswerAudioLevel {
     return audibleSeconds >= 0.12
   }
 
+  var secondsAudible: Double {
+    lock.lock()
+    defer { lock.unlock() }
+    return audibleSeconds
+  }
+
   var hasVoiceActivity: Bool {
     lock.lock()
     defer { lock.unlock() }
@@ -147,13 +162,18 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     var analysis: Task<Void, Never>?
     var recording: SpokenClip?
     var best: SFTranscription?
+    var richest = ""
     var final = false
 
     init(window: AnswerWindow) {
       self.window = window
       request.requiresOnDeviceRecognition = true
       request.shouldReportPartialResults = true
-      request.taskHint = .confirmation
+      // Full phrases, not yes/no. The expected line is a hint, and the grader
+      // rejects a short exact echo when confidence is missing.
+      request.taskHint = .dictation
+      let hint = window.expected.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !hint.isEmpty { request.contextualStrings = [hint] }
     }
 
     func closeMic() {
@@ -178,6 +198,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var cue: AVAudioPlayer?
   private var windows: [AnswerWindow] = []
   private var notify: ((String, String, String, String) -> Void)?
+  private var onGrade: ((String, String, String, String, Double, Bool, Bool) -> Void)?
   private var onWindow: ((String, String, AnswerWindowState) -> Void)?
   private var onStopped: (() -> Void)?
   private var period: Any?
@@ -205,6 +226,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var feedbackClips: [String: [Data]] = [:]
   private var feedbackVariant = 0
   private var feedbackBreak: (id: UUID, rate: Float)?
+  private var feedbackSpoken = false
   private var onFeedback: ((Bool) -> Void)?
 
   static func legacyRecognizer(language: String) -> SFSpeechRecognizer? {
@@ -238,6 +260,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   func start(
     player: AVPlayer, sessionId: String, language: String, windows: [AnswerWindow],
     notify: @escaping (String, String, String, String) -> Void,
+    onGrade: @escaping (String, String, String, String, Double, Bool, Bool) -> Void,
     onWindow: @escaping (String, String, AnswerWindowState) -> Void,
     onFeedback: @escaping (Bool) -> Void,
     onStopped: @escaping () -> Void
@@ -273,6 +296,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     dictation = prepared
     self.windows = windows
     self.notify = notify
+    self.onGrade = onGrade
     self.onWindow = onWindow
     self.onFeedback = onFeedback
     self.onStopped = onStopped
@@ -334,6 +358,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   func stop(sessionId requestedId: String? = nil, announce: Bool = false) {
     if let requestedId, requestedId != sessionId { return }
     endFeedback(resume: false)
+    feedbackSpoken = false
     resetWindow()
     for capture in finishing.values { capture.cancelRecognition() }
     finishing.removeAll()
@@ -352,6 +377,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     cue = nil
     sessionId = nil
     notify = nil
+    onGrade = nil
     onWindow = nil
     onFeedback = nil
     feedbackClips.removeAll()
@@ -515,8 +541,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     replay = false
     pending = window
     extendSpeakingPause(window, on: player, at: time)
-    // Let the cue clear the output before opening the input, including Bluetooth latency.
-    armedAt = now + 0.30
+    // The beep is 0.1s. Leave a short tail so it does not land in the transcript.
+    armedAt = now + 0.20
   }
 
   private func begin(_ window: AnswerWindow) {
@@ -552,6 +578,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
         if let result {
           capture.best = result.bestTranscription
           capture.final = result.isFinal
+          let text = result.bestTranscription.formattedString
+          if text.count > capture.richest.count { capture.richest = text }
         }
         if self.finishing[capture.id] != nil && (capture.final || error != nil) {
           self.report(capture)
@@ -639,38 +667,33 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     report(capture, transcript: transcript, locale: recognizer?.locale ?? .current)
   }
 
-  private func report(_ capture: Capture, transcript: SpokenTranscript?, locale: Locale) {
+  /// Grading happens in JavaScript. Confidence of 0 means unknown, and the best partial is kept.
+  private func report(_ capture: Capture, transcript: SpokenTranscript?, locale _: Locale) {
     finishing.removeValue(forKey: capture.id)
     capture.cancelRecognition()
     defer { stopIfFinished() }
     guard latestCapture[capture.window.id] == capture.id else { return }
-    let heard = Self.normalized(transcript?.text ?? "", locale: locale)
-    let expected = Self.normalized(capture.window.expected, locale: locale)
-    guard !expected.isEmpty else {
-      sendResult(capture, verdict: "unclear", heard: "", maySpeak: false)
-      return
-    }
-    guard let transcript, !heard.isEmpty else {
-      sendResult(capture, verdict: capture.level.wasQuiet ? "skipped" : "unclear", heard: "", maySpeak: capture.level.heardSound)
-      return
-    }
-    let words = transcript.confidences
-    let confidence = words.isEmpty ? 0 : words.reduce(0, +) / Float(words.count)
-    let display = String(transcript.text.prefix(900))
-    if transcript.isFinal, confidence >= 0.5, heard == expected {
-      sendResult(capture, verdict: "recalled", heard: display)
-    } else if transcript.isFinal, confidence >= 0.55, heard != expected {
-      // The learner may have spoken a valid variant, so this is a prompt to compare.
-      sendResult(capture, verdict: "compare", heard: display)
-    } else {
-      sendResult(capture, verdict: "unclear", heard: "")
+    let latest = String((transcript?.text ?? "").prefix(900))
+    if latest.count > capture.richest.count { capture.richest = latest }
+    let alternate = capture.richest == latest ? "" : String(capture.richest.prefix(900))
+    let confidences = transcript?.confidences ?? []
+    let confidenceKnown = confidences.contains { $0 > 0.01 }
+    onGrade?(capture.window.id, capture.id.uuidString, latest, alternate, capture.level.secondsAudible, confidenceKnown, capture.level.wasQuiet)
+    let captureId = capture.id
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+      self?.speakIfHolding(captureId, verdict: "unclear")
     }
   }
 
-  private func sendResult(_ capture: Capture, verdict: String, heard: String, maySpeak: Bool = true) {
-    notify?(capture.window.id, capture.id.uuidString, verdict, heard)
-    guard feedbackBreak?.id == capture.id else { return }
-    guard maySpeak && verdict != "skipped" else {
+  func speak(sessionId: String, captureId: String, verdict: String) {
+    guard self.sessionId == sessionId, let captureId = UUID(uuidString: captureId) else { return }
+    speakIfHolding(captureId, verdict: verdict)
+  }
+
+  private func speakIfHolding(_ captureId: UUID, verdict: String) {
+    guard feedbackBreak?.id == captureId, !feedbackSpoken else { return }
+    feedbackSpoken = true
+    if verdict == "skipped" {
       endFeedback(resume: true)
       return
     }
@@ -734,6 +757,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private func endFeedback(resume: Bool) {
     guard let previous = feedbackBreak else { return }
     feedbackBreak = nil
+    feedbackSpoken = false
     feedbackAudio?.stop()
     feedbackAudio = nil
     previousTime = nil
@@ -744,12 +768,6 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
 
   private func stopIfFinished() {
     if reachedEnd && finishing.isEmpty { stop(announce: true) }
-  }
-
-  private static func normalized(_ text: String, locale: Locale) -> String {
-    text.lowercased(with: locale).precomposedStringWithCanonicalMapping
-      .replacingOccurrences(of: "[^\\p{L}\\p{M}\\p{N}]+", with: " ", options: .regularExpression)
-      .trimmingCharacters(in: .whitespaces)
   }
 
   private static func cueAudio() -> Data {

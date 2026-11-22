@@ -142,7 +142,6 @@ function SpeakingRecap({ rows, onClose, onPauseLesson, onPlayInLesson, onRetry }
         <Body muted style={styles.explainer}>Phrase match compares the words we heard with the lesson example. Use the audio to practice how they sound.</Body>
         {rows.map((row) => {
           const info = feedback[row.level];
-          const flexible = row.level === "close" || row.level === "retry";
           const previewing = status.playing && previewId === row.id;
           return (
             <Card key={row.id} style={styles.resultCard}>
@@ -153,7 +152,7 @@ function SpeakingRecap({ rows, onClose, onPauseLesson, onPlayInLesson, onRetry }
                 <Heading style={styles.model}>{row.expected}</Heading>
                 {row.translation ? <Body muted style={styles.explainer}>{row.translation}</Body> : null}
               </View>
-              {flexible && row.heard ? (
+              {row.heard && row.level !== "matched" && row.level !== "checking" && row.level !== "skipped" ? (
                 <View style={[styles.heard, { backgroundColor: theme.surfaceMuted }]}>
                   <Body muted style={styles.small}>We heard</Body>
                   <Body style={styles.recognized}>{row.heard}</Body>
