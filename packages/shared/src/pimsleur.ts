@@ -56,7 +56,7 @@ export const DEFAULT_CUES: LessonCues = {
   sayIt: "Say it out loud.",
   yourTurn: "Now you say it.",
   again: "Let's hear the conversation once more.",
-  closing: "That's the conversation. Nice work.",
+  closing: "That's the conversation.",
 };
 
 /**

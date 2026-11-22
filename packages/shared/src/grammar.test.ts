@@ -139,7 +139,8 @@ describe("grammar lessons", () => {
     expect(lessonDisplayText(parsed.segments[0]?.text ?? "")).toBe("Today we'll learn how to use sein, to be.");
     expect(parsed.segments.some((segment) => segment.phase === "summary" && lessonDisplayText(segment.text).startsWith("Here is sein"))).toBe(true);
     expect(recallAnswersFollowPrompts(parsed.segments)).toBe(true);
-    expect(parsed.segments.at(-1)?.text).toMatch(/Nice work/);
+    expect(parsed.segments.at(-1)?.text).toMatch(/That's it for today/);
+    expect(parsed.segments.at(-1)?.text).not.toMatch(/Nice work/);
     expect(parsed.segments.at(-1)?.text).toMatch(/out loud/);
     expect(grammarPromptsAreClear(parsed.segments)).toBe(true);
     const prompts = cues(parsed.segments);

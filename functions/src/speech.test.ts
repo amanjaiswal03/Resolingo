@@ -36,8 +36,9 @@ describe("Gemini speech requests", () => {
     });
     const speech = speechConfig(request);
     expect(request.model).toBe("gemini-3.1-flash-tts-preview");
-    expect(request.contents).toContain("brightly pleased");
-    expect(request.contents).toContain("[excited] Sehr gut.");
+    expect(request.contents).toContain("soft, calm, and warm");
+    expect(request.contents).toContain("Sehr gut.");
+    expect(request.contents).not.toContain("[excited]");
     expect(request.contents).toContain("native speaker of German");
     expect(request.contents).toContain("more slowly");
     const teaching = geminiSpeechRequest({
