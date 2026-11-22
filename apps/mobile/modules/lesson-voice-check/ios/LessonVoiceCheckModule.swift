@@ -25,7 +25,7 @@ public final class LessonVoiceCheckModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("LessonVoiceCheck")
-    Events("onAnswer", "onWindow", "onFeedback", "onStopped", "onGrade")
+    Events("onAnswer", "onWindow", "onFeedback", "onStopped", "onGrade", "onPartial")
 
     Function("supports") { (language: String) -> Bool in
       LessonVoiceCheck.legacyRecognizer(language: language) != nil
@@ -53,6 +53,11 @@ public final class LessonVoiceCheckModule: Module {
           "sessionId": sessionId, "id": id, "captureId": captureId, "heard": heard, "alternate": alternate,
           "audibleSeconds": audible, "confidenceKnown": confidenceKnown, "wasQuiet": wasQuiet,
         ])
+      } onPartial: { [weak self] id, captureId, heard, alternate, stable, quiet, audible, elapsed in
+        self?.sendEvent("onPartial", [
+          "sessionId": sessionId, "id": id, "captureId": captureId, "heard": heard, "alternate": alternate,
+          "stableSeconds": stable, "quietSeconds": quiet, "audibleSeconds": audible, "elapsedSeconds": elapsed,
+        ])
       } onWindow: { [weak self] id, captureId, state in
         self?.sendEvent("onWindow", [
           "sessionId": sessionId, "id": id, "captureId": captureId, "recording": state == .recording, "state": state.rawValue,
@@ -78,6 +83,14 @@ public final class LessonVoiceCheckModule: Module {
 
     AsyncFunction("speak") { (sessionId: String, captureId: String, verdict: String) in
       self.checks.speak(sessionId: sessionId, captureId: captureId, verdict: verdict)
+    }.runOnQueue(.main)
+
+    AsyncFunction("finishEarly") { (sessionId: String, captureId: String) in
+      self.checks.finishEarly(sessionId: sessionId, captureId: captureId)
+    }.runOnQueue(.main)
+
+    AsyncFunction("skip") { (sessionId: String) in
+      self.checks.skip(sessionId: sessionId)
     }.runOnQueue(.main)
 
     AsyncFunction("stop") { (sessionId: String) in
@@ -119,7 +132,10 @@ private final class AnswerAudioLevel {
     let seconds = Double(buffer.frameLength) / buffer.format.sampleRate
     lock.lock()
     totalSeconds += seconds
-    if audible { audibleSeconds += seconds }
+    if audible {
+      audibleSeconds += seconds
+      lastAudible = ProcessInfo.processInfo.systemUptime
+    }
     lock.unlock()
   }
 
@@ -147,6 +163,16 @@ private final class AnswerAudioLevel {
     defer { lock.unlock() }
     return audibleSeconds >= Self.minimumVoiceSeconds
   }
+
+  /// Seconds since the last audible buffer. Zero until speech has been heard.
+  var quietSeconds: Double {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let lastAudible else { return 0 }
+    return ProcessInfo.processInfo.systemUptime - lastAudible
+  }
+
+  private var lastAudible: TimeInterval?
 }
 
 // All playback and recognition state is owned by the main queue. The audio tap
@@ -164,6 +190,10 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     var best: SFTranscription?
     var richest = ""
     var final = false
+    var started = ProcessInfo.processInfo.systemUptime
+    var partialText = ""
+    var partialSince = ProcessInfo.processInfo.systemUptime
+    var lastPartialSent: TimeInterval = 0
 
     init(window: AnswerWindow) {
       self.window = window
@@ -199,6 +229,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
   private var windows: [AnswerWindow] = []
   private var notify: ((String, String, String, String) -> Void)?
   private var onGrade: ((String, String, String, String, Double, Bool, Bool) -> Void)?
+  private var onPartial: ((String, String, String, String, Double, Double, Double, Double) -> Void)?
+  private var ignoreJumpsUntil: TimeInterval = 0
   private var onWindow: ((String, String, AnswerWindowState) -> Void)?
   private var onStopped: (() -> Void)?
   private var period: Any?
@@ -261,6 +293,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     player: AVPlayer, sessionId: String, language: String, windows: [AnswerWindow],
     notify: @escaping (String, String, String, String) -> Void,
     onGrade: @escaping (String, String, String, String, Double, Bool, Bool) -> Void,
+    onPartial: @escaping (String, String, String, String, Double, Double, Double, Double) -> Void,
     onWindow: @escaping (String, String, AnswerWindowState) -> Void,
     onFeedback: @escaping (Bool) -> Void,
     onStopped: @escaping () -> Void
@@ -297,6 +330,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     self.windows = windows
     self.notify = notify
     self.onGrade = onGrade
+    self.onPartial = onPartial
     self.onWindow = onWindow
     self.onFeedback = onFeedback
     self.onStopped = onStopped
@@ -378,6 +412,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     sessionId = nil
     notify = nil
     onGrade = nil
+    onPartial = nil
     onWindow = nil
     onFeedback = nil
     feedbackClips.removeAll()
@@ -471,6 +506,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     // must not. A delayed callback can still finish a pause we played through.
     let elapsed = now - previousUptime
     guard !playheadJumped(from: previousTime, to: time, elapsed: elapsed, rate: player.rate) else {
+      if now < ignoreJumpsUntil { return }
       abandonAttempts()
       return
     }
@@ -478,6 +514,13 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     if let active {
       if time >= active.window.endSeconds {
         finish(active, canTranscribe: time <= active.window.endSeconds + 0.18)
+      } else if active.recording == nil {
+        let elapsed = now - active.started
+        if !active.level.hasVoiceActivity && elapsed >= 2.5 {
+          finish(active, canTranscribe: true)
+        } else {
+          publishPartial(active, force: false)
+        }
       }
       return
     }
@@ -512,6 +555,7 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
 
   /// Pause, resume, and the slower answer rate all post a time jump. Only a real skip counts.
   private func noteTimeJump() {
+    if ProcessInfo.processInfo.systemUptime < ignoreJumpsUntil { return }
     guard let player else { return }
     let time = player.currentTime().seconds
     let elapsed = previousUptime.map { ProcessInfo.processInfo.systemUptime - $0 } ?? 0
@@ -568,6 +612,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
       capture.closeMic()
       return
     }
+    capture.started = ProcessInfo.processInfo.systemUptime
+    capture.partialSince = capture.started
     active = capture
     latestCapture[window.id] = capture.id
     onWindow?(window.id, capture.id.uuidString, .recording)
@@ -580,6 +626,11 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
           capture.final = result.isFinal
           let text = result.bestTranscription.formattedString
           if text.count > capture.richest.count { capture.richest = text }
+          if text != capture.partialText {
+            capture.partialText = text
+            capture.partialSince = ProcessInfo.processInfo.systemUptime
+          }
+          self.publishPartial(capture, force: false)
         }
         if self.finishing[capture.id] != nil && (capture.final || error != nil) {
           self.report(capture)
@@ -682,6 +733,48 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     let captureId = capture.id
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
       self?.speakIfHolding(captureId, verdict: "unclear")
+    }
+  }
+
+  private func publishPartial(_ capture: Capture, force: Bool) {
+    guard capture.recording == nil, active === capture else { return }
+    let now = ProcessInfo.processInfo.systemUptime
+    let stable = capture.partialText.isEmpty ? 0 : now - capture.partialSince
+    let quiet = capture.level.quietSeconds
+    let ready = !capture.partialText.isEmpty && stable >= 0.4 && quiet >= 0.7
+    if !force && !ready && now - capture.lastPartialSent < 0.15 { return }
+    capture.lastPartialSent = now
+    let latest = String(capture.partialText.prefix(900))
+    let richest = String(capture.richest.prefix(900))
+    onPartial?(
+      capture.window.id, capture.id.uuidString, latest, richest == latest ? "" : richest,
+      stable, quiet, capture.level.secondsAudible, now - capture.started
+    )
+  }
+
+  func finishEarly(sessionId: String, captureId: String) {
+    guard self.sessionId == sessionId, let active, active.id.uuidString == captureId, active.recording == nil else { return }
+    finish(active, canTranscribe: true)
+  }
+
+  func skip(sessionId: String) {
+    guard self.sessionId == sessionId, let active else { return }
+    let end = active.window.endSeconds
+    let capture = active
+    self.active = nil
+    capture.closeMic()
+    capture.cancelRecognition()
+    onWindow?(capture.window.id, capture.id.uuidString, .skipped)
+    restoreSpeakingRate()
+    ignoreJumpsUntil = ProcessInfo.processInfo.systemUptime + 1
+    let target = CMTime(seconds: max(0, end), preferredTimescale: 1_000)
+    player?.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+      DispatchQueue.main.async {
+        guard let self else { return }
+        self.previousTime = self.player?.currentTime().seconds
+        self.previousUptime = ProcessInfo.processInfo.systemUptime
+        if !self.interrupted && !self.reachedEnd { self.player?.play() }
+      }
     }
   }
 

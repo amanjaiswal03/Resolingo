@@ -113,7 +113,7 @@ export function LessonPlayer({
 		[joined, lesson.segments, playable],
 	);
 	const {
-		available: canCheckAnswers, enable: enableChecks, isArmed, recording, results,
+		available: canCheckAnswers, enable: enableChecks, isArmed, recording, partial, skip, results,
 		feedbackPlaying, cancelFeedback, state: checkState, toggle: toggleChecks, rewind: rewindChecks,
 	} = useAnswerChecks(player, lesson.id, checks, status.isLoaded, allowAnswerChecks);
 	const playing = status.playing || feedbackPlaying;
@@ -537,8 +537,10 @@ export function LessonPlayer({
 					available={canCheckAnswers}
 					state={checkState}
 					recording={recording !== null}
+					partial={partial}
 					results={results}
 					onToggle={toggleChecks}
+					onSkip={recording ? skip : undefined}
 					onPauseLesson={pauseLesson}
 					onPlayInLesson={playSegmentInLesson}
 					onRetry={(id, close) => enableChecks(() => { close(); playSegmentInLesson(id); })}

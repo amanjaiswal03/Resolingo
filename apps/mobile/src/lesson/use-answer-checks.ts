@@ -2,14 +2,27 @@ import { checkedSpeakingBonusMs, languageById, speakingPauseMs } from "@resoling
 import { requireOptionalNativeModule, type NativeModule } from "expo";
 import { requestRecordingPermissionsAsync, type AudioPlayer } from "expo-audio";
 import { randomUUID } from "expo-crypto";
+import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Platform } from "react-native";
 import { api, type LessonVoiceClips } from "@/services/api";
+import { shouldFinishEarly } from "./answer-endpoint";
 import { clearAttemptsFrom, reduceAnswerAttempts, type AnswerAttemptEvent } from "./answer-attempts";
 import type { AnswerPlan, AnswerWindow } from "./answer-windows";
-import { decideAttempt, type VoiceResult, type VoiceVerdict } from "./phrase-match";
+import { decideAttempt, gradeBest, type VoiceResult, type VoiceVerdict } from "./phrase-match";
 
 type AnswerEvent = { sessionId: string; id: string; captureId?: string; verdict: VoiceVerdict; heard?: string };
+type PartialEvent = {
+  sessionId: string;
+  id: string;
+  captureId?: string;
+  heard?: string;
+  alternate?: string;
+  stableSeconds?: number;
+  quietSeconds?: number;
+  audibleSeconds?: number;
+  elapsedSeconds?: number;
+};
 type GradeEvent = {
   sessionId: string;
   id: string;
@@ -30,6 +43,7 @@ type WindowEvent = {
 type AnswerEvents = {
   onAnswer: (event: AnswerEvent) => void;
   onGrade: (event: GradeEvent) => void;
+  onPartial: (event: PartialEvent) => void;
   onWindow: (event: WindowEvent) => void;
   onFeedback: (event: { sessionId: string; playing: boolean }) => void;
   onStopped: (event: { sessionId: string }) => void;
@@ -45,6 +59,8 @@ type NativeChecks = InstanceType<typeof NativeModule<AnswerEvents>> & {
   abandon?(id: string): Promise<void>;
   stop(id: string): Promise<void>;
   speak?(sessionId: string, captureId: string, verdict: string): Promise<void>;
+  finishEarly?(sessionId: string, captureId: string): Promise<void>;
+  skip?(sessionId: string): Promise<void>;
 };
 
 const native = Platform.OS === "ios" ? requireOptionalNativeModule<NativeChecks>("LessonVoiceCheck") : null;
@@ -58,6 +74,8 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
   const [state, setState] = useState<"off" | "starting" | "on">("off");
   const [results, setResults] = useState<Record<string, VoiceResult>>({});
   const [recording, setRecording] = useState<string | null>(null);
+  const [partial, setPartial] = useState("");
+  const finishingEarly = useRef(false);
   const [feedbackPlaying, setFeedbackPlaying] = useState(false);
   const feedbackClips = useRef<Promise<LessonVoiceClips | null> | null>(null);
   const attempts = useRef<Record<string, string>>({});
@@ -95,7 +113,29 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
         wasQuiet: event.wasQuiet === true,
       });
       apply({ type: "answer", id: event.id, captureId: event.captureId, result: decision.result });
+      setPartial("");
+      if (decision.clip === "recalled") void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => undefined);
       void native?.speak?.(event.sessionId, event.captureId, decision.clip).catch(() => undefined);
+    });
+    const partials = native?.addListener("onPartial", (event) => {
+      if (session.current !== event.sessionId || !event.captureId || finishingEarly.current) return;
+      const plan = planRef.current;
+      const expected = plan?.windows.find(({ id }) => id === event.id)?.expected;
+      if (!plan || !expected) return;
+      const heard = event.heard?.trim() ?? "";
+      setPartial(heard);
+      const grade = gradeBest(expected, [heard, event.alternate ?? ""], plan.language);
+      const action = shouldFinishEarly({
+        score: grade.score,
+        stableSeconds: event.stableSeconds ?? 0,
+        quietSeconds: event.quietSeconds ?? 0,
+        audibleSeconds: event.audibleSeconds ?? 0,
+        elapsedSeconds: event.elapsedSeconds ?? 0,
+        dictation: false,
+      });
+      if (!action) return;
+      finishingEarly.current = true;
+      void native?.finishEarly?.(event.sessionId, event.captureId).catch(() => undefined);
     });
     const subscription = native?.addListener("onAnswer", (event) => {
       if (session.current !== event.sessionId || !event.captureId) return;
@@ -110,6 +150,7 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
     const window = native?.addListener("onWindow", (event) => {
       if (session.current !== event.sessionId) return;
       setRecording((current) => event.recording ? event.id : current === event.id ? null : current);
+      if (!event.recording) setPartial("");
       if (event.state === "cancelled") {
         clearPending(event.id);
         apply({ type: "cancelled", id: event.id });
@@ -117,6 +158,9 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
       }
       if (event.recording) {
         if (!event.captureId) return;
+        finishingEarly.current = false;
+        setPartial("");
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => undefined);
         clearPending(event.id);
         apply({ type: "recording", id: event.id, captureId: event.captureId });
         return;
@@ -156,6 +200,7 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
       mounted.current = false;
       for (const timeout of pending.values()) clearTimeout(timeout);
       grade?.remove();
+      partials?.remove();
       subscription?.remove();
       window?.remove();
       stopped?.remove();
@@ -298,6 +343,11 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
     isArmed,
     rewind,
     recording,
+    partial,
+    skip: () => {
+      const id = session.current;
+      if (id) void native?.skip?.(id).catch(() => undefined);
+    },
     feedbackPlaying,
     cancelFeedback,
     results,
