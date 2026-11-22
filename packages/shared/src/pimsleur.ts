@@ -6,6 +6,7 @@ import { groupBunsetsu, needsWordSegment, segmentWords, splitSentences } from ".
 import { dialogueText, normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 import { line, template, type TeachingKey } from "./teaching.js";
 import { speakingPauseMs } from "./speaking-timing.js";
+import { findKnownPhrase, phraseSimilarity, MAX_WARMUP_REVIEWS } from "./review.js";
 
 /**
  * Pimsleur's 5s / 25s / 2min steps, counted in other items rather than in a
@@ -16,15 +17,20 @@ export const REVIEW_GAPS = [1, 3, 6] as const;
 
 export type ReviewSlot = { item: number; gap: number; afterItem: number };
 
+/**
+ * A conversation is four or five complete turns, and every turn is practised.
+ * reviews caps the spaced recalls of earlier turns; roleplayPasses is how many
+ * parts of the conversation the learner takes over at the end.
+ */
 export const conversationPacing = {
-  A1: { turns: 4, phrases: 2, wordsPerTurn: 10, variation: false, thinkMs: 2_000, listenMs: 650 },
-  A2: { turns: 4, phrases: 3, wordsPerTurn: 13, variation: false, thinkMs: 1_500, listenMs: 500 },
-  B1: { turns: 5, phrases: 3, wordsPerTurn: 18, variation: true, thinkMs: 1_000, listenMs: 350 },
-  B2: { turns: 6, phrases: 3, wordsPerTurn: 23, variation: true, thinkMs: 750, listenMs: 250 },
-  C1: { turns: 6, phrases: 3, wordsPerTurn: 28, variation: true, thinkMs: 500, listenMs: 250 },
+  A1: { turns: 5, minTurns: 3, phrases: 5, wordsPerTurn: 10, variation: true, reviews: 3, roleplayPasses: 1, thinkMs: 2_000, listenMs: 650 },
+  A2: { turns: 5, minTurns: 3, phrases: 5, wordsPerTurn: 13, variation: true, reviews: 3, roleplayPasses: 1, thinkMs: 1_500, listenMs: 500 },
+  B1: { turns: 5, minTurns: 3, phrases: 5, wordsPerTurn: 18, variation: true, reviews: 3, roleplayPasses: 1, thinkMs: 1_000, listenMs: 350 },
+  B2: { turns: 5, minTurns: 3, phrases: 5, wordsPerTurn: 23, variation: true, reviews: 3, roleplayPasses: 1, thinkMs: 750, listenMs: 250 },
+  C1: { turns: 5, minTurns: 3, phrases: 5, wordsPerTurn: 28, variation: true, reviews: 3, roleplayPasses: 1, thinkMs: 500, listenMs: 250 },
 } as const satisfies Record<CefrLevel, {
-  turns: number; phrases: number; wordsPerTurn: number;
-  variation: boolean; thinkMs: number; listenMs: number;
+  turns: number; minTurns: number; phrases: number; wordsPerTurn: number; variation: boolean;
+  reviews: number; roleplayPasses: number; thinkMs: number; listenMs: number;
 }>;
 
 export const MAX_BUILDUP_CHUNKS = 3;
@@ -387,6 +393,16 @@ function linePicker(options: readonly string[], seed: number): () => string {
   };
 }
 
+/** Rotates through every option, starting at the seed, and starts again when all are used. */
+function cyclePicker(options: readonly string[], seed: number): () => string {
+  let cursor = Math.abs(seed) % Math.max(1, options.length);
+  return () => {
+    const chosen = options[cursor % options.length] ?? options[0]!;
+    cursor += 1;
+    return chosen;
+  };
+}
+
 function fillMeaning(template: string, meaning: string): string {
   const spoken = /^I\b/u.test(meaning) ? meaning : `${meaning.charAt(0).toLocaleLowerCase()}${meaning.slice(1)}`;
   return template.replaceAll("{translation}", spoken);
@@ -591,6 +607,8 @@ function clean(text: string, names: SpeakerNames): string {
   return repairMarkup(dialogueText(text, names)).trim();
 }
 
+export type KnownLine = { text: string; translation?: string };
+
 export function arrangePimsleur(input: {
   lines: PimsleurLine[];
   phrases: PimsleurPhrase[];
@@ -604,26 +622,33 @@ export function arrangePimsleur(input: {
   usageTip?: string;
   priorReviews?: PimsleurPhrase[];
   recombinations?: PimsleurPhrase[];
-  roleplay?: { stimulus: PimsleurLine; response: PimsleurPhrase };
+  /** Phrases from finished lessons. A dialogue line that repeats one is acknowledged, not drilled. */
+  known?: KnownLine[];
+  /** One teaching-language note on how a line uses the grammar from an earlier lesson. */
+  grammarLink?: { text: string; note: string };
 }): LessonSegment[] {
   const pacing = conversationPacing[input.level];
   const { cues, names, nativeLanguage, targetLanguage } = input;
   const lines = input.lines.slice(0, pacing.turns);
-  const plans = focusPhrases(lines.filter((item) => item.language === targetLanguage), input.phrases, names, pacing.phrases);
   const scene = new Set(lines.map((item) => normalizeChunk(item.text)));
-  const prior = (input.priorReviews ?? []).find((item) =>
+  const knownList = input.known ?? [];
+  const isKnown = (text: string): boolean => knownList.length > 0 && Boolean(findKnownPhrase(text, knownList, targetLanguage));
+  // Every turn is practised, in the order of the conversation, unless the learner already knows it.
+  const plans = focusPhrases(lines.filter((item) => item.language === targetLanguage), input.phrases, names, pacing.phrases, true);
+  const fresh = plans.filter((plan) => !isKnown(plan.phrase.text));
+  const priors = (input.priorReviews ?? []).filter((item) =>
     item.language === targetLanguage && item.translation && !scene.has(normalizeChunk(item.text))
-    && !isEmptyDrill(item.text, names) && fitsTurn(item, pacing.wordsPerTurn));
+    && !isEmptyDrill(item.text, names) && fitsTurn(item, pacing.wordsPerTurn)).slice(0, MAX_WARMUP_REVIEWS);
   const variation = pacing.variation ? input.recombinations?.find((item) =>
     item.language === targetLanguage && item.translation && !scene.has(normalizeChunk(item.text))
-    && fitsTurn(item, pacing.wordsPerTurn) && reusesFocus(item, plans.map((plan) => plan.phrase))) : undefined;
-  const role = input.roleplay;
+    && fitsTurn(item, pacing.wordsPerTurn) && reusesFocus(item, fresh.map((plan) => plan.phrase))) : undefined;
   const seed = input.seed ?? hashSeed(lines.map((item) => item.text).join("|"));
   const nextPrompt = promptPicker(speakPromptPool(input.speakPrompts, cues, nativeLanguage), seed, nativeLanguage);
   const echoes = uniquePrompts(cues.echo ?? []);
-  const nextEcho = linePicker(echoes.length >= 2 ? echoes : uniquePrompts([
+  const nextEcho = cyclePicker(echoes.length >= 2 ? echoes : uniquePrompts([
     cues.yourTurn, cues.sayIt, line(nativeLanguage, "echo1"), line(nativeLanguage, "echo2"), line(nativeLanguage, "echo3"),
   ]), seed);
+  const nextKnown = linePicker(priorLines(nativeLanguage, ["known1", "known2", "known3"]), seed);
   const segments: LessonSegment[] = [];
   const modeled = new Set<string>();
 
@@ -650,55 +675,89 @@ export function arrangePimsleur(input: {
     play(item, phase, "example");
     modeled.add(normalizeChunk(item.text));
   };
+  /** Model, then a pause to repeat it, then the model again. */
+  const echo = (item: PimsleurLine, phase: string): void => {
+    present(item, phase);
+    // Repeating what was just heard needs no extra thinking time.
+    push({ kind: "drill", speaker: "teacher", phase, language: nativeLanguage, text: nextEcho(), delivery: "curious" },
+      speakingPauseMs(item.text, item.language));
+    play(item, phase, "drill");
+  };
   const ask = (item: PimsleurPhrase, phase: string, answerPhase = phase, cue?: string): void => {
     const meaning = meaningOf(item.translation);
     if (!meaning || !modeled.has(normalizeChunk(item.text))) return;
     const partner = item.speaker === "speakerA" ? names.speakerB : names.speakerA;
     const prompt = cue ?? nextPrompt({ translation: meaning, name: partner });
     const previous = segments.at(-1);
-    const echo = previous?.kind === "example" && previous.language === item.language
+    const repeat = previous?.kind === "example" && previous.language === item.language
       && normalizeChunk(previous.text) === normalizeChunk(item.text);
     push({
       kind: "drill", speaker: "teacher", phase, language: nativeLanguage,
-      text: cites(prompt, meaning) || (cue && echo) ? prompt : meaningPrompt(meaning, nativeLanguage),
+      text: cites(prompt, meaning) || (cue && repeat) ? prompt : meaningPrompt(meaning, nativeLanguage),
       delivery: "curious",
     }, speakingPauseMs(item.text, item.language) + pacing.thinkMs);
     play(item, answerPhase, "drill");
   };
+  const linkNote = (text: string): void => {
+    const link = input.grammarLink;
+    if (link && normalizeChunk(link.text) === normalizeChunk(text)) narrate(link.note, "link", "explanation", pacing.listenMs);
+  };
 
   narrate(cues.welcome, "intro");
-  if (prior) {
+  if (priors.length > 0) {
     const lead = linePicker(priorLines(nativeLanguage, ["lead1", "lead2", "lead3", "lead4"]), seed);
     const remember = linePicker(priorLines(nativeLanguage, ["remember1", "remember2", "remember3", "remember4"]), seed + 1);
     const transition = linePicker(priorLines(nativeLanguage, ["return1", "return2", "return3", "return4"]), seed + 2);
     narrate(lead(), "warmup");
-    modeled.add(normalizeChunk(prior.text)); // This item was practiced in a completed lesson.
-    ask(prior, "warmup", "warmup", fillMeaning(remember(), meaningOf(prior.translation)));
+    for (const prior of priors) {
+      modeled.add(normalizeChunk(prior.text)); // Practised in a completed lesson.
+      ask(prior, "warmup", "warmup", fillMeaning(remember(), meaningOf(prior.translation)));
+    }
     narrate(transition(), "warmup");
   }
 
   for (const item of lines) play(item, "dialogue", "dialogue");
   narrate(cues.afterDialogue, "breakdown", "narration", pacing.listenMs);
+  const linked = input.grammarLink && plans.some((plan) => normalizeChunk(plan.phrase.text) === normalizeChunk(input.grammarLink!.text));
+  if (input.grammarLink && !linked) narrate(input.grammarLink.note, "link", "explanation", pacing.listenMs);
 
-  let brokeDownPhrase = false;
-  for (const [index, { phrase, chunks }] of plans.entries()) {
-    narrate(explained(phrase, cues.listen), "breakdown", "explanation", pacing.listenMs);
-    const chunk = chunks.find((item) => item.gloss) ?? chunks.find((item) => item.translation) ?? chunks[0];
-    if (chunk && !brokeDownPhrase) {
-      brokeDownPhrase = true;
-      narrate(cues.buildup, "buildup");
-      const translation = chunk.translation;
-      if (chunk.gloss) narrate(linkedGloss(chunk.text, chunk.gloss, translation, phrase.language, nativeLanguage), "buildup", "explanation", pacing.listenMs);
-      else if (translation) narrate(`“${meaningOf(translation)}.”`, "buildup", "explanation", pacing.listenMs);
-      present({ speaker: phrase.speaker, language: phrase.language, text: chunk.text, ...(translation ? { translation } : {}) }, "buildup");
+  // Practise each new turn, with spaced recalls of earlier turns slotted between them.
+  const slots = scheduleReviewSlots(fresh.length, pacing.reviews);
+  let builtUp = false;
+  let freshIndex = 0;
+  for (const plan of plans) {
+    const { phrase, chunks } = plan;
+    if (!fresh.includes(plan)) {
+      narrate(nextKnown(), "known");
+      present(phrase, "known");
+      linkNote(phrase.text);
+      continue;
     }
+    narrate(explained(phrase, cues.listen), "breakdown", "explanation", pacing.listenMs);
     present(phrase, "breakdown");
-    const echo = input.level === "A1" || (input.level === "A2" && index === 0);
-    ask(phrase, "recall", "answer", echo ? nextEcho() : phrase.recallCue);
-
-    // An intervening phrase gives the learner a chance to retrieve, without a fresh model.
-    const earlier = plans[index - 1]?.phrase;
-    if (earlier) ask(earlier, "review");
+    linkNote(phrase.text);
+    const pieces = buildupPieces(phrase, chunks);
+    if (pieces.length > 0) {
+      if (!builtUp) narrate(cues.buildup, "buildup");
+      builtUp = true;
+      for (const piece of pieces) {
+        if (piece.gloss) narrate(linkedGloss(piece.text, piece.gloss, piece.translation, phrase.language, nativeLanguage), "buildup", "explanation", pacing.listenMs);
+        echo({ speaker: phrase.speaker, language: phrase.language, text: piece.text, ...(piece.translation ? { translation: piece.translation } : {}) }, "buildup");
+      }
+      ask(phrase, "recall", "answer", phrase.recallCue);
+    } else {
+      const beginner = input.level === "A1" || input.level === "A2";
+      ask(phrase, "recall", "answer", beginner ? nextEcho() : phrase.recallCue);
+    }
+    for (const slot of slots.filter((item) => item.afterItem === freshIndex)) {
+      const earlier = fresh[slot.item];
+      if (earlier && earlier !== plan) ask(earlier.phrase, "review");
+    }
+    freshIndex += 1;
+  }
+  for (const slot of slots.filter((item) => item.afterItem >= fresh.length)) {
+    const earlier = fresh[slot.item];
+    if (earlier) ask(earlier.phrase, "review");
   }
 
   if (input.usageTip) narrate(input.usageTip, "usage", "explanation", pacing.listenMs);
@@ -707,37 +766,51 @@ export function arrangePimsleur(input: {
     present(variation, "recombine");
     ask(variation, "recombine");
   }
-  const last = plans.at(-1)?.phrase;
-  if (last && plans.length > 1) ask(last, "review");
 
-  // Hear the same exchange with context before using the small set independently.
+  // Hear the whole exchange again, then take one part of it from memory.
   narrate(cues.again, "closing");
   for (const item of lines) play(item, "closing", "dialogue");
-  const first = plans[0]?.phrase;
-  const checkOrder = first && normalizeChunk(first.text) === normalizeChunk(lines.at(-1)?.text ?? "")
-    ? [...plans.slice(1), plans[0]!]
-    : plans;
-  for (const { phrase } of checkOrder) {
-    if (role && normalizeChunk(role.response.text) === normalizeChunk(phrase.text)
-      && normalizeChunk(role.stimulus.text) !== normalizeChunk(phrase.text)) {
-      const asker = role.stimulus.speaker === "speakerA" ? names.speakerA : names.speakerB;
-      const pronoun = role.stimulus.speaker === "speakerA" ? "him" : "her";
-      const situation = meaningOf(role.stimulus.translation);
-      const reply = meaningOf(phrase.translation);
-      if (normalizeChunk(segments.at(-1)?.text ?? "") !== normalizeChunk(role.stimulus.text)) {
-        play(role.stimulus, "roleplay", "dialogue");
-      }
-      const cue = nativeLanguage.startsWith("en") && situation
-        ? `${asker} asks you: ${situation}. Tell ${pronoun}: ${reply}.`
-        : line(nativeLanguage, "turn", { translation: reply });
-      ask(phrase, "roleplay", "roleplay", cue);
-    } else {
-      const cue = input.level === "A1" || (input.level === "A2" && phrase === first) ? phrase.recallCue : undefined;
-      ask(phrase, "quick", "quick", cue);
+  for (const role of roleplayRoles(plans, fresh, pacing.roleplayPasses)) {
+    narrate(line(nativeLanguage, "roleIntro", { name: role === "speakerA" ? names.speakerA : names.speakerB }), "roleplay");
+    for (const item of lines) {
+      const plan = plans.find((candidate) => normalizeChunk(candidate.phrase.text) === normalizeChunk(stripVocatives(item.text, names)));
+      if (item.speaker === role && plan) ask(plan.phrase, "roleplay");
+      else play(item, "roleplay", "dialogue");
     }
   }
   narrate(cues.closing, "closing", "recap");
   return enforcePromptAnswers(segments).map((segment) => ({ ...segment, text: clean(segment.text, names) || segment.text }));
+}
+
+/** The part with the most new lines first. A second pass takes the other part. */
+function roleplayRoles(
+  plans: Array<{ phrase: PimsleurPhrase }>,
+  fresh: Array<{ phrase: PimsleurPhrase }>,
+  passes: number,
+): Array<"speakerA" | "speakerB"> {
+  const count = (speaker: "speakerA" | "speakerB", list: Array<{ phrase: PimsleurPhrase }>) =>
+    list.filter((plan) => plan.phrase.speaker === speaker).length;
+  const roles = (["speakerA", "speakerB"] as const)
+    .filter((speaker) => count(speaker, plans) > 0)
+    .sort((left, right) => count(right, fresh) - count(left, fresh) || count(right, plans) - count(left, plans));
+  return roles.slice(0, Math.max(0, passes));
+}
+
+/**
+ * Pieces to build a line from the end. The model's pieces come first; a line
+ * of four or more words without them is split from the end automatically.
+ * The full line is never a piece, and at most two are kept, so the third
+ * step is always the whole line.
+ */
+function buildupPieces(phrase: PimsleurPhrase, chunks: ChunkNote[]): ChunkNote[] {
+  const full = normalizeChunk(phrase.text);
+  const provided = chunks.filter((chunk) => chunk.text && normalizeChunk(chunk.text) !== full);
+  if (provided.length > 0) return provided.slice(0, MAX_BUILDUP_CHUNKS - 1);
+  if (spokenWords(phrase).length < 4) return [];
+  return buildupChunks(phrase.text, phrase.language)
+    .filter((part) => normalizeChunk(part) !== full)
+    .slice(0, MAX_BUILDUP_CHUNKS - 1)
+    .map((part) => ({ text: part }));
 }
 
 function textOf(value: unknown): string {
@@ -760,28 +833,29 @@ function lineFrom(value: unknown, names: SpeakerNames, fallbackLanguage: Languag
   };
 }
 
-function roleplayFrom(
-  value: unknown,
-  lines: PimsleurLine[],
-  names: SpeakerNames,
-  fallbackLanguage: LanguageId,
-  allowed: readonly LanguageId[],
-): { stimulus: PimsleurLine; response: PimsleurPhrase } | undefined {
+/**
+ * Lines the model marked as already known. The mark is trusted only when the
+ * line shares at least half its words with a phrase the learner really knows.
+ */
+function flaggedKnown(raw: unknown[], lines: PimsleurLine[], known: readonly KnownLine[], language: LanguageId): KnownLine[] {
+  if (known.length === 0) return [];
+  return raw.flatMap((value, index) => {
+    const line = lines[index];
+    if (!line || !value || typeof value !== "object" || (value as { known?: unknown }).known !== true) return [];
+    const close = known.some((phrase) => phraseSimilarity(line.text, phrase.text, language) >= 0.5);
+    return close ? [{ text: line.text, ...(line.translation ? { translation: line.translation } : {}) }] : [];
+  });
+}
+
+/** A note on how one dialogue line uses the grammar from an earlier lesson. */
+function grammarLinkFrom(value: unknown, lines: PimsleurLine[], names: SpeakerNames): { text: string; note: string } | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
-  const stimulusText = textOf(record.stimulus ?? record.prompt);
-  const stimulus = lines.find((line) => normalizeChunk(line.text) === normalizeChunk(stimulusText));
-  const response = lineFrom({
-    speaker: record.speaker ?? record.responseSpeaker,
-    text: record.text ?? record.response,
-    translation: record.translation,
-    language: record.language,
-  }, names, fallbackLanguage, allowed);
-  if (!stimulus || !response?.translation) return undefined;
-  if (normalizeChunk(stimulus.text) === normalizeChunk(response.text)) return undefined;
-  if (isEmptyDrill(response.text, names)) return undefined;
-  const spoken = lines.find((line) => normalizeChunk(line.text) === normalizeChunk(response.text));
-  return { stimulus, response: spoken ? { ...response, speaker: spoken.speaker } : response };
+  const note = splitSentences(clean(textOf(record.note), names)).slice(0, 2).join(" ");
+  if (!note || note.length > 280) return undefined;
+  const wanted = normalizeChunk(textOf(record.line ?? record.text));
+  const line = lines.find((item) => normalizeChunk(item.text) === wanted);
+  return { text: line?.text ?? "", note };
 }
 
 function needsBuildup(text: string): boolean {
@@ -840,16 +914,29 @@ function phraseFor(line: PimsleurLine): PimsleurPhrase {
   return { ...line, ...(line.translation ? { note: line.translation } : {}) };
 }
 
-/** Support turns stay in the scene. Only distinct, translated focus lines become questions. */
-function focusPhrases(lines: PimsleurLine[], explicit: PimsleurPhrase[], names: SpeakerNames, limit: number) {
+/**
+ * The lines to practise. With every set, each translated turn is practised in
+ * dialogue order, and the model's notes, pieces, and recall cues are merged in
+ * by exact text. Otherwise only the model's focus lines are used.
+ */
+function focusPhrases(lines: PimsleurLine[], explicit: PimsleurPhrase[], names: SpeakerNames, limit: number, every = false) {
+  const matched = (item: PimsleurLine) => explicit.find((candidate) => candidate.speaker === item.speaker
+    && normalizeChunk(candidate.text) === normalizeChunk(item.text))
+    ?? explicit.find((candidate) => normalizeChunk(candidate.text) === normalizeChunk(item.text));
   const preferred = explicit.flatMap((candidate) => {
     const matching = lines.find((item) => item.speaker === candidate.speaker
       && normalizeChunk(item.text) === normalizeChunk(candidate.text));
     return matching ? [{ ...candidate, ...matching }] : [];
   });
+  const source = every
+    ? lines.map((item) => {
+      const extra = matched(item);
+      return extra ? { ...phraseFor(item), ...extra, ...item } : phraseFor(item);
+    })
+    : preferred.length > 0 ? preferred : lines.map(phraseFor);
   const plans: Array<NonNullable<ReturnType<typeof drillPlan>>> = [];
   const seen = new Set<string>();
-  for (const phrase of preferred.length > 0 ? preferred : lines.map(phraseFor)) {
+  for (const phrase of source) {
     const plan = drillPlan(phrase, names);
     if (!plan || !meaningOf(plan.phrase.translation)) continue;
     const key = normalizeChunk(plan.phrase.text);
@@ -883,6 +970,8 @@ export function shapePimsleurLesson(value: unknown, context: {
   targetLanguage: LanguageId;
   level: CefrLevel;
   priorReviews?: PimsleurPhrase[];
+  /** Phrases from finished lessons, so a repeated line is acknowledged instead of drilled. */
+  known?: KnownLine[];
 }): { title: string; topic: string; summary: string; conversationSkill?: ConversationSkill; speakerNames: SpeakerNames; segments: LessonSegment[] } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -910,7 +999,7 @@ export function shapePimsleurLesson(value: unknown, context: {
   const pacing = conversationPacing[context.level];
   const keptLines = explicitLines.length > 0 ? lines : lines.slice(0, pacing.turns);
   if (keptLines.length === 0) return null;
-  if (explicitLines.length > 0 && (keptLines.length < 2 || keptLines.length > pacing.turns
+  if (explicitLines.length > 0 && (keptLines.length < pacing.minTurns || keptLines.length > pacing.turns
       || keptLines.length !== explicitLines.length
       || keptLines.some((item) => item.language !== context.targetLanguage || !meaningOf(item.translation) || !fitsTurn(item, pacing.wordsPerTurn)))) {
     return null;
@@ -939,7 +1028,8 @@ export function shapePimsleurLesson(value: unknown, context: {
       .filter((line): line is PimsleurLine => Boolean(line?.translation))
       .slice(0, 2)
     : [];
-  const roleplay = roleplayFrom(record.roleplay, keptLines, names, context.targetLanguage, allowed);
+  const known = [...(context.known ?? []), ...flaggedKnown(explicitLines, keptLines, context.known ?? [], context.targetLanguage)];
+  const grammarLink = grammarLinkFrom(record.grammarLink, keptLines, names);
   const usageTip = splitSentences(clean(textOf(record.usageTip), names))[0];
   const arranged = arrangePimsleur({
     lines: keptLines,
@@ -953,7 +1043,8 @@ export function shapePimsleurLesson(value: unknown, context: {
     ...(speakPrompts.length > 0 ? { speakPrompts } : {}),
     ...(context.priorReviews && context.priorReviews.length > 0 ? { priorReviews: context.priorReviews } : {}),
     ...(recombinations.length > 0 ? { recombinations } : {}),
-    ...(roleplay ? { roleplay } : {}),
+    ...(known.length > 0 ? { known } : {}),
+    ...(grammarLink ? { grammarLink } : {}),
     seed: hashSeed(title),
   });
   if (!arranged.some((segment) => segment.phase === "answer")) return null;

@@ -1,20 +1,30 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel } from "./schemas.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup, speechSpans } from "./markup.js";
-import { conversationPacing } from "./pimsleur.js";
+import { conversationPacing, scheduleReviewSlots } from "./pimsleur.js";
+import { MAX_WARMUP_REVIEWS } from "./review.js";
 import { segmentWords, splitSentences } from "./segment.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 import type { LessonSegment } from "./schemas.js";
 import { normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 import { grammarMeaning, isEnglish, line, markAddress, mentionsAddress, template, type TeachingKey } from "./teaching.js";
 
+/**
+ * Size of one grammar lesson, aimed at five to eight minutes of audio.
+ * breakdown is the number of short steps that walk through the forms,
+ * reviews caps the spaced recalls between drills, and recombinations and
+ * checks are the applications and the questions about the rule at the end.
+ */
 export const grammarPacing = {
-  A1: { examples: 3, drills: 3, words: 10, noticeMs: 5_000 },
-  A2: { examples: 3, drills: 4, words: 13, noticeMs: 4_500 },
-  B1: { examples: 3, drills: 4, words: 18, noticeMs: 4_000 },
-  B2: { examples: 3, drills: 5, words: 23, noticeMs: 3_750 },
-  C1: { examples: 3, drills: 5, words: 28, noticeMs: 3_500 },
-} as const satisfies Record<CefrLevel, { examples: number; drills: number; words: number; noticeMs: number }>;
+  A1: { examples: 4, drills: 9, breakdown: 3, reviews: 6, recombinations: 2, checks: 2, words: 10, noticeMs: 5_000 },
+  A2: { examples: 4, drills: 8, breakdown: 3, reviews: 4, recombinations: 2, checks: 2, words: 13, noticeMs: 4_500 },
+  B1: { examples: 4, drills: 7, breakdown: 3, reviews: 3, recombinations: 2, checks: 2, words: 18, noticeMs: 4_000 },
+  B2: { examples: 4, drills: 8, breakdown: 3, reviews: 3, recombinations: 2, checks: 2, words: 23, noticeMs: 3_750 },
+  C1: { examples: 4, drills: 8, breakdown: 3, reviews: 3, recombinations: 2, checks: 2, words: 28, noticeMs: 3_500 },
+} as const satisfies Record<CefrLevel, {
+  examples: number; drills: number; breakdown: number; reviews: number;
+  recombinations: number; checks: number; words: number; noticeMs: number;
+}>;
 
 export type GrammarTopic = {
   id: string;
@@ -82,7 +92,105 @@ const GERMAN: Record<CefrLevel, Array<Omit<GrammarTopic, "level" | "prerequisite
   ],
 };
 
-const GENERIC: Record<CefrLevel, Array<{ id: string; title: string; focus: string }>> = {
+type CatalogRow = Omit<GrammarTopic, "level" | "prerequisites">;
+
+const SPANISH: Record<CefrLevel, CatalogRow[]> = {
+  A1: [
+    { id: "es-ser", title: "Present tense of ser", focus: "say who or what someone is with soy, eres, and es", pitfall: "using estar for identity or origin" },
+    { id: "es-estar", title: "Present tense of estar", focus: "say how or where someone is with estoy, estás, and está", pitfall: "using ser for a temporary state or a location" },
+    { id: "es-gender", title: "Noun gender and el, la, un, una", focus: "the article as part of the noun, with the -o and -a cues" },
+    { id: "es-ar-verbs", title: "Regular -ar verbs in the present", focus: "the singular endings -o, -as, and -a, as in hablo, hablas, habla" },
+    { id: "es-er-ir-verbs", title: "Regular -er and -ir verbs in the present", focus: "como, comes, come and vivo, vives, vive" },
+    { id: "es-negation", title: "Negation with no", focus: "no goes right before the verb" },
+    { id: "es-questions", title: "Questions with qué, dónde, and cuándo", focus: "a question word first, then the verb" },
+    { id: "es-gustar", title: "Me gusta and te gusta", focus: "me gusta with one thing and me gustan with several" },
+    { id: "es-tener", title: "Present tense of tener", focus: "tengo, tienes, tiene, including tener hambre and tener años" },
+    { id: "es-plural-verbs", title: "Present tense for groups and formal address", focus: "the endings for nosotros, ellos, and usted, and ustedes" },
+  ],
+  A2: [
+    { id: "es-preterite-regular", title: "The preterite of regular verbs", focus: "hablé, comí, and viví for finished events" },
+    { id: "es-preterite-irregular", title: "Common irregular preterites", focus: "fui, tuve, and hice" },
+    { id: "es-imperfect", title: "The imperfect", focus: "hablaba and comía for habits and background in the past" },
+    { id: "es-ir-a", title: "The near future with ir a", focus: "voy a plus the infinitive for plans" },
+    { id: "es-object-pronouns", title: "Direct object pronouns", focus: "lo, la, los, and las before the verb" },
+    { id: "es-reflexive", title: "Reflexive verbs", focus: "me levanto and te llamas" },
+    { id: "es-comparative", title: "Comparatives", focus: "más que, menos que, and tan como" },
+    { id: "es-por-para", title: "Por and para", focus: "para for a purpose or recipient, por for a cause or exchange" },
+  ],
+  B1: [
+    { id: "es-preterite-imperfect", title: "Preterite or imperfect", focus: "the event that happened against the background that was going on" },
+    { id: "es-present-perfect", title: "The present perfect", focus: "he comido and has visto for recent or unfinished time" },
+    { id: "es-subjunctive-wishes", title: "The present subjunctive after querer que", focus: "quiero que vengas and espero que" },
+    { id: "es-indirect-pronouns", title: "Indirect and double object pronouns", focus: "le, les, and se lo" },
+    { id: "es-future", title: "The simple future", focus: "hablaré and tendré for predictions and promises" },
+    { id: "es-conditional", title: "The conditional", focus: "me gustaría and podría for polite requests" },
+    { id: "es-relative", title: "Relative clauses with que and donde", focus: "joining two sentences about the same noun" },
+  ],
+  B2: [
+    { id: "es-subjunctive-emotion", title: "The subjunctive after emotion and doubt", focus: "me alegra que and no creo que" },
+    { id: "es-imperfect-subjunctive", title: "The imperfect subjunctive", focus: "si tuviera and quería que fueras" },
+    { id: "es-si-clauses", title: "Unreal conditionals", focus: "si tuviera tiempo, viajaría" },
+    { id: "es-passive-se", title: "The passive with se", focus: "se venden pisos and se habla español" },
+    { id: "es-reported", title: "Reported speech", focus: "dijo que venía and the tense shift" },
+    { id: "es-connectors", title: "Connectors and the subjunctive", focus: "aunque, para que, and antes de que" },
+  ],
+  C1: [
+    { id: "es-pluperfect-subjunctive", title: "The past unreal conditional", focus: "si hubiera sabido, habría venido" },
+    { id: "es-nuanced-subjunctive", title: "Indicative or subjunctive for nuance", focus: "aunque llueve against aunque llueva" },
+    { id: "es-formal-register", title: "Formal register", focus: "nominal phrases and impersonal constructions in careful speech" },
+    { id: "es-periphrasis", title: "Verbal periphrases", focus: "llevar, seguir, and acabar de with a gerund or infinitive" },
+  ],
+};
+
+const FRENCH: Record<CefrLevel, CatalogRow[]> = {
+  A1: [
+    { id: "fr-etre", title: "Present tense of être", focus: "je suis, tu es, and il or elle est" },
+    { id: "fr-avoir", title: "Present tense of avoir", focus: "j'ai, tu as, and il or elle a, including avoir faim and avoir ans" },
+    { id: "fr-gender", title: "Noun gender and le, la, un, une", focus: "the article as part of the noun" },
+    { id: "fr-er-verbs", title: "Regular -er verbs in the present", focus: "je parle, tu parles, il parle, with the silent endings" },
+    { id: "fr-negation", title: "Negation with ne ... pas", focus: "ne before the verb and pas after it" },
+    { id: "fr-questions", title: "Questions with est-ce que", focus: "est-ce que and a question word such as où or quand" },
+    { id: "fr-aller", title: "Present tense of aller", focus: "je vais, tu vas, il va, and aller à" },
+    { id: "fr-faire", title: "Present tense of faire", focus: "je fais, tu fais, il fait, in everyday phrases" },
+    { id: "fr-plural-verbs", title: "Present tense for groups and vous", focus: "nous parlons, vous parlez, ils parlent" },
+    { id: "fr-partitive", title: "The partitive du, de la, des", focus: "some bread, some water, and pas de after a negative" },
+  ],
+  A2: [
+    { id: "fr-passe-compose-avoir", title: "The passé composé with avoir", focus: "j'ai mangé and tu as fini" },
+    { id: "fr-passe-compose-etre", title: "The passé composé with être", focus: "je suis allé and elle est partie, with agreement" },
+    { id: "fr-futur-proche", title: "The near future", focus: "je vais plus the infinitive for plans" },
+    { id: "fr-modals", title: "Pouvoir, vouloir, and devoir", focus: "je peux, je veux, je dois with an infinitive" },
+    { id: "fr-object-pronouns", title: "Direct object pronouns", focus: "le, la, les before the verb" },
+    { id: "fr-reflexive", title: "Reflexive verbs", focus: "je me lève and tu t'appelles" },
+    { id: "fr-imparfait", title: "The imparfait", focus: "je parlais for habits and background in the past" },
+    { id: "fr-comparative", title: "Comparatives", focus: "plus que, moins que, and aussi que" },
+  ],
+  B1: [
+    { id: "fr-pc-imparfait", title: "Passé composé or imparfait", focus: "the event that happened against the background that was going on" },
+    { id: "fr-y-en", title: "The pronouns y and en", focus: "j'y vais and j'en veux" },
+    { id: "fr-futur-simple", title: "The futur simple", focus: "je parlerai and j'aurai for plans and promises" },
+    { id: "fr-conditionnel", title: "The conditional", focus: "je voudrais and je pourrais for polite requests" },
+    { id: "fr-subjonctif", title: "The present subjunctive after il faut que", focus: "il faut que tu viennes" },
+    { id: "fr-relative", title: "Relative pronouns qui, que, and où", focus: "joining two sentences about the same noun" },
+    { id: "fr-indirect-pronouns", title: "Indirect object pronouns", focus: "lui and leur, and their place before the verb" },
+  ],
+  B2: [
+    { id: "fr-subjonctif-emotion", title: "The subjunctive after emotion and doubt", focus: "je suis content que and je ne pense pas que" },
+    { id: "fr-si-clauses", title: "Unreal conditionals", focus: "si j'avais le temps, je voyagerais" },
+    { id: "fr-passive", title: "The passive", focus: "être plus participle, and on as an alternative" },
+    { id: "fr-reported", title: "Reported speech", focus: "il a dit qu'il viendrait and the tense shift" },
+    { id: "fr-dont", title: "The relative pronoun dont", focus: "replacing de plus a noun" },
+    { id: "fr-connectors", title: "Connectors and the subjunctive", focus: "bien que, pour que, and avant que" },
+  ],
+  C1: [
+    { id: "fr-past-conditional", title: "The past conditional", focus: "si j'avais su, je serais venu" },
+    { id: "fr-gerondif", title: "The gérondif", focus: "en parlant for manner and simultaneous actions" },
+    { id: "fr-formal-register", title: "Formal register", focus: "inversion and nominal style in careful speech" },
+    { id: "fr-nuanced-subjonctif", title: "Indicative or subjunctive for nuance", focus: "the same conjunction with a different mood" },
+  ],
+};
+
+const GENERIC: Record<CefrLevel, CatalogRow[]> = {
   A1: [
     { id: "g-be-have", title: "Be and have", focus: "choose one everyday pattern for identifying a person or saying what someone has, and practice just that use" },
     { id: "g-articles", title: "Articles or noun class", focus: "how a noun is marked, and one reliable cue" },
@@ -90,6 +198,10 @@ const GENERIC: Record<CefrLevel, Array<{ id: string; title: string; focus: strin
     { id: "g-negation", title: "Negation", focus: "the usual way to negate a verb and a noun" },
     { id: "g-questions", title: "Questions", focus: "yes-no questions and one question word" },
     { id: "g-pronouns", title: "Subject pronouns", focus: "the pronouns with the matching verb form" },
+    { id: "g-possession", title: "Saying whose it is", focus: "my, your, and his or her with a noun" },
+    { id: "g-numbers-plural", title: "Plurals with numbers", focus: "how a noun changes, or does not, after a number" },
+    { id: "g-like", title: "Saying what you like", focus: "the usual way to say I like and do you like with a noun or a verb" },
+    { id: "g-location", title: "Saying where something is", focus: "there is, here, there, and one or two place words" },
   ],
   A2: [
     { id: "g-past", title: "A common past tense", focus: "one past form the learner can use for finished events" },
@@ -97,25 +209,43 @@ const GENERIC: Record<CefrLevel, Array<{ id: string; title: string; focus: strin
     { id: "g-objects", title: "Object pronouns", focus: "the pronoun that replaces a thing already mentioned" },
     { id: "g-comparative", title: "Comparatives", focus: "comparing two things in a full sentence" },
     { id: "g-prepositions", title: "Frequent prepositions", focus: "three high-frequency prepositions and the form they require" },
+    { id: "g-future-plans", title: "Talking about plans", focus: "the usual way to say what you are going to do" },
+    { id: "g-imperative", title: "Requests and instructions", focus: "the polite and the friendly way to ask someone to do something" },
+    { id: "g-time-words", title: "Time words and word order", focus: "where words like today, already, and often go in the sentence" },
   ],
   B1: [
     { id: "g-subordinate", title: "Subordinate clauses", focus: "one conjunction and where the verb goes" },
     { id: "g-relative", title: "Relative clauses", focus: "adding information about a noun" },
     { id: "g-conditional", title: "A real conditional", focus: "if-clauses the learner can actually say" },
     { id: "g-past-contrast", title: "Two past forms", focus: "when to choose one past over the other" },
+    { id: "g-polite", title: "Polite requests", focus: "the softer form for would you and could you" },
+    { id: "g-because", title: "Giving reasons", focus: "because and so, and the word order each needs" },
+    { id: "g-experience", title: "Talking about experience", focus: "the form for have you ever and I have never" },
   ],
   B2: [
     { id: "g-passive", title: "The passive", focus: "removing the agent and keeping the action" },
     { id: "g-reported", title: "Reported speech", focus: "telling someone what another person said" },
     { id: "g-connectors", title: "Complex connectors", focus: "two connectors and the word order each one requires" },
+    { id: "g-unreal", title: "Unreal conditionals", focus: "if I had more time, I would" },
+    { id: "g-wishes", title: "Wishes and regrets", focus: "the form for I wish and if only" },
+    { id: "g-emphasis", title: "Emphasis with word order", focus: "moving the important part to the front" },
   ],
   C1: [
     { id: "g-mood", title: "Nuanced mood", focus: "one form that softens, hypothesizes, or reports" },
     { id: "g-formal", title: "Formal clause structure", focus: "packing information the way careful writing does" },
+    { id: "g-past-unreal", title: "The past unreal", focus: "if I had known, I would have" },
+    { id: "g-hedging", title: "Hedging", focus: "softening a claim with seem, might, and apparently" },
+    { id: "g-register", title: "Shifting register", focus: "the same request said casually and formally" },
   ],
 };
 
-function withPrerequisites(rows: Array<Omit<GrammarTopic, "level" | "prerequisites">>, level: CefrLevel): GrammarTopic[] {
+const CATALOGS: Array<[prefix: string, catalog: Record<CefrLevel, CatalogRow[]>]> = [
+  ["de", GERMAN],
+  ["es", SPANISH],
+  ["fr", FRENCH],
+];
+
+function withPrerequisites(rows: CatalogRow[], level: CefrLevel): GrammarTopic[] {
   return rows.map((row, index) => {
     const plural = row.id.endsWith("-plural");
     const paradigm = PARADIGMS[row.id.replace(/-plural$/u, "")];
@@ -130,7 +260,8 @@ function withPrerequisites(rows: Array<Omit<GrammarTopic, "level" | "prerequisit
 }
 
 export function grammarTopics(language: LanguageId, level: CefrLevel): GrammarTopic[] {
-  const rows = (language.startsWith("de") ? GERMAN[level] : GENERIC[level]) ?? GENERIC.A1;
+  const catalog = CATALOGS.find(([prefix]) => language.startsWith(prefix))?.[1] ?? GENERIC;
+  const rows = catalog[level] ?? GENERIC.A1;
   return withPrerequisites(rows, level);
 }
 
@@ -182,6 +313,10 @@ export type GrammarSource = {
   targetTerms?: string[];
   usageTip?: string;
   welcome?: string;
+  /** One line connecting the rule to the learner's last conversation. */
+  bridge?: string;
+  /** Short steps through the forms, each with an optional example. */
+  breakdown: Array<{ explanation: string; example?: Example }>;
   closing?: string;
   drills: Drill[];
   checks: RuleCheck[];
@@ -350,7 +485,7 @@ export function parseGrammarSource(
     .filter((item): item is Drill => Boolean(item && fitsGrammarExample(item.answer, target, pacing.words)
       && (!item.source || fitsGrammarExample(item.source, target, pacing.words))));
   const drills = practiceFrom(record.drills).sort((left, right) => DRILL_ORDER[left.kind ?? "phrase"] - DRILL_ORDER[right.kind ?? "phrase"]);
-  const recombinations = practiceFrom(record.recombinations).slice(0, 1);
+  const recombinations = practiceFrom(record.recombinations).slice(0, pacing.recombinations);
   const checks = (Array.isArray(record.checks) ? record.checks : [])
     .flatMap((item) => {
       if (!item || typeof item !== "object") return [];
@@ -358,7 +493,17 @@ export function parseGrammarSource(
       const cue = shortTeachingLine(row.cue ?? row.prompt);
       const answer = shortTeachingLine(row.answer);
       return cue && answer ? [{ cue, answer }] : [];
-    }).slice(0, 1);
+    }).slice(0, pacing.checks);
+  const breakdown = (Array.isArray(record.breakdown) ? record.breakdown : [])
+    .flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const row = item as Record<string, unknown>;
+      const explanation = shortTeachingLine(row.explanation ?? row.text ?? row.step);
+      if (!explanation) return [];
+      const example = exampleFrom(row.example);
+      return [{ explanation, ...(example && fitsGrammarExample(example.text, target, pacing.words) ? { example } : {}) }];
+    }).slice(0, pacing.breakdown);
+  const bridge = shortTeachingLine(record.bridge);
 
   const rule = textOf(record.rule);
   if (!rule || rule.length > 420 || splitSentences(rule).length > 3) return null;
@@ -386,6 +531,8 @@ export function parseGrammarSource(
     mnemonic: shortTeachingLine(record.mnemonic) ?? "",
     ...(targetTerms.length > 0 ? { targetTerms } : {}),
     ...(usageTip ? { usageTip } : {}),
+    ...(bridge ? { bridge } : {}),
+    breakdown,
     drills,
     checks,
     recombinations,
@@ -414,6 +561,8 @@ type Paradigm = {
   title: string;
   welcome: string;
   insight: string;
+  /** What to notice about the group and formal forms. Set when the paradigm is localized. */
+  pluralInsight?: string;
   forms: { singular: string; plural: string };
   singularRule: string;
   pluralRule: string;
@@ -460,6 +609,14 @@ const SEIN: Paradigm = {
     transform("singular", "sie", "er", "Sie ist müde.", "Er ist müde.", "He is tired."),
     gap("plural", "Wir ___ müde", "Wir sind müde.", "We are tired."),
     transform("plural", "Sie", "ihr", "Sie sind zu Hause.", "Ihr seid zu Hause.", "You all are at home."),
+    gap("singular", "Du ___ hier", "Du bist hier.", "You are here, to a friend."),
+    transform("singular", "ich", "du", "Ich bin müde.", "Du bist müde.", "You are tired, to a friend."),
+    gap("singular", "Es ___ bereit", "Es ist bereit.", "It is ready."),
+    gap("singular", "Ich ___ zu Hause", "Ich bin zu Hause.", "I am at home."),
+    gap("plural", "Ihr ___ bereit", "Ihr seid bereit.", "You all are ready."),
+    gap("plural", "Wir ___ hier", "Wir sind hier.", "We are here."),
+    transform("plural", "wir", "ihr", "Wir sind müde.", "Ihr seid müde.", "You all are tired."),
+    gap("plural", "Wir ___ bereit", "Wir sind bereit.", "We are ready."),
   ],
   checks: [
     { cue: `Which form of ${german("sein")} goes with ${german("ich")}?`, answer: german("bin.") },
@@ -494,6 +651,14 @@ const HABEN: Paradigm = {
     transform("singular", "sie", "er", "Sie hat Zeit.", "Er hat Zeit.", "He has time."),
     gap("plural", "Wir ___ Zeit", "Wir haben Zeit.", "We have time."),
     transform("plural", "wir", "ihr", "Wir haben Zeit.", "Ihr habt Zeit.", "You all have time."),
+    gap("singular", "Du ___ Zeit", "Du hast Zeit.", "You have time, to a friend."),
+    transform("singular", "er", "sie", "Er hat ein Buch.", "Sie hat ein Buch.", "She has a book."),
+    gap("singular", "Er ___ Zeit", "Er hat Zeit.", "He has time."),
+    gap("singular", "Du ___ Hunger", "Du hast Hunger.", "You are hungry, to a friend."),
+    gap("singular", "Er ___ ein Buch", "Er hat ein Buch.", "He has a book."),
+    gap("plural", "Wir ___ Hunger", "Wir haben Hunger.", "We are hungry."),
+    transform("plural", "wir", "sie", "Wir haben Hunger.", "Sie haben Hunger.", "They are hungry."),
+    gap("plural", "Sie ___ ein Buch", "Sie haben ein Buch.", "You have a book, formally."),
   ],
   checks: [
     { cue: `Which form of ${german("haben")} goes with ${german("du")}, a friend?`, answer: german("hast.") },
@@ -528,6 +693,12 @@ const REGULAR: Paradigm = {
     transform("singular", "ich", "du", "Ich mache Kaffee.", "Du machst Kaffee.", "You make coffee, to a friend."),
     gap("plural", "Wir ___ Sport", "Wir machen Sport.", "We do sport."),
     transform("plural", "wir", "ihr", "Wir machen Sport.", "Ihr macht Sport.", "You all do sport."),
+    gap("singular", "Er ___ das", "Er macht das.", "He does that."),
+    transform("singular", "du", "sie", "Du machst Sport.", "Sie macht Sport.", "She does sport."),
+    gap("singular", "Sie ___ Kaffee", "Sie macht Kaffee.", "She makes coffee."),
+    gap("plural", "Wir ___ das", "Wir machen das.", "We do that."),
+    transform("plural", "wir", "sie", "Wir machen Sport.", "Sie machen Sport.", "They do sport."),
+    gap("plural", "Sie ___ Kaffee", "Sie machen Kaffee.", "You make coffee, formally."),
   ],
   checks: [
     { cue: `Which ending goes with ${german("du")}, a friend?`, answer: german("st. du machst.") },
@@ -585,6 +756,8 @@ export function arrangeGrammarLesson(input: {
   nativeLanguage: LanguageId;
   targetLanguage: LanguageId;
   level: CefrLevel;
+  /** Due phrases from earlier lessons, recalled before the new rule. */
+  priorReviews?: Example[];
 }): LessonSegment[] {
   const { source, nativeLanguage, targetLanguage, level } = input;
   const pacing = grammarPacing[level];
@@ -613,7 +786,7 @@ export function arrangeGrammarLesson(input: {
     const authored = lessonDisplayText(item.cue).toLocaleLowerCase();
     const carriesMeaning = authored.includes(lessonDisplayText(translation).toLocaleLowerCase());
     const guided = authored.includes("___") || Boolean(item.source && authored.includes(lessonDisplayText(item.source).toLocaleLowerCase()));
-    const useAuthored = phase !== "review" && item.cue && (carriesMeaning || guided)
+    const useAuthored = phase !== "review" && phase !== "warmup" && item.cue && (carriesMeaning || guided)
       && !authored.includes(spokenKey(item.answer));
     const prompt = carriesMeaning ? item.cue : `${item.cue} ${line(nativeLanguage, "turn", { translation })}`;
     const cue = takeCue(useAuthored ? [prompt, ...frames] : frames, used, useAuthored ? 0 : index);
@@ -623,45 +796,84 @@ export function arrangeGrammarLesson(input: {
   };
 
   explain(source.welcome ?? line(nativeLanguage, "today", { topic: source.topic.title }), "intro", "narration");
+  if (source.bridge) explain(source.bridge, "link", "explanation", listenMs);
+
+  // Recall a few phrases from earlier lessons before the new rule.
   const models = uniqueExamples([source.hook, ...source.examples], pacing.examples);
+  const modelKeys = new Set(models.map((model) => spokenKey(model.text)));
+  const priors = uniqueExamples((input.priorReviews ?? []).filter((item) => !modelKeys.has(spokenKey(item.text))
+    && fitsGrammarExample(item.text, targetLanguage, conversationPacing[level].wordsPerTurn)), MAX_WARMUP_REVIEWS);
+  if (priors.length > 0) {
+    const seed = spokenKey(source.title).length;
+    explain(template(nativeLanguage, (["lead1", "lead2", "lead3", "lead4"] as const)[seed % 4]!), "warmup", "narration");
+    for (const [index, prior] of priors.entries()) {
+      const meaning = meaningOf(prior.translation);
+      const ask = template(nativeLanguage, (["remember1", "remember2", "remember3", "remember4"] as const)[(seed + index) % 4]!);
+      push({ kind: "drill", phase: "warmup", language: nativeLanguage, text: ask.replaceAll("{translation}", meaning), delivery: "curious" },
+        speakingPauseMs(prior.text, targetLanguage) + thinkMs);
+      push({ kind: "drill", phase: "warmup", language: targetLanguage, text: prior.text, translation: prior.translation, delivery: "clear" });
+    }
+    explain(line(nativeLanguage, "returnGrammar"), "warmup", "narration");
+  }
+
   for (const [index, model] of models.entries()) show(model, index === 0 ? "hook" : "example");
   push({ kind: "drill", phase: "notice", language: nativeLanguage, text: source.noticeCue || line(nativeLanguage, "noticeWhat"), delivery: "curious" }, pacing.noticeMs);
   if (spokenKey(source.notice) !== spokenKey(source.rule)) explain(source.notice, "notice", "explanation", listenMs);
   explain(source.rule, "rule", "explanation", listenMs);
 
+  // Walk through the forms one step at a time, each with a short example.
+  for (const step of source.breakdown.slice(0, pacing.breakdown)) {
+    explain(step.explanation, "breakdown", "explanation", listenMs);
+    if (step.example && !modelKeys.has(spokenKey(step.example.text))) show(step.example, "breakdown");
+  }
+
+  // The modeled lines first, then new sentences from guided to free.
   const practice = models.map((model) => source.drills.find((drill) => spokenKey(drill.answer) === spokenKey(model.text))
     ?? { answer: model.text, translation: model.translation, cue: "" });
   const taught = new Set(practice.map((item) => spokenKey(item.answer)));
-  const transfer = source.recombinations.find((item) => !taught.has(spokenKey(item.answer)));
+  const transfers = source.recombinations.filter((item) => !taught.has(spokenKey(item.answer))).slice(0, pacing.recombinations);
+  const transferKeys = new Set(transfers.map((item) => spokenKey(item.answer)));
   for (const item of source.drills) {
     if (practice.length >= pacing.drills) break;
     const key = spokenKey(item.answer);
-    if (!taught.has(key) && (!transfer || key !== spokenKey(transfer.answer))) {
+    if (!taught.has(key) && !transferKeys.has(key)) {
       taught.add(key);
       practice.push(item);
     }
   }
 
+  const slots = scheduleReviewSlots(practice.length, pacing.reviews);
   for (const [index, item] of practice.entries()) {
     if (!models.some((example) => spokenKey(example.text) === spokenKey(item.answer))) {
       show({ text: item.answer, translation: item.translation }, "worked");
     }
     ask("practice", item, index);
-    // Recall an earlier answer after practicing a different example.
-    const earlier = practice[index - 1];
-    if (earlier) ask("review", earlier, index + 1);
+    // Recall earlier answers after one, then three, then six other items.
+    for (const slot of slots.filter((candidate) => candidate.afterItem === index)) {
+      const earlier = practice[slot.item];
+      if (earlier && earlier !== item) ask("review", earlier, index + slot.item + 1);
+    }
   }
 
   const reminder = source.usageTip || source.mnemonic;
   if (reminder && ![source.notice, source.rule].some((text) => spokenKey(text) === spokenKey(reminder))) explain(reminder, "usage", "explanation", listenMs);
-  const check = source.checks[0];
-  if (check) {
+  for (const check of source.checks.slice(0, pacing.checks)) {
     push({ kind: "drill", phase: "check", language: nativeLanguage, text: check.cue, delivery: "curious" }, pacing.noticeMs);
     explain(check.answer, "check", "explanation", listenMs);
   }
-  if (transfer) ask("recombine", transfer, 0);
-  const anchor = practice[0];
-  if (anchor) ask("review", anchor, practice.length + 2);
+  for (const [index, transfer] of transfers.entries()) ask("recombine", transfer, index);
+  // A last recall of the two answers asked least so far, oldest first, from memory.
+  const asked = new Map<string, number>();
+  for (const segment of segments) {
+    if (segment.language === targetLanguage && segment.kind === "drill") asked.set(spokenKey(segment.text), (asked.get(spokenKey(segment.text)) ?? 0) + 1);
+  }
+  const finals = practice
+    .slice(0, -1)
+    .map((item, index) => ({ item, index, count: asked.get(spokenKey(item.answer)) ?? 0 }))
+    .sort((left, right) => left.count - right.count || left.index - right.index)
+    .slice(0, 2)
+    .sort((left, right) => left.index - right.index);
+  for (const [offset, { item }] of finals.entries()) ask("review", item, practice.length + 2 + offset);
   explain(source.closing || line(nativeLanguage, "stick"), "closing", "recap");
   return spokenLesson(segments);
 }
@@ -675,6 +887,8 @@ function localizeParadigm(paradigm: Paradigm, native: LanguageId): Paradigm {
     return {
       ...paradigm,
       welcome: say("Welcome"),
+      insight: say("Insight"),
+      pluralInsight: say("PluralInsight"),
       singularRule: say("Singular"),
       pluralRule: say("PluralRule"),
       mnemonic: say("Mnemonic"),
@@ -720,7 +934,7 @@ function localizeParadigm(paradigm: Paradigm, native: LanguageId): Paradigm {
   });
 }
 
-function paradigmSource(source: Paradigm, topic: GrammarTopic, nativeLanguage: LanguageId, teacherName: string): GrammarSource {
+function paradigmSource(source: Paradigm, topic: GrammarTopic, nativeLanguage: LanguageId, teacherName: string, bridge?: string): GrammarSource {
   const paradigm = localizeParadigm(source, nativeLanguage);
   const plural = topic.id.endsWith("-plural");
   const examples = plural
@@ -728,6 +942,8 @@ function paradigmSource(source: Paradigm, topic: GrammarTopic, nativeLanguage: L
     ? [...paradigm.pluralExamples.slice(0, 2), paradigm.pluralExamples.at(-1)!]
     : uniqueExamples([paradigm.hook, ...paradigm.singularExamples], grammarPacing.A1.examples);
   const rule = plural ? paradigm.pluralRule : paradigm.singularRule;
+  // The other half of the paradigm is a separate lesson, so only this half's checks apply.
+  const checks = plural ? [paradigm.checks[1], paradigm.checks[2]] : [paradigm.checks[0]];
   const drills = paradigm.practice
     .filter((item) => item.half === (plural ? "plural" : "singular"))
     .map((item): Drill => ({
@@ -737,7 +953,6 @@ function paradigmSource(source: Paradigm, topic: GrammarTopic, nativeLanguage: L
       ...(item.mode === "transform" ? { source: item.source } : {}),
     }));
 
-  const check = paradigm.checks[plural ? 2 : 0];
   return {
     title: plural ? topic.title : paradigm.title,
     topic,
@@ -750,10 +965,12 @@ function paradigmSource(source: Paradigm, topic: GrammarTopic, nativeLanguage: L
     rule,
     mnemonic: !plural && source === REGULAR ? paradigm.mnemonic : "",
     welcome: paradigm.welcome,
+    ...(bridge ? { bridge } : {}),
     closing: paradigm.closing,
-    drills: drills.filter((item) => examples.some((example) => spokenKey(example.text) === spokenKey(item.answer))),
-    recombinations: drills.filter((item) => !examples.some((example) => spokenKey(example.text) === spokenKey(item.answer))),
-    checks: check ? [check] : [],
+    breakdown: [{ explanation: plural ? paradigm.pluralInsight ?? rule : paradigm.insight }],
+    drills,
+    recombinations: [],
+    checks: checks.filter((check): check is RuleCheck => Boolean(check)),
   };
 }
 
@@ -783,13 +1000,13 @@ export function shapeGrammarLesson(value: unknown, context: {
   targetLanguage: LanguageId;
   level: CefrLevel;
   topic: GrammarTopic;
-  /** Ignored. Phrases from earlier lessons are recalled only in conversation lessons. */
+  /** Due phrases from earlier lessons, recalled in a short warm-up. */
   priorReviews?: Example[];
 }): { title: string; topic: string; ruleId: string; summary: string; speakerNames: SpeakerNames; segments: LessonSegment[] } | null {
   const paradigm = PARADIGMS[context.topic.id.replace(/-plural$/u, "")];
-  const model = value && typeof value === "object" ? value as { speakerNames?: unknown } : {};
+  const model = value && typeof value === "object" ? value as { speakerNames?: unknown; bridge?: unknown } : {};
   const source = paradigm
-    ? paradigmSource(paradigm, context.topic, context.nativeLanguage, normalizeSpeakerNames(model.speakerNames).teacher)
+    ? paradigmSource(paradigm, context.topic, context.nativeLanguage, normalizeSpeakerNames(model.speakerNames).teacher, shortTeachingLine(model.bridge))
     : parseGrammarSource(value, context.topic, context.level, context.targetLanguage);
   if (!source) return null;
   const arranged = arrangeGrammarLesson({ ...context, source });

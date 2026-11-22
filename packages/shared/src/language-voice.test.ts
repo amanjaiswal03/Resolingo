@@ -95,6 +95,7 @@ describe("target words use the target voice", () => {
       lines: [
         { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?", language: "de-DE" },
         { speaker: "speakerB", text: "Geradeaus.", translation: "Straight ahead.", language: "de-DE" },
+        { speaker: "speakerA", text: "Danke.", translation: "Thanks.", language: "de-DE" },
       ],
       phrases: [{
         speaker: "speakerA",

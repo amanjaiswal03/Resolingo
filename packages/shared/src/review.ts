@@ -121,3 +121,60 @@ export function phrasesToRemember(
   }
   return phrases;
 }
+
+/** A phrase the learner has already practised in a finished lesson. */
+export type KnownPhrase = { text: string; translation?: string };
+
+function knownTokens(text: string, language: string): string[] {
+  const plain = normalize(text.replace(/\[\[\/?lang(?::[^\]]+)?\]\]/gu, ""));
+  if (!plain) return [];
+  // Unspaced scripts compare by character pairs, so a word boundary is not needed.
+  if (!/\s/u.test(plain) && Array.from(plain).length > 3 && /^(ja|zh|th)/u.test(language)) {
+    const chars = Array.from(plain);
+    return chars.slice(0, -1).map((char, index) => `${char}${chars[index + 1]}`);
+  }
+  return plain.split(" ");
+}
+
+/**
+ * How close a new line is to one the learner already knows, from 0 to 1.
+ * Word overlap over the larger of the two lines, so a short known phrase
+ * does not swallow a longer new sentence that merely contains it.
+ */
+export function phraseSimilarity(left: string, right: string, language: string): number {
+  const a = knownTokens(left, language);
+  const b = knownTokens(right, language);
+  if (a.length === 0 || b.length === 0) return 0;
+  if (a.join(" ") === b.join(" ")) return 1;
+  const remaining = [...b];
+  let shared = 0;
+  for (const token of a) {
+    const at = remaining.indexOf(token);
+    if (at >= 0) {
+      shared += 1;
+      remaining.splice(at, 1);
+    }
+  }
+  return shared / Math.max(a.length, b.length);
+}
+
+/**
+ * Close enough to count as known without the model's judgment: the same words
+ * in any order, or one small word added or dropped in a long line. A line that
+ * swaps a content word, such as a new noun, still teaches something, so the
+ * model decides that case with its known mark.
+ */
+export const KNOWN_SIMILARITY = 0.85;
+const KNOWN_MIN_WORDS = 6;
+
+/** The known phrase this line repeats, or a close variant of it. */
+export function findKnownPhrase(text: string, known: readonly KnownPhrase[], language: string): KnownPhrase | undefined {
+  let best: { phrase: KnownPhrase; score: number } | undefined;
+  for (const phrase of known) {
+    const score = phraseSimilarity(text, phrase.text, language);
+    const words = Math.max(knownTokens(text, language).length, knownTokens(phrase.text, language).length);
+    const close = score === 1 || (words >= KNOWN_MIN_WORDS && score >= KNOWN_SIMILARITY);
+    if (close && (!best || score > best.score)) best = { phrase, score };
+  }
+  return best?.phrase;
+}

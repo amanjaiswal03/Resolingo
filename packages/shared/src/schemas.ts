@@ -26,7 +26,7 @@ export const DeliverySchema = z.enum(["warm", "praise", "gentle", "curious", "cl
 export type Delivery = z.infer<typeof DeliverySchema>;
 
 /** Upper bound for one generated lesson, including spaced recalls and a short review warm-up. */
-export const MAX_LESSON_SEGMENTS = 120;
+export const MAX_LESSON_SEGMENTS = 180;
 
 export const LessonSegmentSchema = z.object({
   id: z.string().min(1),

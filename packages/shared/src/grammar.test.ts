@@ -81,7 +81,16 @@ describe("grammar lessons", () => {
     }).title).toBe("Present tense of haben");
     expect(selectGrammarTopic({ language: "de-DE", level: "A1", recentTopics: [] }).title).not.toContain("Perfekt");
     expect(selectGrammarTopic({ language: "de-DE", level: "B1", recentTopics: [] }).title).toBe("Clauses with weil");
-    expect(selectGrammarTopic({ language: "fr-FR", level: "A1", recentTopics: [] }).title).toBe("Be and have");
+    expect(selectGrammarTopic({ language: "fr-FR", level: "A1", recentTopics: [] }).title).toBe("Present tense of être");
+    expect(selectGrammarTopic({ language: "es-MX", level: "A1", recentTopics: [] }).title).toBe("Present tense of ser");
+    expect(selectGrammarTopic({ language: "it-IT", level: "A1", recentTopics: [] }).title).toBe("Be and have");
+    // Every catalog has enough topics per level to avoid repeating within a week of daily lessons.
+    for (const language of ["de-DE", "es-ES", "fr-FR", "it-IT"] as const) {
+      for (const level of ["A1", "A2", "B1", "B2", "C1"] as const) {
+        expect(grammarTopics(language, level).length).toBeGreaterThanOrEqual(4);
+        expect(new Set(grammarTopics(language, level).map((topic) => topic.id)).size).toBe(grammarTopics(language, level).length);
+      }
+    }
     const german = grammarTopics("de-DE", "A1");
     const oldest = selectGrammarTopic({
       language: "de-DE",
@@ -111,10 +120,14 @@ describe("grammar lessons", () => {
     expect(disambiguateTranslation("you are", "ustedes están.", "es-MX")).toMatch(/you all/);
   });
 
-  it("teaches singular sein with modeled examples, spaced recall, and one transfer", () => {
+  it("teaches singular sein with a warm-up, modeled examples, a breakdown, and spaced recall", () => {
     const parsed = lessonFor("de-sein");
-    const script = scriptOf(parsed.segments);
+    const script = scriptOf(parsed.segments.filter((item) => item.phase !== "warmup"));
     expect(script).not.toMatch(/Danke|second position|wir sind|ihr seid/iu);
+    // A due phrase from an earlier lesson is recalled first, before the new rule.
+    const warmup = parsed.segments.filter((item) => item.phase === "warmup");
+    expect(warmup.map((item) => lessonDisplayText(item.text))).toContain("Danke.");
+    expect(parsed.segments.findIndex((item) => item.phase === "warmup")).toBeLessThan(parsed.segments.findIndex((item) => item.phase === "hook"));
     expect(parsed.topic).toBe("Present tense of sein");
     expect(parsed.ruleId).toBe("de-sein");
     expect(parsed.segments.every((item) => item.speaker === "teacher")).toBe(true);
@@ -124,18 +137,21 @@ describe("grammar lessons", () => {
     const rule = parsed.segments.findIndex((item) => item.phase === "rule");
     const anchor = parsed.segments.findIndex((item) => item.phase === "answer" && item.text === "Ich bin müde.");
     const later = parsed.segments.findIndex((item) => item.phase === "review" && item.text === "Ich bin müde.");
-    expect(parsed.segments.slice(0, notice).filter((item) => item.kind === "example")).toHaveLength(3);
+    expect(parsed.segments.slice(0, notice).filter((item) => item.kind === "example")).toHaveLength(4);
+    expect(parsed.segments.filter((item) => item.phase === "breakdown").map((item) => lessonDisplayText(item.text)).join(" ")).toMatch(/word itself changes/);
     expect(rule).toBeGreaterThan(notice);
     expect(anchor).toBeGreaterThan(rule);
     expect(parsed.segments.slice(anchor + 1, later).some((item) => item.phase === "answer" && item.text === "Du bist müde.")).toBe(true);
-    expect(parsed.segments.filter((item) => item.phase === "answer")).toHaveLength(3);
-    expect(parsed.segments.filter((item) => item.phase === "recombine" && item.language === "de-DE").map((item) => item.text))
-      .toEqual(["Er ist müde."]);
+    expect(parsed.segments.filter((item) => item.phase === "answer").length).toBeGreaterThanOrEqual(7);
+    expect(parsed.segments.filter((item) => item.phase === "answer").map((item) => item.text)).toContain("Es ist bereit.");
     expect(parsed.segments.at(-1)?.phase).toBe("closing");
     expect(cues(parsed.segments).some((cue) => cue.includes("___"))).toBe(true);
     expect(grammarPromptsAreClear(parsed.segments)).toBe(true);
     expect(recallAnswersFollowPrompts(parsed.segments)).toBe(true);
-    expect(durationMs(parsed.segments)).toBeLessThan(4 * 60_000);
+    // This rough count leaves out the slower beginner voice and the gaps between clips,
+    // which add about half a minute to a lesson that is five to eight minutes long.
+    expect(durationMs(parsed.segments)).toBeGreaterThan(4.5 * 60_000);
+    expect(durationMs(parsed.segments)).toBeLessThan(8 * 60_000);
     expect(phrasesToRemember(parsed.segments, DEFAULT_SPEAKER_NAMES, "de-DE").map((phrase) => phrase.text)).toContain("Ich bin müde.");
   });
 
@@ -153,7 +169,7 @@ describe("grammar lessons", () => {
         expect(scriptOf(group.segments).toLowerCase()).toContain(form);
       }
       expect(group.segments.find((item) => item.kind === "example" && item.text === formal)?.translation).toContain("formally");
-      expect(group.segments.filter((item) => item.phase === "answer")).toHaveLength(3);
+      expect(group.segments.filter((item) => item.phase === "answer").length).toBeGreaterThanOrEqual(6);
       expect(grammarPromptsAreClear(group.segments)).toBe(true);
     }
   });
@@ -174,7 +190,7 @@ describe("grammar lessons", () => {
   });
 
   it("repairs untagged grammar terms and affixes in a generated lesson", () => {
-    const topic = grammarTopics("fr-FR", "A1").find((item) => item.id === "g-present")!;
+    const topic = grammarTopics("it-IT", "A1").find((item) => item.id === "g-present")!;
     const lesson = shapeGrammarLesson({
       title: "Present tense of parler",
       summary: "Use parler in the present tense.",
@@ -197,16 +213,18 @@ describe("grammar lessons", () => {
     }, { topic, level: "A1", nativeLanguage: "en-US", targetLanguage: "fr-FR" });
     const segments = GeneratedLessonSchema.parse(lesson).segments;
     const models = segments.filter((segment) => segment.kind === "example");
-    expect(models.map((segment) => segment.text)).toEqual(["Je parle.", "Tu parles.", "Il parle."]);
+    // Three distinct models, then a fourth drill that is shown as a worked example before it is asked.
+    expect(models.map((segment) => segment.text)).toEqual(["Je parle.", "Tu parles.", "Il parle.", "Nous parlons."]);
+    expect(models.at(-1)?.phase).toBe("worked");
     expect(segments.filter((segment) => segment.phase === "answer").map((segment) => segment.text))
-      .toEqual(["Je parle.", "Tu parles.", "Il parle."]);
+      .toEqual(["Je parle.", "Tu parles.", "Il parle.", "Nous parlons."]);
     const rule = segments.find((segment) => lessonDisplayText(segment.text).startsWith("Keep parl- and add"))!;
     expect(speechSpans(rule.text, rule.language).filter((span) => span.language === "fr-FR").map((span) => span.text.trim()))
       .toEqual(["parl-", "-e", "parler"]);
   });
 
-  it("scales generated practice and thinking time while keeping one use of the rule", () => {
-    const topic = grammarTopics("fr-FR", "A1").find((item) => item.id === "g-present")!;
+  it("scales thinking time with the level and uses every drill and application the model gives", () => {
+    const topic = grammarTopics("it-IT", "A1").find((item) => item.id === "g-present")!;
     const examples = [
       { text: "Je parle.", translation: "I speak." },
       { text: "Tu parles.", translation: "You speak." },
@@ -233,13 +251,13 @@ describe("grammar lessons", () => {
     const a1 = build("A1");
     const c1 = build("C1");
     expect(a1[0]?.text).toBe(source.goal);
-    expect(a1.filter((part) => part.phase === "answer")).toHaveLength(3);
+    expect(a1.filter((part) => part.phase === "answer")).toHaveLength(5);
     expect(c1.filter((part) => part.phase === "answer")).toHaveLength(5);
     expect(a1.find((part) => part.phase === "practice")?.pauseAfterMs).toBeGreaterThan(c1.find((part) => part.phase === "practice")!.pauseAfterMs!);
     expect(a1.find((part) => part.phase === "notice" && part.kind === "drill")?.pauseAfterMs)
       .toBeGreaterThan(c1.find((part) => part.phase === "notice" && part.kind === "drill")!.pauseAfterMs!);
     expect(a1.filter((part) => part.phase === "usage").map((part) => part.text)).toEqual(["With a friend, use the informal form."]);
-    expect(c1.filter((part) => part.phase === "recombine" && part.language === "fr-FR")).toHaveLength(1);
+    expect(c1.filter((part) => part.phase === "recombine" && part.language === "fr-FR")).toHaveLength(2);
     expect(grammarPromptsAreClear(a1) && grammarPromptsAreClear(c1)).toBe(true);
   });
 });

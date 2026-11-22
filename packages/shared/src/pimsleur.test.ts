@@ -80,7 +80,11 @@ describe("Pimsleur arrangement", () => {
       segment.pauseAfterMs && segments[index + 1]?.text === "Geradeaus."
     ))?.pauseAfterMs ?? Infinity);
     expect(answer?.pauseAfterMs).toBeUndefined();
-    expect(segments.some((segment) => segment.phase === "buildup" && segment.language === "de-DE")).toBe(false);
+    // A line of four words is built up from the end. A one-word line is not.
+    const pieces = segments.filter((segment) => segment.phase === "buildup" && segment.language === "de-DE").map((segment) => segment.text);
+    expect([...new Set(pieces)]).toEqual(["Bahnhof", "der Bahnhof"]);
+    // Every turn is practised, not only the two focus phrases.
+    for (const line of lines) expect(segments.some((segment) => segment.phase === "answer" && segment.text === line.text)).toBe(true);
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
     expect(recallPromptsCiteMeanings(segments)).toBe(true);
@@ -201,6 +205,7 @@ describe("model shaping", () => {
       lines: [
         { speaker: "Lukas", text: "Wo ist der Bahnhof?", translation: "Where is the station?", language: "fr-FR" },
         { speaker: "speakerB", text: "Geradeaus.", translation: "Straight ahead." },
+        { speaker: "speakerA", text: "Danke.", translation: "Thanks." },
       ],
       phrases: [
         { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?", note: "A useful question." },
@@ -238,7 +243,7 @@ describe("model shaping", () => {
     expect(legacy?.speakerNames.speakerB).toBe("Anna");
   });
 
-  it("practices just the focus phrases and keeps the whole scene", () => {
+  it("practises every turn once, in dialogue order, and keeps the whole scene", () => {
     const four = [
       { speaker: "speakerA", text: "Guten Morgen.", translation: "Good morning.", language: "de-DE" },
       { speaker: "speakerB", text: "Guten Morgen.", translation: "Good morning to you.", language: "de-DE" },
@@ -256,8 +261,9 @@ describe("model shaping", () => {
       ],
     }, { nativeLanguage: "en-US", targetLanguage: "de-DE", level: "A1" });
     const segments = shaped?.segments ?? [];
+    // A line said twice in the scene is practised once.
     expect(segments.filter((segment) => segment.phase === "answer").map((segment) => segment.text))
-      .toEqual(["Guten Morgen.", "Gut, danke."]);
+      .toEqual(["Guten Morgen.", "Wie geht's?", "Gut, danke."]);
     expect(segments.filter((segment) => segment.kind === "dialogue" && segment.phase === "dialogue").map((segment) => segment.text))
       .toEqual(four.map((line) => line.text));
     const closing = segments.filter((segment) => segment.phase === "closing" && segment.speaker !== "teacher").map((segment) => segment.text);
@@ -297,6 +303,7 @@ describe("model shaping", () => {
       lines: [
         { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?", language: "de-DE" },
         { speaker: "speakerB", text: "Geradeaus.", translation: "Straight ahead.", language: "de-DE" },
+        { speaker: "speakerA", text: "Danke.", translation: "Thanks.", language: "de-DE" },
       ],
       phrases: [
         {
@@ -324,15 +331,18 @@ describe("model shaping", () => {
     expect(gloss?.pauseAfterMs).toBeLessThan(1_200);
     const glossAt = segments.indexOf(gloss!);
     expect(segments[glossAt - 1]?.text).not.toBe("Bahnhof");
+    // Model, a pause to repeat it, then the model again.
     expect(segments[glossAt + 1]).toMatchObject({ kind: "example", text: "Bahnhof", speaker: "speakerA" });
-    expect(segments.filter((segment) => segment.phase === "buildup" && segment.kind === "drill" && segment.pauseAfterMs)).toHaveLength(0);
+    expect(segments[glossAt + 2]).toMatchObject({ kind: "drill", speaker: "teacher", phase: "buildup" });
+    expect(segments[glossAt + 2]?.pauseAfterMs).toBe(speakingPauseMs("Bahnhof", "de-DE"));
+    expect(segments[glossAt + 3]).toMatchObject({ kind: "drill", text: "Bahnhof", speaker: "speakerA" });
     expect(segments.some((segment) => segment.text === "Anna" || segment.text === "Anna!")).toBe(false);
     expect(segments.filter((segment) => segment.kind === "explanation").every((segment) => (segment.pauseAfterMs ?? 0) < 1_200)).toBe(true);
     expect(segments.some((segment) => segment.text.includes("obvious"))).toBe(false);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
   });
 
-  it("models just the most useful chunk and then invites an echo of the whole line", () => {
+  it("builds a long line from the end with the model's first two pieces, then asks for the whole line", () => {
     const shaped = shapePimsleurLesson({
       title: "Asking the way",
       topic: "The station",
@@ -356,6 +366,7 @@ describe("model shaping", () => {
           language: "de-DE",
         },
         { speaker: "speakerB", text: "Geradeaus.", translation: "Straight ahead.", language: "de-DE" },
+        { speaker: "speakerA", text: "Danke.", translation: "Thanks.", language: "de-DE" },
       ],
       phrases: [
         {
@@ -372,55 +383,25 @@ describe("model shaping", () => {
     }, { nativeLanguage: "en-US", targetLanguage: "de-DE", level: "A1" });
     const segments = shaped?.segments ?? [];
     expect(segments.filter((segment) => segment.phase === "buildup" && segment.kind === "example").map((segment) => segment.text))
-      .toEqual(["der Bahnhof"]);
-    const whole = segments.findIndex((segment) => segment.phase === "recall" && segment.pauseAfterMs);
-    expect(["Try the word on its own.", "Copy the rhythm you just heard."]).toContain(segments[whole]?.text);
-    expect(segments[whole - 1]).toMatchObject({ kind: "example", text: "Entschuldigung, wo ist der Bahnhof?" });
-    expect(segments[whole + 1]?.text).toBe("Entschuldigung, wo ist der Bahnhof?");
+      .toEqual(["Bahnhof", "der Bahnhof"]);
+    const echoes = segments.filter((segment) => segment.phase === "buildup" && segment.kind === "drill" && segment.pauseAfterMs);
+    expect(echoes).toHaveLength(2);
+    expect(new Set(echoes.map((segment) => segment.text))).toEqual(new Set(["Try the word on its own.", "Copy the rhythm you just heard."]));
     const gloss = segments.find((segment) => segment.kind === "explanation" && segment.phase === "buildup" && segment.text.includes("der Bahnhof"));
     expect(gloss?.text).toContain("[[lang:de-DE]]der Bahnhof[[/lang]]");
     expect(gloss?.text.toLowerCase()).toMatch(/means|is how you say/);
     expect(gloss?.text.trim()).not.toBe("the train station");
-    expect(gloss?.pauseAfterMs).toBeLessThan(1_200);
-    const glossAt = segments.indexOf(gloss!);
-    expect(segments[glossAt - 1]?.text).not.toBe("der Bahnhof");
-    expect(segments[glossAt + 1]).toMatchObject({ kind: "example", text: "der Bahnhof" });
-    expect(segments[glossAt + 2]).toMatchObject({ kind: "example", text: "Entschuldigung, wo ist der Bahnhof?" });
-    expect(segments.some((segment) => segment.kind === "drill" && segment.text === "der Bahnhof")).toBe(false);
+    expect(segments[segments.indexOf(gloss!) + 1]).toMatchObject({ kind: "example", text: "der Bahnhof" });
+    // After the pieces, the whole line is asked for by its meaning.
+    const whole = segments.findIndex((segment) => segment.phase === "recall" && segment.pauseAfterMs);
+    expect(segments[whole - 1]).toMatchObject({ kind: "drill", text: "der Bahnhof" });
+    expect(segments[whole]?.text.toLowerCase()).toContain("excuse me, where is the train station");
+    expect(segments[whole + 1]?.text).toBe("Entschuldigung, wo ist der Bahnhof?");
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
-
-    const bare = shapePimsleurLesson({
-      title: "Asking again",
-      topic: "The station",
-      summary: "Ask where the train station is.",
-      lines: [
-        {
-          speaker: "speakerA",
-          text: "Entschuldigung, wo ist der Bahnhof?",
-          translation: "Excuse me, where is the train station?",
-          language: "de-DE",
-        },
-        { speaker: "speakerB", text: "Geradeaus.", translation: "Straight ahead.", language: "de-DE" },
-      ],
-      phrases: [
-        {
-          speaker: "speakerA",
-          text: "Entschuldigung, wo ist der Bahnhof?",
-          translation: "Excuse me, where is the train station?",
-          chunks: [{ text: "der Bahnhof", gloss: "the train station" }],
-        },
-      ],
-    }, { nativeLanguage: "en-US", targetLanguage: "de-DE", level: "A1" });
-    const barePairs = (bare?.segments ?? []).flatMap((segment, index) => {
-      if (!segment.pauseAfterMs || segment.kind !== "drill") return [];
-      const answer = bare?.segments[index + 1];
-      return answer?.text === "der Bahnhof" ? [segment.text] : [];
-    });
-    expect(barePairs).toHaveLength(0);
-    expect(bare?.segments).toContainEqual(expect.objectContaining({ kind: "example", text: "der Bahnhof" }));
+    expect(drillsAreUnique(segments)).toBe(true);
   });
 
-  it("varies the breakdown, drops a name, and plays each chunk once", () => {
+  it("drops a name from a drill, and never drills a line that is only a name", () => {
     const shaped = shapePimsleurLesson({
       title: "At the station",
       topic: "Asking the way",
@@ -438,7 +419,6 @@ describe("model shaping", () => {
           translation: "Anna, where is the station?",
           chunks: [
             { text: "der Bahnhof", translation: "the station", gloss: "the station" },
-            { text: "wo ist", translation: "where is" },
             { text: "Anna!", translation: "Anna" },
           ],
         },
@@ -449,40 +429,41 @@ describe("model shaping", () => {
     const segments = shaped?.segments ?? [];
     const script = segments
       .filter((segment) => segment.phase === "buildup" || segment.phase === "answer")
-      .map((segment) => `${segment.speaker}: ${segment.text}${segment.pauseAfterMs ? " [pause]" : ""}`);
+      .map((segment) => `${segment.speaker}: ${segment.text}`);
     expect(script).toContain("speakerA: der Bahnhof");
     expect(segments.filter((segment) => segment.kind === "example" && segment.text === "der Bahnhof")).toHaveLength(1);
-    expect(script).not.toContain("speakerA: wo ist");
     expect(script.some((line) => line.includes("Anna"))).toBe(false);
     expect(segments.some((segment) => segment.phase === "buildup" && segment.text === "Geradeaus.")).toBe(false);
     expect(segments.some((segment) => segment.phase === "answer" && segment.text === "wo ist der Bahnhof?")).toBe(true);
+    expect(segments.some((segment) => segment.phase === "answer" && segment.text === "Bitte.")).toBe(true);
     expect(segments.some((segment) => segment.phase === "dialogue" && segment.text === "Anna!")).toBe(true);
-    expect(segments.some((segment) => segment.phase === "answer" && segment.text === "Anna!")).toBe(false);
+    expect(segments.some((segment) => segment.kind === "drill" && segment.text === "Anna!")).toBe(false);
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
     expect(segments.length).toBeLessThanOrEqual(MAX_PIMSLEUR_SEGMENTS);
   });
 
-  it("skips a second breakdown and takes the next phrase into a situation", () => {
+  it("builds up every new line and then uses that line's own situation cue", () => {
     const first = { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?" };
     const second = { speaker: "speakerB", text: "Gehen Sie geradeaus.", translation: "Go straight ahead." };
+    const third = { speaker: "speakerA", text: "Vielen Dank.", translation: "Thank you very much." };
     const recallCue = "They're waiting for directions. Tell them: Go straight ahead.";
     const segments = shapePimsleurLesson({
       title: "Walking to the station",
-      lines: [first, second],
+      lines: [first, second, third],
       phrases: [
         { ...first, chunks: [{ text: "der Bahnhof", translation: "the station" }] },
         { ...second, recallCue, chunks: [{ text: "geradeaus", translation: "straight ahead" }] },
       ],
     }, { nativeLanguage: "en-US", targetLanguage: "de-DE", level: "A2" })!.segments;
     expect(segments.filter((segment) => segment.phase === "buildup" && segment.kind === "example").map((segment) => segment.text))
-      .toEqual(["der Bahnhof"]);
-    const model = segments.findIndex((segment) => segment.kind === "example" && segment.text === second.text);
-    expect(segments[model + 1]).toMatchObject({ kind: "drill", text: recallCue });
-    expect(segments[model + 2]).toMatchObject({ kind: "drill", text: second.text });
+      .toEqual(["der Bahnhof", "geradeaus"]);
+    const cue = segments.findIndex((segment) => segment.phase === "recall" && segment.text === recallCue);
+    expect(segments[cue - 1]).toMatchObject({ kind: "drill", text: "geradeaus" });
+    expect(segments[cue + 1]).toMatchObject({ kind: "drill", phase: "answer", text: second.text });
   });
 
-  it("uses the level to limit active material and give a beginner more thinking time", () => {
+  it("uses the level for thinking time, and practises every turn at every level", () => {
     const turns = [
       { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?" },
       { speaker: "speakerB", text: "Gehen Sie geradeaus.", translation: "Go straight ahead." },
@@ -504,26 +485,74 @@ describe("model shaping", () => {
     })!.segments;
     const beginner = build("A1");
     const advanced = build("C1");
-    expect(beginner.filter((part) => part.phase === "answer")).toHaveLength(2);
-    expect(advanced.filter((part) => part.phase === "answer")).toHaveLength(3);
+    expect(beginner.filter((part) => part.phase === "answer").map((part) => part.text)).toEqual(turns.map((turn) => turn.text));
+    expect(advanced.filter((part) => part.phase === "answer").map((part) => part.text)).toEqual(turns.map((turn) => turn.text));
     expect(beginner.find((part) => part.phase === "recall")?.pauseAfterMs)
       .toBeGreaterThan(advanced.find((part) => part.phase === "recall")?.pauseAfterMs ?? Infinity);
-    expect(beginner.some((part) => part.phase === "recombine")).toBe(false);
-    expect(advanced.filter((part) => part.phase === "recombine" && part.kind === "example").map((part) => part.text))
+    expect(beginner.filter((part) => part.phase === "recombine" && part.kind === "example").map((part) => part.text))
       .toEqual(["Wo ist das Rathaus?"]);
     expect(beginner.filter((part) => part.phase === "usage").map((part) => part.text))
       .toEqual(["A quick greeting makes a street question friendlier."]);
+    // Each earlier turn comes back after other material, and again in the role-play after the closing dialogue.
     for (const item of turns.slice(0, 2)) {
       const first = beginner.findIndex((part) => part.phase === "answer" && part.text === item.text);
       const review = beginner.findIndex((part) => part.phase === "review" && part.text === item.text);
-      const quick = beginner.findIndex((part) => part.phase === "quick" && part.text === item.text && part.speaker !== "teacher");
       expect(review).toBeGreaterThan(first + 2);
-      expect(beginner.slice(review + 1, quick).some((part) => part.kind === "dialogue" && part.phase === "closing")).toBe(true);
     }
+    const closingAt = beginner.findIndex((part) => part.kind === "dialogue" && part.phase === "closing");
+    const roleplay = beginner.filter((part, index) => index > closingAt && part.phase === "roleplay" && part.kind === "drill" && part.speaker !== "teacher");
+    expect(roleplay.length).toBe(2);
     expect(recallAnswersFollowPrompts(beginner)).toBe(true);
   });
 
-  it("recalls earlier lines, recombines them, and warms up with a due phrase", () => {
+  it("acknowledges a line the learner already knows instead of drilling it", () => {
+    const lines = [
+      { speaker: "speakerA", text: "Guten Tag!", translation: "Good afternoon!", language: "de-DE" },
+      { speaker: "speakerB", text: "Guten Tag. Was darf es sein?", translation: "Good afternoon. What can I get you?", language: "de-DE" },
+      { speaker: "speakerA", text: "Einen Kaffee, bitte.", translation: "A coffee, please.", language: "de-DE" },
+      { speaker: "speakerB", text: "Gern. Sonst noch etwas?", translation: "Sure. Anything else?", language: "de-DE", known: true },
+      { speaker: "speakerA", text: "Nein, danke.", translation: "No, thanks.", language: "de-DE" },
+    ];
+    const shaped = shapePimsleurLesson({ title: "At the café", lines, phrases: lines }, {
+      nativeLanguage: "en-US", targetLanguage: "de-DE", level: "A2",
+      known: [
+        { text: "Einen Kaffee bitte", translation: "A coffee, please." },
+        { text: "Gerne. Noch etwas?", translation: "Sure. Anything else?" },
+        { text: "Danke schön.", translation: "Thank you." },
+      ],
+    });
+    const segments = shaped?.segments ?? [];
+    const answers = segments.filter((segment) => segment.phase === "answer").map((segment) => segment.text);
+    // Exact repeat (punctuation aside) and the model's trusted mark are skipped. A shared word alone is not enough.
+    expect(answers).toEqual(["Guten Tag!", "Guten Tag. Was darf es sein?", "Nein, danke."]);
+    const known = segments.filter((segment) => segment.phase === "known");
+    expect(known.map((segment) => segment.speaker === "teacher" ? "T" : segment.text)).toEqual([
+      "T", "Einen Kaffee, bitte.", "T", "Gern. Sonst noch etwas?",
+    ]);
+    expect(known.filter((segment) => segment.speaker === "teacher").every((segment) => /already know|learned this|familiar/i.test(segment.text))).toBe(true);
+    expect(known.every((segment) => !segment.pauseAfterMs)).toBe(true);
+    expect(segments.some((segment) => segment.phase === "review" && segment.text === "Einen Kaffee, bitte.")).toBe(false);
+    expect(speakPromptsMatchAnswers(segments)).toBe(true);
+  });
+
+  it("points out the grammar from the last lesson on the line that uses it", () => {
+    const lines = [
+      { speaker: "speakerA", text: "Hast du heute Zeit?", translation: "Do you have time today?", language: "de-DE" },
+      { speaker: "speakerB", text: "Nein, ich muss arbeiten.", translation: "No, I have to work.", language: "de-DE" },
+      { speaker: "speakerA", text: "Schade. Und morgen?", translation: "Too bad. And tomorrow?", language: "de-DE" },
+      { speaker: "speakerB", text: "Morgen geht es.", translation: "Tomorrow works.", language: "de-DE" },
+    ];
+    const note = "[[lang:de-DE]]muss[[/lang]] is the modal verb from last time, and [[lang:de-DE]]arbeiten[[/lang]] goes to the end.";
+    const segments = shapePimsleurLesson({ title: "Making plans", lines, phrases: lines, grammarLink: { line: "Nein, ich muss arbeiten.", note } }, {
+      nativeLanguage: "en-US", targetLanguage: "de-DE", level: "A2",
+    })!.segments;
+    const link = segments.findIndex((segment) => segment.phase === "link");
+    expect(segments[link]).toMatchObject({ speaker: "teacher", kind: "explanation" });
+    expect(segments[link]?.text).toContain("[[lang:de-DE]]muss[[/lang]]");
+    expect(segments[link - 1]).toMatchObject({ kind: "example", text: "Nein, ich muss arbeiten." });
+  });
+
+  it("recalls earlier lines, recombines them, warms up with due phrases, and ends with a role-play", () => {
     const shaped = shapePimsleurLesson({
       title: "At the station",
       topic: "Asking the way",
@@ -535,7 +564,6 @@ describe("model shaping", () => {
         { speaker: "speakerB", text: "Bitte.", translation: "You're welcome.", language: "de-DE" },
       ],
       recombinations: [{ speaker: "speakerA", text: "Wo ist das Hotel?", translation: "Where is the hotel?" }],
-      roleplay: { stimulus: "Wo ist der Bahnhof?", text: "Geradeaus.", translation: "Straight ahead." },
     }, {
       nativeLanguage: "en-US",
       targetLanguage: "de-DE",
@@ -550,16 +578,16 @@ describe("model shaping", () => {
     const priorTexts = ["Einen Kaffee, bitte.", "Die Rechnung, bitte.", "Wo ist die Toilette?"];
     const warmup = segments.findIndex((segment) => segment.phase === "warmup" && segment.pauseAfterMs);
     expect(segments.slice(0, warmup).some((segment) => /remember|recall|earlier|last time/i.test(segment.text))).toBe(true);
-    expect(segments[warmup - 1]?.text).not.toBe("Einen Kaffee, bitte.");
     expect(segments[warmup]?.speaker).toBe("teacher");
     expect(segments[warmup]?.text.toLowerCase()).toContain("a coffee, please");
     expect(segments[warmup + 1]).toMatchObject({ text: "Einen Kaffee, bitte.", phase: "warmup" });
-    expect(segments[warmup + 1]?.speaker).not.toBe("teacher");
     const dialogueAt = segments.findIndex((segment) => segment.phase === "dialogue");
     expect(warmup).toBeLessThan(dialogueAt);
     expect(segments.slice(warmup, dialogueAt).some((segment) => /today's conversation/i.test(segment.text))).toBe(true);
-    expect(segments.filter((segment) => segment.phase === "warmup" && segment.speaker !== "teacher")).toHaveLength(1);
-    expect(priorReviewsAreIntroduced(segments, [priorTexts[0]!])).toBe(true);
+    // Two due phrases warm up the lesson; a third waits for a later one.
+    expect(segments.filter((segment) => segment.phase === "warmup" && segment.speaker !== "teacher").map((segment) => segment.text))
+      .toEqual(priorTexts.slice(0, 2));
+    expect(priorReviewsAreIntroduced(segments, priorTexts.slice(0, 2))).toBe(true);
     const introductions = segments
       .filter((segment) => segment.speaker === "teacher" && /remember|recall|previous lesson|earlier lesson|today's conversation/i.test(segment.text))
       .map((segment) => segment.text.trim().toLocaleLowerCase());
@@ -573,12 +601,12 @@ describe("model shaping", () => {
     expect(segments[fresh - 1]?.text.toLowerCase()).toContain("where is the hotel");
     expect(segments[fresh - 2]).toMatchObject({ kind: "example", text: "Wo ist das Hotel?" });
     expect(segments[fresh - 3]).toMatchObject({ kind: "explanation", speaker: "teacher" });
-    const role = segments.findIndex((segment) => segment.phase === "roleplay" && segment.text === "Geradeaus.");
-    expect(segments[role - 1]?.text).toBe("Lukas asks you: Where is the station. Tell him: Straight ahead.");
-    expect(segments[role - 1]?.pauseAfterMs).toBeGreaterThan(0);
-    expect(segments[role - 2]?.text).toBe("Wo ist der Bahnhof?");
-    expect(segments[role]).toMatchObject({ speaker: "speakerB", text: "Geradeaus." });
-    expect(segments[role]?.text).not.toBe(segments[role - 2]?.text);
+    // The learner takes one part of the conversation; the other part is played between their lines.
+    const intro = segments.findIndex((segment) => segment.phase === "roleplay" && segment.speaker === "teacher" && !segment.pauseAfterMs);
+    expect(segments[intro]?.text).toMatch(/^Now you play (Lukas|Anna)\./);
+    const roleplay = segments.slice(intro + 1, -1);
+    expect(roleplay.filter((segment) => segment.kind === "dialogue").length).toBe(2);
+    expect(roleplay.filter((segment) => segment.kind === "drill" && segment.speaker !== "teacher").length).toBe(2);
     const recalls = segments.filter((segment) => segment.phase === "review" && segment.pauseAfterMs);
     expect(recalls.length).toBeGreaterThan(0);
     expect(recalls.every((segment) => {
@@ -593,7 +621,9 @@ describe("model shaping", () => {
       if (!prompt.pauseAfterMs || prompt.kind !== "drill") continue;
       const answer = segments[index + 1]!;
       expect(prompt.speaker).toBe("teacher");
-      expect(prompt.pauseAfterMs).toBe(speakingPauseMs(answer.text, answer.language) + 1_000);
+      // An echo of what was just heard gets no extra thinking time.
+      const thinking = prompt.phase === "buildup" ? 0 : 1_000;
+      expect(prompt.pauseAfterMs).toBe(speakingPauseMs(answer.text, answer.language) + thinking);
       const fromEarlierLesson = priorTexts.includes(answer.text);
       if (fromEarlierLesson) {
         expect(segments.slice(0, index).some((segment) => segment.kind === "example" && segment.text === answer.text)).toBe(false);

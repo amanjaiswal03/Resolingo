@@ -16,8 +16,11 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("Ordering at a bakery");
     expect(prompt).toContain("One teacher");
     expect(prompt).toContain("no second speaker");
-    expect(prompt).toContain("Do not review phrases from earlier lessons");
-    expect(prompt).toContain("at most 5 drills");
+    expect(prompt).toContain("Give 8 drills");
+    expect(prompt).toContain("breakdown is 2 or 3 short steps");
+    expect(prompt).toContain("recombinations has 2 items");
+    expect(prompt).toContain("about six minutes");
+    expect(prompt).not.toContain("last conversation");
     expect(prompt).toContain("you, to a friend");
     expect(prompt).toContain("one specific difference");
     expect(prompt).toContain("One practical caveat");
@@ -34,13 +37,53 @@ describe("lesson prompts", () => {
       level: "A2",
       recentTopics: [],
     });
-    expect(prompt).toContain("at most 3 distinct useful lines");
+    expect(prompt).toContain("phrases has one entry for every line");
     expect(prompt).toContain("speak is 4 to 6");
-    expect(prompt).toContain("realistic conversation");
-    expect(prompt).toContain("at most 4 turns");
-    expect(prompt).toContain("Leave recombinations empty");
-    expect(prompt).toContain("Keep earlier lessons out of the dialogue");
+    expect(prompt).toContain("complete, realistic conversation of 4 or 5 turns");
+    expect(prompt).toContain("never ends on an open question");
+    expect(prompt).toContain("at most 13 words per turn");
+    expect(prompt).toContain("Every line of four or more words has chunks");
+    expect(prompt).toContain("Include one recombination");
+    expect(prompt).toContain("no earlier phrases yet");
+    expect(prompt).not.toContain("grammarLink with line");
     expect(prompt).toContain("closing is one short, calm, matter-of-fact wrap-up");
+  });
+
+  it("builds a conversation on the last grammar point and skips what the learner knows", () => {
+    const prompt = lessonPrompt({
+      type: "conversation",
+      nativeLanguage: languageById["en-US"],
+      targetLanguage: languageById["de-DE"],
+      level: "A2",
+      recentTopics: [],
+      learner: {
+        known: [{ text: "Einen Kaffee, bitte.", translation: "A coffee, please." }],
+        lastGrammar: { ruleId: "de-modals", title: "Modal verbs", examples: [{ text: "Ich muss arbeiten.", translation: "I have to work." }] },
+      },
+    });
+    expect(prompt).toContain("\"Einen Kaffee, bitte.\" (A coffee, please.)");
+    expect(prompt).toContain("add known: true");
+    expect(prompt).toContain("At least three turns must be new");
+    expect(prompt).toContain("last grammar lesson taught: Modal verbs");
+    expect(prompt).toContain("\"Ich muss arbeiten.\" (I have to work.)");
+    expect(prompt).toContain("grammarLink with line");
+  });
+
+  it("builds a grammar lesson from the scene of the last conversation", () => {
+    const prompt = lessonPrompt({
+      type: "grammar",
+      nativeLanguage: languageById["en-US"],
+      targetLanguage: languageById["de-DE"],
+      level: "A2",
+      recentTopics: [],
+      learner: {
+        known: [],
+        lastConversation: { title: "Borrowing a drill", topic: "Asking a neighbour", lines: [{ text: "Kann ich deine Bohrmaschine ausleihen?", translation: "Can I borrow your drill?" }] },
+      },
+    });
+    expect(prompt).toContain("last conversation was \"Borrowing a drill\"");
+    expect(prompt).toContain("Kann ich deine Bohrmaschine ausleihen?");
+    expect(prompt).toContain("Write bridge");
   });
 
   it("keeps a phrase lesson on the learner's sentence", () => {

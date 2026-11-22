@@ -12,3 +12,4 @@ export * from "./segment.js";
 export * from "./speakers.js";
 export * from "./teaching.js";
 export * from "./speaking-timing.js";
+export * from "./learner-context.js";

@@ -1,6 +1,6 @@
 # Resolingo
 
-Resolingo is a focused daily language-learning app for iOS and Android. A learner chooses **Conversation** or **Grammar** and the backend generates a fresh 3–5 minute lesson with synchronized audio. There are no levels, scenarios, streaks, ads, credits, or vocabulary/SRS systems.
+Resolingo is a focused daily language-learning app for iOS and Android. A learner chooses **Conversation** or **Grammar** and the backend generates a fresh 5–8 minute lesson with synchronized audio. There are no levels, scenarios, streaks, ads, credits, or vocabulary/SRS systems.
 
 ## What is implemented
 

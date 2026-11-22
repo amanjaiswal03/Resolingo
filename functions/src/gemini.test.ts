@@ -47,8 +47,9 @@ describe("Gemini lesson generation", () => {
     expect(config.responseMimeType).toBe("application/json");
     expect(config.systemInstruction).toContain("speak has 4 to 6 conversational recall cues");
     expect(config.systemInstruction).toContain("echo is 4 different brief");
-    expect(config.systemInstruction).toContain("provided level limits");
-    expect(config.systemInstruction).toContain("highest-value lines");
+    expect(config.systemInstruction).toContain("four or five turns");
+    expect(config.systemInstruction).toContain("The learner practises every turn");
+    expect(config.systemInstruction).toContain("Pimsleur method");
     expect(config.systemInstruction).toContain("[[lang:BCP-47]]");
     expect(config.systemInstruction).toContain("speakerNames");
     expect(config.responseJsonSchema).toBeUndefined();
@@ -112,7 +113,7 @@ describe("Gemini lesson generation", () => {
     ]);
     await expect(generateLessonContent(input, model)).resolves.toMatchObject({ topic: "Asking for directions" });
     expect(model.contents[0]).toContain("at most 10 words per turn");
-    expect(model.contents[0]).toContain("at most 2 distinct useful lines");
+    expect(model.contents[0]).toContain("phrases has one entry for every line");
     expect(model.contents[1]).toContain("REPAIR");
   });
 
@@ -157,7 +158,7 @@ describe("Gemini lesson generation", () => {
     expect(model.contents).toHaveLength(1);
   });
 
-  it("shapes a grammar lesson as one teacher and names the next unused point", async () => {
+  it("shapes a grammar lesson as one teacher, names the next unused point, and warms up with a due phrase", async () => {
     const model = client([{ text: JSON.stringify({
       title: "Sein in the present",
       summary: "Say who someone is with the present tense of sein.",
@@ -187,9 +188,9 @@ describe("Gemini lesson generation", () => {
     expect(result.topic).toBe("Present tense of haben");
     expect(result.ruleId).toBe("de-haben");
     expect(result.segments.every((segment) => segment.speaker === "teacher")).toBe(true);
-    expect(result.segments.some((segment) => segment.text.includes("Danke") || segment.phase === "warmup")).toBe(false);
+    expect(result.segments.filter((segment) => segment.phase === "warmup" && segment.language === "de-DE").map((segment) => segment.text))
+      .toEqual(["Danke."]);
     expect(model.contents[0]).toContain("Present tense of haben");
-    expect(model.contents[0]).toContain("Do not review phrases from earlier lessons");
     expect(model.contents[0]).toContain("no second speaker");
     expect(lessonGenerationConfig("grammar").systemInstruction).not.toContain("lines is an array of 4 to 6");
   });
