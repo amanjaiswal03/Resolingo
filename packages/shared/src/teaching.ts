@@ -228,9 +228,93 @@ const ENDONYM: Record<LanguageId, string> = {
   "zh-TW": "中文",
 };
 
-/** The target language's own name, for a teaching line that is not in English. */
+/** The target language's own name, used when Intl.DisplayNames is missing. */
 export function languageEndonym(language: LanguageId): string {
   return ENDONYM[language];
+}
+
+/**
+ * What the learner calls the target language. Node 22 resolves this with
+ * Intl.DisplayNames. The language subtag is used so Spanish is "espagnol",
+ * not "espagnol d'Espagne".
+ */
+export function languageName(native: LanguageId, target: LanguageId): string {
+  const code = target.split("-")[0] || target;
+  const DisplayNames = typeof Intl === "undefined" ? undefined : Intl.DisplayNames;
+  if (typeof DisplayNames === "function") {
+    try {
+      const name = new DisplayNames([native], { type: "language" }).of(code);
+      if (name && name.toLocaleLowerCase(native) !== code.toLocaleLowerCase(native)) return name;
+    } catch {
+      // Fall through to the endonym.
+    }
+  }
+  return languageEndonym(target);
+}
+
+const LEADING_ARTICLE = /^(?:des|du|de la|de l['’]|les|le|la|l['’]|un|une|unos|unas|el|los|las|uno|una|dei|degli|delle|dello|della|dell['’]|il|lo|i|gli|die|der|das|den|dem|ein|eine|einer|einem|einen|a|an|the)\b/iu;
+
+const ARTICLE = "des|du|de la|de l['’]|les|le|la|l['’]|un|une|unos|unas|el|los|las|uno|una|dei|degli|delle|dello|della|dell['’]|il|lo|i|gli|die|der|das|den|dem|ein|eine|einer|einem|einen|a|an|the";
+
+/** The slot plus the article that sits on it in the learner's sentence. */
+export function withArticle(slot: string, sentence: string): string {
+  const trimmed = slot.trim();
+  if (!trimmed || LEADING_ARTICLE.test(trimmed) || !sentence.trim()) return trimmed;
+  const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const found = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "iu").exec(sentence);
+  if (!found || found.index === undefined) return trimmed;
+  const before = sentence.slice(0, found.index);
+  const article = new RegExp(`(${ARTICLE})\\s+$`, "iu").exec(before);
+  if (!article?.[1]) return trimmed;
+  return `${article[1]} ${found[0]}`.replace(/\s+/gu, " ");
+}
+
+/** Join a preposition to a gloss that already has its article. */
+export function smoothCue(text: string, language: LanguageId): string {
+  if (language.startsWith("fr")) {
+    return text
+      .replace(/\bde de la\b/giu, "de la")
+      .replace(/\bde de l([’'])/giu, "de l$1")
+      .replace(/\bde des\b/giu, "des")
+      .replace(/\bde du\b/giu, "du")
+      .replace(/\bde les\b/giu, "des")
+      .replace(/\bde le\b/giu, "du")
+      .replace(/\bà les\b/giu, "aux")
+      .replace(/\bà le\b/giu, "au");
+  }
+  if (language.startsWith("es")) {
+    return text.replace(/\bde el\b/giu, "del").replace(/\ba el\b/giu, "al");
+  }
+  if (language.startsWith("it")) {
+    return text
+      .replace(/\bdi dell([’'])/giu, "dell$1")
+      .replace(/\bdi dello\b/giu, "dello")
+      .replace(/\bdi della\b/giu, "della")
+      .replace(/\bdi degli\b/giu, "degli")
+      .replace(/\bdi delle\b/giu, "delle")
+      .replace(/\bdi dei\b/giu, "dei")
+      .replace(/\bdi del\b/giu, "del")
+      .replace(/\bdi il\b/giu, "del")
+      .replace(/\bdi lo\b/giu, "dello")
+      .replace(/\bdi la\b/giu, "della")
+      .replace(/\bdi i\b/giu, "dei")
+      .replace(/\bdi gli\b/giu, "degli")
+      .replace(/\bdi le\b/giu, "delle")
+      .replace(/\bda dell([’'])/giu, "dall$1")
+      .replace(/\bda dello\b/giu, "dallo")
+      .replace(/\bda della\b/giu, "dalla")
+      .replace(/\bda degli\b/giu, "dagli")
+      .replace(/\bda delle\b/giu, "dalle")
+      .replace(/\bda dei\b/giu, "dai")
+      .replace(/\bda del\b/giu, "dal")
+      .replace(/\bda il\b/giu, "dal")
+      .replace(/\bda lo\b/giu, "dallo")
+      .replace(/\bda la\b/giu, "dalla")
+      .replace(/\bda i\b/giu, "dai")
+      .replace(/\bda gli\b/giu, "dagli")
+      .replace(/\bda le\b/giu, "dalle");
+  }
+  return text;
 }
 
 export function isEnglish(language: LanguageId): boolean {

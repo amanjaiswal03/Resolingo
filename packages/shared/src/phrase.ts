@@ -1,17 +1,17 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel, LessonSegment } from "./schemas.js";
 import { MAX_LESSON_SEGMENTS } from "./schemas.js";
-import { languageById } from "./languages.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
 import { REVIEW_GAPS } from "./pimsleur.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 import { normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
 import {
   glossSubject,
-  isEnglish,
   isGlossLine,
-  languageEndonym,
+  languageName,
   line,
+  smoothCue,
+  withArticle,
   situationFlags,
   stripSpeakPrefix,
   template,
@@ -285,20 +285,22 @@ function formatCue(frame: string, translation: string, teaching: LanguageId, ext
   if (/[?？]\s*$/u.test(translation.trim()) && !/[?？]\s*$/u.test(cue)) {
     cue = cue.replace(/[.!]\s*$/u, "?");
   }
-  return cue;
+  return smoothCue(cue, teaching);
 }
 
 function produceCues(translation: string, teaching: LanguageId): string[] {
   return SPEAK_KEYS.map((key) => formatCue(template(teaching, key), translation, teaching));
 }
 
-function swapCues(swap: PhraseSwap, teaching: LanguageId): string[] {
+function swapCues(swap: PhraseSwap, teaching: LanguageId, nativeText: string): string[] {
   const now = template(teaching, "nowWord");
+  const from = withArticle(swap.from, nativeText);
+  const to = withArticle(swap.to, swap.translation);
   return SWAP_KEYS.map((key) => {
     const frame = key === "swapInstead" && swap.to.localeCompare(now, teaching, { sensitivity: "accent" }) === 0
       ? template(teaching, "swapBare")
       : template(teaching, key);
-    return formatCue(frame, swap.translation, teaching, { from: swap.from, to: swap.to });
+    return formatCue(frame, swap.translation, teaching, { from, to });
   });
 }
 
@@ -475,10 +477,10 @@ export function phraseAnswersStayVaried(segments: readonly LessonSegment[], lang
   return true;
 }
 
-function introFor(context: PhraseLessonContext, targetLabel: string): string {
+function introFor(context: PhraseLessonContext): string {
   const meaning = meaningOf(context.nativeText);
   const language = context.nativeLanguage;
-  const named = isEnglish(language) ? targetLabel : languageEndonym(context.targetLanguage);
+  const named = languageName(language, context.targetLanguage);
   if (context.inputLanguage === "target") {
     return line(language, "already", { language: named, meaning });
   }
@@ -624,7 +626,7 @@ export function shapePhraseLesson(
       kind: "swap" as const,
       answer: swap.answer,
       translation: swap.translation,
-      cues: swapCues(swap, context.nativeLanguage),
+      cues: swapCues(swap, context.nativeLanguage, context.nativeText),
       focus: swap.focus,
       focusTranslation: swap.focusTranslation,
       ...(swap.usage ? { usage: swap.usage } : {}),
@@ -711,9 +713,8 @@ export function shapePhraseLesson(
     ask({ answer: word, translation, cues: produceCues(translation, context.nativeLanguage) }, "focus", 1);
   };
 
-  const targetLabel = languageById[context.targetLanguage].label;
   const teacherName = normalizeSpeakerNames(source.speakerNames).teacher;
-  push({ kind: "narration", phase: "intro", language: context.nativeLanguage, text: introFor(context, targetLabel), delivery: "warm" });
+  push({ kind: "narration", phase: "intro", language: context.nativeLanguage, text: introFor(context), delivery: "warm" });
   push({ kind: "narration", phase: "hook", language: context.nativeLanguage, text: line(context.nativeLanguage, "listenBuild"), delivery: "warm" });
   push({
     kind: "example",
@@ -813,7 +814,16 @@ export function shapePhraseLesson(
   push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: core, translation: meaning, delivery: "clear" });
   const swapLine = swaps[0];
   if (swapLine) {
-    push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: line(context.nativeLanguage, "toChange", { from: swapLine.from, to: swapLine.to }), delivery: "clear" });
+    push({
+      kind: "recap",
+      phase: "summary",
+      language: context.nativeLanguage,
+      text: smoothCue(line(context.nativeLanguage, "toChange", {
+        from: withArticle(swapLine.from, context.nativeText),
+        to: withArticle(swapLine.to, swapLine.translation),
+      }), context.nativeLanguage),
+      delivery: "clear",
+    });
     push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: swapLine.answer, translation: meaningOf(swapLine.translation), delivery: "clear" });
   }
   const clerk = chosenSituations.find((item) => situationFlags(item.setup, context.nativeLanguage).clerk);

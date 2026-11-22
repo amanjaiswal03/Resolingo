@@ -33,7 +33,7 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "friendUse": "Bei einem Freund nimm den Satz für „{meaning}“.",
     "cameWith": "Der Satz, mit dem du gekommen bist, heißt „{meaning}“.",
     "wantedMeans": "Der Satz, den du wolltest, ist der für „{meaning}“.",
-    "toChange": "Um von {from} zu {to} zu wechseln, sagst du den neuen Satz so.",
+    "toChange": "Um {from} durch {to} zu ersetzen, sagst du den neuen Satz so.",
     "clerkPolite": "Beim Verkäufer heißt die höfliche Form „{meaning}“, und sie klingt so.",
     "formalMeans": "Eine förmlichere Art, es zu sagen, heißt „{meaning}“, und sie klingt so.",
     "anotherMeans": "Eine andere Art, es zu sagen, heißt „{meaning}“, und sie klingt so.",

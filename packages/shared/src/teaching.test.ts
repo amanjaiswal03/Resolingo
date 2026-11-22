@@ -8,11 +8,14 @@ import {
 import { shapePhraseLesson, type PhraseLessonContext } from "./phrase.js";
 import {
   glossSubject,
+  languageName,
   line,
   missingTeachingLines,
+  smoothCue,
   speakPrefix,
   stopwords,
   stripSpeakPrefix,
+  withArticle,
 } from "./teaching.js";
 
 describe("teaching lines", () => {
@@ -37,6 +40,26 @@ describe("teaching lines", () => {
     ], "tr-TR", "de-DE");
     expect(speechSpans(segments[1]!.text, "tr-TR").map((span) => span.text).join("")).toContain("Bahnhof");
     expect(segments[1]!.text).not.toContain("[[lang:de-DE]]İçin");
+  });
+
+  it("names the target language in the learner's language and keeps the article on a swapped chunk", () => {
+    expect(languageName("fr-FR", "es-ES")).toBe("espagnol");
+    expect(languageName("de-DE", "es-ES")).toBe("Spanisch");
+    expect(languageName("ja-JP", "es-ES")).toBe("スペイン語");
+    expect(languageName("en-US", "de-DE")).toBe("German");
+    const frenchFrom = withArticle("chaussures", "J'ai besoin d'acheter des chaussures");
+    expect(frenchFrom).toBe("des chaussures");
+    expect(smoothCue(line("fr-FR", "swapInstead", { from: frenchFrom, to: "une veste", translation: "une veste" }), "fr-FR")).toContain("à la place des chaussures");
+    expect(smoothCue(line("fr-FR", "swapThis", { from: frenchFrom, to: "des billets", translation: "des billets" }), "fr-FR")).toContain("pas des chaussures");
+    const germanFrom = withArticle("Schuhe", "Ich muss die Schuhe kaufen");
+    expect(line("de-DE", "swapInstead", { from: germanFrom, to: "eine Jacke", translation: "eine Jacke" })).toContain("statt die Schuhe");
+    expect(line("de-DE", "swapThis", { from: germanFrom, to: "eine Jacke", translation: "eine Jacke" })).toContain("nicht die Schuhe");
+    const spanishFrom = withArticle("zapatos", "Necesito comprar unos zapatos");
+    expect(line("es-ES", "swapInstead", { from: spanishFrom, to: "una chaqueta", translation: "una chaqueta" })).toContain("en vez de unos zapatos");
+    expect(smoothCue(line("es-ES", "swapInstead", { from: withArticle("hotel", "¿Dónde está el hotel?"), to: "el café", translation: "el café" }), "es-ES")).toContain("en vez del hotel");
+    const italianFrom = withArticle("scarpe", "Ho bisogno di comprare delle scarpe");
+    expect(smoothCue(line("it-IT", "swapInstead", { from: italianFrom, to: "una giacca", translation: "una giacca" }), "it-IT")).toContain("invece delle scarpe");
+    expect(smoothCue(line("it-IT", "swapThis", { from: italianFrom, to: "una giacca", translation: "una giacca" }), "it-IT")).toContain("non delle scarpe");
   });
 
   it("names the address from the native language, not from the English word you", () => {
@@ -80,7 +103,10 @@ describe("native teaching in phrase and grammar lessons", () => {
     const native = result.lesson.segments.filter((segment) => segment.language === "fr-FR");
     expect(native.length).toBeGreaterThan(5);
     expect(native.some((segment) => segment.text.includes("How would you say"))).toBe(false);
-    expect(result.lesson.segments[0]?.text).toContain("en español");
+    expect(result.lesson.segments[0]?.text).toContain("en espagnol");
+    expect(result.lesson.segments[0]?.text).not.toContain("español");
+    expect(result.lesson.segments.some((segment) => segment.text.includes("à la place des chaussures"))).toBe(true);
+    expect(result.lesson.segments.some((segment) => segment.text.includes("pas des chaussures"))).toBe(true);
     expect(native.some((segment) => segment.text.includes("Comment dirais-tu"))).toBe(true);
     expect(result.lesson.segments.some((segment) => segment.language === "es-ES" && segment.text.includes("zapatos"))).toBe(true);
   });
