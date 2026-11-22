@@ -19,6 +19,8 @@ const ARTICLES: Record<string, readonly string[]> = {
 /** Correct at about 75%. Close is the band just under that. */
 export const MATCH_SCORE = 0.75;
 export const CLOSE_SCORE = 0.55;
+/** Below this, the microphone heard no voice. Same floor as the native level meter. */
+export const NO_VOICE_SECONDS = 0.045;
 
 /**
  * A recognizer can echo contextualStrings without the learner saying them.
@@ -73,6 +75,10 @@ export function decideAttempt(input: {
   confidenceKnown: boolean;
   wasQuiet: boolean;
 }): { result: VoiceResult; clip: FeedbackClip } {
+  // No voice is a skip, even if the recognizer echoed the hint. It is not a miss.
+  if (input.audibleSeconds < NO_VOICE_SECONDS) {
+    return { result: { verdict: "skipped" }, clip: "skipped" };
+  }
   const keep = (text: string | undefined) => {
     const heard = text?.trim() ?? "";
     if (!heard) return "";

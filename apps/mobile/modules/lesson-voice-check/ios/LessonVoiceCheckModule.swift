@@ -704,18 +704,21 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
 
   private func finish(_ capture: Capture, canTranscribe: Bool) {
     active = nil
-    let hasTranscript = capture.best?.formattedString.isEmpty == false
-    if canTranscribe && (capture.level.hasVoiceActivity || hasTranscript) {
+    if !capture.level.hasVoiceActivity {
+      let window = capture.window
+      let rate = playbackRate()
+      capture.closeMic()
+      capture.cancelRecognition()
+      restoreSpeakingRate()
+      onWindow?(window.id, capture.id.uuidString, .skipped)
+      continueAfterPause(endSeconds: window.endSeconds, rate: rate)
+      return
+    }
+    if canTranscribe {
       holdForFeedback(capture.window, captureId: capture.id)
     }
     releaseCapture(capture)
     restoreSpeakingRate()
-    if capture.level.wasQuiet && !hasTranscript {
-      capture.cancelRecognition()
-      onWindow?(capture.window.id, capture.id.uuidString, .skipped)
-      if feedbackBreak?.id == capture.id { endFeedback(resume: true) }
-      return
-    }
     guard canTranscribe else {
       capture.cancelRecognition()
       onWindow?(capture.window.id, capture.id.uuidString, .unclear)
@@ -919,17 +922,32 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     previousTime = nil
     previousUptime = nil
     onFeedback?(false)
-    guard resume, !interrupted, !reachedEnd, let player else { return }
-    // The pause is baked silence. After the line, continue at its end instead of waiting it out.
-    let resumeAt = max(player.currentTime().seconds, previous.pauseEnd)
+    guard resume else { return }
+    continueAfterPause(endSeconds: previous.pauseEnd, rate: previous.rate)
+  }
+
+  private func playbackRate() -> Float {
+    if let speakingRate, let player, abs(player.rate - speakingRate.duringPause) < 0.01 {
+      return speakingRate.normal
+    }
+    return max(player?.rate ?? 1, 0.12)
+  }
+
+  /// Resume at the end of the baked pause. Same rule as resume-after-feedback.ts.
+  private func continueAfterPause(endSeconds: Double, rate: Float) {
+    guard !interrupted, !reachedEnd, let player else { return }
+    let current = player.currentTime().seconds
+    let resumeAt = current.isFinite ? max(current, endSeconds) : endSeconds
     ignoreJumpsUntil = ProcessInfo.processInfo.systemUptime + 1
+    previousTime = nil
+    previousUptime = nil
     let target = CMTime(seconds: max(0, resumeAt), preferredTimescale: 1_000)
     player.seek(to: target, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
       DispatchQueue.main.async {
         guard let self, !self.interrupted, !self.reachedEnd else { return }
         self.previousTime = self.player?.currentTime().seconds
         self.previousUptime = ProcessInfo.processInfo.systemUptime
-        self.player?.playImmediately(atRate: previous.rate)
+        self.player?.playImmediately(atRate: rate)
       }
     }
   }
