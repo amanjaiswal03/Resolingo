@@ -23,14 +23,16 @@ type Props = {
   state: "off" | "starting" | "on";
   available: boolean;
   recording: boolean;
+  partial?: string;
   results: Record<string, VoiceResult>;
   onToggle: () => void;
+  onSkip?: () => void;
   onPauseLesson: () => void;
   onPlayInLesson: (segmentId: string) => void;
   onRetry: (segmentId: string, onReady: () => void) => void;
 };
 
-export function SpeakingPractice({ plan, state, available, recording, results, onToggle, onPauseLesson, onPlayInLesson, onRetry }: Props) {
+export function SpeakingPractice({ plan, state, available, recording, partial, results, onToggle, onSkip, onPauseLesson, onPlayInLesson, onRetry }: Props) {
   const theme = useTheme();
   const [showRecap, setShowRecap] = useState(false);
   const rows = useMemo(() => plan.windows.flatMap((prompt) => {
@@ -57,8 +59,14 @@ export function SpeakingPractice({ plan, state, available, recording, results, o
           <Body muted style={styles.small}>
             {recording ? "Listening now" : enabled ? "On · Speak at the tone" : starting ? "Setting up speech…" : "Off · Optional speaking practice"}
           </Body>
+          {recording && partial ? <Body style={styles.small} numberOfLines={2}>{partial}</Body> : null}
         </View>
       </Pressable>
+      {recording && onSkip ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Skip this answer" onPress={onSkip} style={styles.reviewButton}>
+          <Body style={[styles.controlLabel, { color: theme.primary }]}>Skip</Body>
+        </Pressable>
+      ) : null}
       {rows.length ? (
         <Pressable accessibilityRole="button" accessibilityLabel={`Review ${rows.length} speaking prompts`} onPress={() => setShowRecap(true)} style={styles.reviewButton}>
           <Body style={[styles.controlLabel, { color: theme.primary }]}>Review</Body>
