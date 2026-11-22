@@ -7,9 +7,19 @@ import { Alert, Platform } from "react-native";
 import { api, type LessonVoiceClips } from "@/services/api";
 import { clearAttemptsFrom, reduceAnswerAttempts, type AnswerAttemptEvent } from "./answer-attempts";
 import type { AnswerPlan, AnswerWindow } from "./answer-windows";
-import type { VoiceResult, VoiceVerdict } from "./phrase-match";
+import { decideAttempt, type VoiceResult, type VoiceVerdict } from "./phrase-match";
 
 type AnswerEvent = { sessionId: string; id: string; captureId?: string; verdict: VoiceVerdict; heard?: string };
+type GradeEvent = {
+  sessionId: string;
+  id: string;
+  captureId?: string;
+  heard?: string;
+  alternate?: string;
+  audibleSeconds?: number;
+  confidenceKnown?: boolean;
+  wasQuiet?: boolean;
+};
 type WindowEvent = {
   sessionId: string;
   id: string;
@@ -19,6 +29,7 @@ type WindowEvent = {
 };
 type AnswerEvents = {
   onAnswer: (event: AnswerEvent) => void;
+  onGrade: (event: GradeEvent) => void;
   onWindow: (event: WindowEvent) => void;
   onFeedback: (event: { sessionId: string; playing: boolean }) => void;
   onStopped: (event: { sessionId: string }) => void;
@@ -33,6 +44,7 @@ type NativeChecks = InstanceType<typeof NativeModule<AnswerEvents>> & {
   cancelFeedback?(id: string, resume: boolean): Promise<void>;
   abandon?(id: string): Promise<void>;
   stop(id: string): Promise<void>;
+  speak?(sessionId: string, captureId: string, verdict: string): Promise<void>;
 };
 
 const native = Platform.OS === "ios" ? requireOptionalNativeModule<NativeChecks>("LessonVoiceCheck") : null;
@@ -67,6 +79,24 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
       resultsRef.current = next.results;
       setResults(next.results);
     };
+    const grade = native?.addListener("onGrade", (event) => {
+      if (session.current !== event.sessionId || !event.captureId) return;
+      const plan = planRef.current;
+      const expected = plan?.windows.find(({ id }) => id === event.id)?.expected;
+      if (!plan || !expected) return;
+      clearPending(event.id);
+      const decision = decideAttempt({
+        expected,
+        heard: event.heard,
+        alternate: event.alternate,
+        language: plan.language,
+        audibleSeconds: event.audibleSeconds ?? 0,
+        confidenceKnown: event.confidenceKnown === true,
+        wasQuiet: event.wasQuiet === true,
+      });
+      apply({ type: "answer", id: event.id, captureId: event.captureId, result: decision.result });
+      void native?.speak?.(event.sessionId, event.captureId, decision.clip).catch(() => undefined);
+    });
     const subscription = native?.addListener("onAnswer", (event) => {
       if (session.current !== event.sessionId || !event.captureId) return;
       clearPending(event.id);
@@ -125,6 +155,7 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
     return () => {
       mounted.current = false;
       for (const timeout of pending.values()) clearTimeout(timeout);
+      grade?.remove();
       subscription?.remove();
       window?.remove();
       stopped?.remove();
