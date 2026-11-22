@@ -58,7 +58,7 @@ export const darkColors = {
 
 export type Palette = typeof lightColors;
 
-export function lessonAccent(colors: Pick<Palette, "brand" | "successFill" | "sky">, type: LessonType): string {
+export function lessonAccent(colors: { brand: string; successFill: string; sky: string }, type: LessonType): string {
   if (type === "grammar") return colors.successFill;
   if (type === "phrase") return colors.sky;
   return colors.brand;
@@ -71,7 +71,10 @@ export function contrastRatio(foreground: string, background: string): number {
 }
 
 export function hueDegrees(hex: string): number {
-  const [red, green, blue] = channels(hex).map((channel) => channel / 255);
+  const [redByte, greenByte, blueByte] = channels(hex);
+  const red = redByte / 255;
+  const green = greenByte / 255;
+  const blue = blueByte / 255;
   const max = Math.max(red, green, blue);
   const min = Math.min(red, green, blue);
   const delta = max - min;
@@ -83,11 +86,13 @@ export function hueDegrees(hex: string): number {
 }
 
 function relativeLuminance(hex: string): number {
-  const [red, green, blue] = channels(hex).map((channel) => {
-    const value = channel / 255;
-    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  const [red, green, blue] = channels(hex);
+  return 0.2126 * linearize(red) + 0.7152 * linearize(green) + 0.0722 * linearize(blue);
+}
+
+function linearize(channel: number): number {
+  const value = channel / 255;
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
 }
 
 function channels(hex: string): [number, number, number] {
