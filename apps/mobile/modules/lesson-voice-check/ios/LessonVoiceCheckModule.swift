@@ -707,7 +707,8 @@ private final class LessonVoiceCheck: NSObject, AVAudioPlayerDelegate {
     if !capture.level.hasVoiceActivity {
       let window = capture.window
       let rate = playbackRate()
-      capture.closeMic()
+      // Detach this pause from the shared engine. The engine itself stays up for the next prompt.
+      releaseCapture(capture)
       capture.cancelRecognition()
       restoreSpeakingRate()
       onWindow?(window.id, capture.id.uuidString, .skipped)
