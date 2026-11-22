@@ -88,7 +88,7 @@ export function decideAttempt(input: {
   if (grade.level === "unclear") {
     return input.wasQuiet
       ? { result: { verdict: "skipped" }, clip: "skipped" }
-      : { result: { verdict: "unclear", heard: grade.heard }, clip: "unclear" };
+      : { result: { verdict: "unclear", ...(grade.heard ? { heard: grade.heard } : {}) }, clip: "unclear" };
   }
   const verdict = grade.level === "matched" ? "recalled" : grade.level === "close" ? "compare" : "unclear";
   return { result: { verdict, ...(grade.heard ? { heard: grade.heard } : {}) }, clip: grade.clip };

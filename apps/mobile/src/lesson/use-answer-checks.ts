@@ -87,8 +87,8 @@ export function useAnswerChecks(player: AudioPlayer, lessonId: string, plan: Ans
       clearPending(event.id);
       const decision = decideAttempt({
         expected,
-        heard: event.heard,
-        alternate: event.alternate,
+        ...(event.heard ? { heard: event.heard } : {}),
+        ...(event.alternate ? { alternate: event.alternate } : {}),
         language: plan.language,
         audibleSeconds: event.audibleSeconds ?? 0,
         confidenceKnown: event.confidenceKnown === true,
