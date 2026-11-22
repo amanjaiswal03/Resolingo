@@ -5,6 +5,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Title } from "@/components/Typography";
 import { LessonRowDismiss, useLessonList } from "@/lessons/delete-lesson";
+import { showHowWouldYouSayLesson } from "@/features";
 import { calendarDateInZone, groupLessonsByDate } from "@/lessons/group-by-date";
 import { useSession } from "@/session/SessionProvider";
 
@@ -12,7 +13,10 @@ export default function HistoryScreen() {
   const { profile } = useSession();
   const { lessons, loading, error, closeOpenRow } = useLessonList();
   const today = calendarDateInZone(profile?.timezone ?? "UTC");
-  const ready = useMemo(() => lessons.filter((lesson) => lesson.status === "ready"), [lessons]);
+  const ready = useMemo(
+    () => lessons.filter((lesson) => lesson.status === "ready" && showHowWouldYouSayLesson(lesson.type)),
+    [lessons],
+  );
   const groups = useMemo(() => groupLessonsByDate(ready, today), [ready, today]);
   if (loading) return <LoadingScreen />;
   return (

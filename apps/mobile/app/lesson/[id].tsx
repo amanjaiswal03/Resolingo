@@ -6,6 +6,7 @@ import { Button } from "@/components/Button";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Title } from "@/components/Typography";
+import { HOW_WOULD_YOU_SAY_ENABLED } from "@/features";
 import { firstRouteParam, lessonExit, percentWidth } from "@/lesson/navigation";
 import { usePlayback } from "@/playback/PlaybackProvider";
 import { api } from "@/services/api";
@@ -52,7 +53,14 @@ export default function LessonScreen() {
     };
   }, [user, id]);
   useEffect(() => {
+    if (HOW_WOULD_YOU_SAY_ENABLED || lesson?.type !== "phrase" || handedOff.current) return;
+    handedOff.current = true;
+    if (lessonExit(router.canGoBack()) === "home") router.dismissTo("/(tabs)");
+    else router.replace("/(tabs)");
+  }, [lesson?.type, router]);
+  useEffect(() => {
     if (lesson?.status !== "ready" || !id || handedOff.current) return;
+    if (!HOW_WOULD_YOU_SAY_ENABLED && lesson.type === "phrase") return;
     handedOff.current = true;
     open(id, { expand: true });
     if (lessonExit(router.canGoBack()) === "home") router.dismissTo("/(tabs)");
@@ -67,7 +75,7 @@ export default function LessonScreen() {
       </Screen>
     );
   }
-  if (!lesson || !user || lesson.status === "ready") return <LoadingScreen />;
+  if (!lesson || !user || lesson.status === "ready" || (!HOW_WOULD_YOU_SAY_ENABLED && lesson.type === "phrase")) return <LoadingScreen />;
   const retry = async () => {
     if (!id) return;
     setRetrying(true);

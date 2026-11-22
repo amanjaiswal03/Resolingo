@@ -9,6 +9,7 @@ import { LessonRow } from "@/components/LessonRow";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
+import { HOW_WOULD_YOU_SAY_ENABLED, showHowWouldYouSayLesson } from "@/features";
 import { dailyCapBlocksStart, dailyQuotaLabel, lessonsReadyToday } from "@/home/daily-quota";
 import { LessonRowDismiss, useLessonList } from "@/lessons/delete-lesson";
 import { percentWidth } from "@/lesson/navigation";
@@ -55,11 +56,12 @@ export default function HomeScreen() {
     recordedReady,
   ), [heldReadyDates, lessons, recordedReady, today]);
   const unlimited = profile?.unlimitedLessons === true;
-  const active = lessons.find((lesson) => ["queued", "generating_content", "synthesizing_audio"].includes(lesson.status));
-  const finished = useMemo(() => openedLessonsReady ? lessons
+  const visible = useMemo(() => lessons.filter((lesson) => showHowWouldYouSayLesson(lesson.type)), [lessons]);
+  const active = visible.find((lesson) => ["queued", "generating_content", "synthesizing_audio"].includes(lesson.status));
+  const finished = useMemo(() => openedLessonsReady ? visible
     .filter((lesson) => lesson.status === "ready" && lesson.quotaDate === today && !openedLessonIds.has(lesson.id))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] : undefined, [lessons, openedLessonIds, openedLessonsReady, today]);
-  const recent = lessons.filter((lesson) => lesson.status === "ready" && lesson.id !== finished?.id).slice(0, 3);
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] : undefined, [openedLessonIds, openedLessonsReady, today, visible]);
+  const recent = visible.filter((lesson) => lesson.status === "ready" && lesson.id !== finished?.id).slice(0, 3);
   const startDisabled = Boolean(starting || active) || dailyCapBlocksStart(used, unlimited);
   const start = async (type: DailyLessonType) => {
     setStarting(type);
@@ -86,9 +88,11 @@ export default function HomeScreen() {
         <Pressable disabled={startDisabled} onPressIn={closeOpenRow} onPress={() => void start("grammar")} accessibilityRole="button" accessibilityLabel="Start a grammar lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
           <Card style={[styles.lessonCard, { backgroundColor: theme.mint }]}><Body style={styles.eyebrow}>GRAMMAR</Body><Title style={styles.dark}>Understand one useful pattern clearly.</Title><Body style={styles.darkMuted}>{starting === "grammar" ? "Starting…" : "8–12 minutes · One narrator"}</Body></Card>
         </Pressable>
-        <Pressable onPressIn={closeOpenRow} onPress={() => router.push("/say")} accessibilityRole="button" accessibilityLabel="How would you say">
-          <Card style={[styles.lessonCard, { backgroundColor: theme.coral }]}><Body style={styles.eyebrow}>HOW WOULD YOU SAY?</Body><Title style={styles.dark}>Ask for a sentence, then practice it.</Title><Body style={styles.darkMuted}>Type it · One narrator</Body></Card>
-        </Pressable>
+        {HOW_WOULD_YOU_SAY_ENABLED ? (
+          <Pressable onPressIn={closeOpenRow} onPress={() => router.push("/say")} accessibilityRole="button" accessibilityLabel="How would you say">
+            <Card style={[styles.lessonCard, { backgroundColor: theme.coral }]}><Body style={styles.eyebrow}>HOW WOULD YOU SAY?</Body><Title style={styles.dark}>Ask for a sentence, then practice it.</Title><Body style={styles.darkMuted}>Type it · One narrator</Body></Card>
+          </Pressable>
+        ) : null}
       </View>
       {recent.length ? <View style={styles.recent}><Heading>Recent lessons</Heading>{recent.map((lesson) => <LessonRow key={lesson.id} lesson={lesson} />)}</View> : null}
     </Screen>

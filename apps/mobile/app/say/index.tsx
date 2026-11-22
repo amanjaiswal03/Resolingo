@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
+import { HOW_WOULD_YOU_SAY_ENABLED } from "@/features";
 import { api } from "@/services/api";
 import { subscribePhrases } from "@/services/phrases";
 import { SPEECH_RECORDING } from "@/say/speech-recording";
@@ -42,6 +43,17 @@ function levelRatio(db: number | undefined): number {
 type Phase = "idle" | "listening" | "transcribing";
 
 export default function SayScreen() {
+  if (!HOW_WOULD_YOU_SAY_ENABLED) return <HiddenSay />;
+  return <SayLookup />;
+}
+
+function HiddenSay() {
+  const router = useRouter();
+  useEffect(() => { router.replace("/(tabs)"); }, [router]);
+  return null;
+}
+
+function SayLookup() {
   const { user, profile } = useSession();
   const router = useRouter();
   const theme = useTheme();
