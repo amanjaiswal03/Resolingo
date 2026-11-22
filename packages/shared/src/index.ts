@@ -9,4 +9,5 @@ export * from "./pimsleur.js";
 export * from "./review.js";
 export * from "./schemas.js";
 export * from "./speakers.js";
+export * from "./teaching.js";
 export * from "./speaking-timing.js";

@@ -154,7 +154,7 @@ function readTranslation(value: unknown, input: {
   }
   const note = clean(record.note);
   return {
-    phraseId: phraseIdFor(input.targetLanguage, input.level, input.text),
+    phraseId: phraseIdFor(input.targetLanguage, input.level, input.text, input.nativeLanguage),
     nativeText,
     translation,
     ...(transliteration ? { transliteration } : {}),

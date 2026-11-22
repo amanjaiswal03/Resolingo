@@ -1,4 +1,4 @@
-import { languageIds, type LanguageId } from "@resolingo/shared";
+import { languageIds, stripSpeakPrefix, type LanguageId } from "@resolingo/shared";
 import { PhraseTranslationError } from "./translate.js";
 
 /** Chirp 2 is in europe-west4, not the multi-region `eu` location. */
@@ -58,11 +58,11 @@ export function speechRecognizeRequest(input: {
   };
 }
 
-export function transcriptFromRecognize(response: SpeechRecognizeResponse): string {
-  return (response.results ?? [])
+export function transcriptFromRecognize(response: SpeechRecognizeResponse, language: LanguageId = "en-US"): string {
+  const joined = (response.results ?? [])
     .map((result) => result.alternatives?.[0]?.transcript ?? "")
-    .join(" ")
-    .replace(/^\s*how would you say\b[:\s]*/i, "")
+    .join(" ");
+  return stripSpeakPrefix(joined, language)
     .replace(/\s+/gu, " ")
     .trim()
     .slice(0, 280);
@@ -103,7 +103,7 @@ export async function transcribeWithSpeechToText(input: {
     language: input.nativeLanguage,
     audio,
   }));
-  const transcript = transcriptFromRecognize(response);
+  const transcript = transcriptFromRecognize(response, input.nativeLanguage);
   if (!/[\p{L}\p{N}]/u.test(transcript)) throw new PhraseTranslationError("silent");
   return transcript;
 }

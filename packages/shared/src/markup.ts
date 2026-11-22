@@ -1,4 +1,5 @@
 import { languageIds, type LanguageId } from "./languages.js";
+import { stopwords } from "./teaching.js";
 
 const TAG = /\[\[lang:([A-Za-z0-9-]+)\]\]|\[\[\/lang\]\]/g;
 
@@ -79,21 +80,18 @@ function foldPunctuation(spans: SpeechSpan[]): SpeechSpan[] {
   return folded;
 }
 
-const SHARED_WITH_ENGLISH = new Set(
-  "a an the to of in on is it be we he me my or and now can you how say for with from at as by if so am do no not but this that they she her him was are will wasn has have had its our your what when where who why all one two new old".split(" "),
-);
-
-function foldToken(value: string): string {
-  return value.normalize("NFC").toLocaleLowerCase("en-US");
+function foldToken(value: string, language: LanguageId): string {
+  return value.normalize("NFC").toLocaleLowerCase(language);
 }
 
 function letterTokens(text: string): string[] {
   return text.normalize("NFC").match(/\p{L}[\p{L}'’-]*|\p{N}+/gu) ?? [];
 }
 
-function distinctive(token: string, nativeWords: ReadonlySet<string>): boolean {
-  const folded = foldToken(token);
-  return folded.length >= 2 && !SHARED_WITH_ENGLISH.has(folded) && !nativeWords.has(folded);
+function distinctive(token: string, nativeWords: ReadonlySet<string>, nativeLanguage: LanguageId): boolean {
+  const folded = foldToken(token, nativeLanguage);
+  const stops = stopwords(nativeLanguage);
+  return folded.length >= 2 && !(stops?.has(folded)) && !nativeWords.has(folded);
 }
 
 function tagRanges(text: string): Array<{ start: number; end: number }> {
@@ -135,7 +133,7 @@ export function tagTargetLanguage(
   if (base === target || !text.trim() || vocabulary.length === 0) return text;
   const occupied = tagRanges(text);
   const phrases = [...new Set(vocabulary.map((item) => item.trim()).filter((item) => (
-    EDGE_AFFIX.test(item) || letterTokens(item).some((token) => distinctive(token, nativeWords))
+    EDGE_AFFIX.test(item) || letterTokens(item).some((token) => distinctive(token, nativeWords, base))
   )))]
     .sort((left, right) => right.length - left.length);
   const matches: Array<{ start: number; end: number }> = [];
@@ -154,7 +152,7 @@ export function tagTargetLanguage(
     const interior = match[1] ?? match[2] ?? "";
     const interiorEnd = interiorStart + interior.length;
     const tokens = letterTokens(interior);
-    if (tokens.length === 0 || !tokens.every((token) => distinctive(token, nativeWords))) continue;
+    if (tokens.length === 0 || !tokens.every((token) => distinctive(token, nativeWords, base))) continue;
     if (overlaps(interiorStart, interiorEnd, occupied)) continue;
     for (let index = matches.length - 1; index >= 0; index -= 1) {
       const item = matches[index]!;
@@ -181,12 +179,12 @@ export function tagTargetLanguage(
 
 type VoicedSegment = { language: LanguageId; text: string; translation?: string | undefined };
 
-function vocabularyOf(segments: readonly VoicedSegment[], target: LanguageId): { phrases: string[]; nativeWords: Set<string> } {
+function vocabularyOf(segments: readonly VoicedSegment[], target: LanguageId, nativeLanguage: LanguageId): { phrases: string[]; nativeWords: Set<string> } {
   const phrases: string[] = [];
   const nativeWords = new Set<string>();
   for (const segment of segments) {
     if (segment.translation) {
-      for (const token of letterTokens(lessonDisplayText(segment.translation))) nativeWords.add(foldToken(token));
+      for (const token of letterTokens(lessonDisplayText(segment.translation))) nativeWords.add(foldToken(token, nativeLanguage));
     }
     const shown = lessonDisplayText(segment.text);
     if (segment.language === target) phrases.push(shown);
@@ -210,12 +208,12 @@ export function untaggedTargetTokens(
   nativeWords: ReadonlySet<string>,
 ): string[] {
   if (base === target) return [];
-  const known = new Set(vocabulary.flatMap((phrase) => letterTokens(phrase).map(foldToken)));
+  const known = new Set(vocabulary.flatMap((phrase) => letterTokens(phrase).map((token) => foldToken(token, target))));
   const found: string[] = [];
   for (const span of speechSpans(text, base)) {
     if (span.language !== base) continue;
     for (const token of letterTokens(span.text)) {
-      if (!known.has(foldToken(token)) || !distinctive(token, nativeWords)) continue;
+      if (!known.has(foldToken(token, target)) || !distinctive(token, nativeWords, base)) continue;
       found.push(token);
     }
   }
@@ -232,7 +230,7 @@ export function applyTargetVoices<T extends VoicedSegment>(
   targetLanguage: LanguageId,
   additionalTerms: readonly string[] = [],
 ): { segments: T[]; leftover: string[] } {
-  const { phrases, nativeWords } = vocabularyOf(segments, targetLanguage);
+  const { phrases, nativeWords } = vocabularyOf(segments, targetLanguage, nativeLanguage);
   const vocabulary = [...phrases, ...additionalTerms];
   const leftover: string[] = [];
   const next = segments.map((segment) => {
