@@ -1,6 +1,5 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel, LessonSegment } from "./schemas.js";
-import { MAX_LESSON_SEGMENTS } from "./schemas.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
 import { isClitic, needsWordSegment, segmentWords, splitSentences } from "./segment.js";
 import { REVIEW_GAPS } from "./pimsleur.js";
@@ -18,6 +17,9 @@ import {
   template,
   type TeachingKey,
 } from "./teaching.js";
+
+/** Phrase lessons keep their earlier length. Conversation and grammar may use the full lesson cap. */
+const MAX_PHRASE_SEGMENTS = 120;
 
 /** Lookups kept on the profile. Older ones are deleted on the next save. */
 export const MAX_STORED_PHRASES = 100;
@@ -670,7 +672,7 @@ export function shapePhraseLesson(
     spoken.set(key, (spoken.get(key) ?? 0) + 1);
   };
   const push = (segment: Omit<LessonSegment, "id" | "speaker" | "delivery"> & { delivery?: LessonSegment["delivery"] }, pauseMs = 0): boolean => {
-    if (segments.length >= MAX_LESSON_SEGMENTS) return false;
+    if (segments.length >= MAX_PHRASE_SEGMENTS) return false;
     const text = repairMarkup(segment.text).trim();
     if (!text) return false;
     const previous = lessonDisplayText(segments.at(-1)?.text ?? "");
@@ -690,7 +692,7 @@ export function shapePhraseLesson(
     return true;
   };
   const ask = (drill: Pick<Drill, "answer" | "translation" | "cues" | "transliteration">, phase: string, salt: number): void => {
-    if (!canSay(drill.answer) || segments.length + 2 > MAX_LESSON_SEGMENTS - 8) return;
+    if (!canSay(drill.answer) || segments.length + 2 > MAX_PHRASE_SEGMENTS - 8) return;
     if (phase === "review" && heard(drill.answer) >= 3) return;
     const cue = takeCue(drill.cues, used, salt);
     if (!cue) return;

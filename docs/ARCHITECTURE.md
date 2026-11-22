@@ -25,6 +25,14 @@ flowchart LR
 
 The lesson is `queued` with `enqueuePending` until Cloud Tasks accepts the job. If acceptance never lands, the next lesson request and a one-minute sweep release `activeLessonId` after two minutes. An enqueue error rolls the quota reservation back in the same transaction. Any terminal provider or validation problem produces `failed`, a user-safe failure code, releases the reservation, and clears the active job. Transient task failures retry at the queue level. The transcript is committed before TTS begins; the complete manifest is published only after every segment exists. Speech defaults to Google WaveNet, then Standard. Set `TTS_VOICE_TIER` to `neural2` or `chirp3` only after a budget review. Lesson text uses Vertex AI `gemini-3.5-flash-lite` in the EU multi-region (`eu`), because that model is not available in `europe-west1`. The daily cap stays three ready lessons. List price checked 4 Nov 2026 is $0.30 per million input tokens and $2.50 per million output tokens, so text stays under about a dollar per active user per month at this cap. WaveNet TTS remains the larger Google bill.
 
+## How lessons build on each other
+
+Conversation and grammar lessons are about five to eight minutes. A conversation is four or five complete turns, and the learner practises every turn: a backward buildup for longer lines, a recall from the meaning, spaced reviews of earlier turns, and a closing role-play. A grammar lesson shows four examples, asks the learner to notice the pattern, explains it, breaks it into short steps, and drills it from guided to free with spaced recall.
+
+Before each lesson the worker loads `users/{uid}/reviewItems` (phrases from finished lessons) and `users/{uid}/learnerContext/{targetLanguage}` (the last grammar point and the last conversation scene). A conversation uses the last grammar point in at least one line and points it out. A grammar lesson builds its examples from the last conversation's scene. A dialogue line the learner already knows is acknowledged and played once instead of drilled. Both lesson types open with up to two due phrases from earlier lessons. `learnerContext` is written by the worker when a lesson is ready, has no client rule, and is removed with the rest of `users/{uid}` on account deletion.
+
+Longer lessons roughly double the generated text and the synthesized audio per lesson compared with the earlier three-to-five-minute format, so review the cost estimate under Generation state machine with that in mind.
+
 ## Trust boundary
 
 - The callable derives ownership from `request.auth.uid`; a UID is never accepted in request data.

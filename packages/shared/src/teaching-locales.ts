@@ -150,7 +150,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Wenn du das nächste Mal ein regelmäßiges Verb benutzt, fang mit dem Stamm an und häng die Endung laut an. So bleibt das Muster hängen.",
     "regularCheck0": "Welche Endung passt zu {du}, einem Freund?",
     "regularCheck1": "Welche Endung passt zu {ihr}, ihr alle?",
-    "regularCheck2": "Wenn du förmlich sprichst, welche Form von {machen} benutzt du?"
+    "regularCheck2": "Wenn du förmlich sprichst, welche Form von {machen} benutzt du?",
+    "known1": "Diesen Satz kennst du schon aus einer früheren Lektion.",
+    "known2": "Den hast du schon gelernt. Hör einfach zu.",
+    "known3": "Der hier ist dir aus einer früheren Lektion bekannt.",
+    "roleIntro": "Jetzt bist du {name}. Ich übernehme die andere Rolle. Antworte auf jeden Satz.",
+    "returnGrammar": "Gut. Jetzt zur Grammatik von heute."
   },
   "fr-FR": {
     "how": "Comment dirais-tu {translation} ?",
@@ -302,7 +307,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "La prochaine fois que tu utilises un verbe régulier, pars du radical et ajoute la terminaison à voix haute. C'est comme ça que le modèle reste.",
     "regularCheck0": "Quelle terminaison va avec {du}, un ami ?",
     "regularCheck1": "Quelle terminaison va avec {ihr}, vous tous ?",
-    "regularCheck2": "En parlant poliment, quelle forme de {machen} est-ce que tu utilises ?"
+    "regularCheck2": "En parlant poliment, quelle forme de {machen} est-ce que tu utilises ?",
+    "known1": "Tu connais déjà cette phrase d'une leçon précédente.",
+    "known2": "Tu l'as déjà apprise. Écoute simplement.",
+    "known3": "Celle-ci, tu la connais d'une leçon précédente.",
+    "roleIntro": "Maintenant, tu joues {name}. Je prends l'autre rôle. Réponds à chaque réplique.",
+    "returnGrammar": "Bien. Passons à la grammaire du jour."
   },
   "es-ES": {
     "how": "¿Cómo dirías {translation}?",
@@ -454,7 +464,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "La próxima vez que uses un verbo regular, empieza por la raíz y añade la terminación en voz alta. Así se te queda el patrón.",
     "regularCheck0": "¿Qué terminación va con {du}, un amigo?",
     "regularCheck1": "¿Qué terminación va con {ihr}, vosotros?",
-    "regularCheck2": "Hablando de forma formal, ¿qué forma de {machen} usas?"
+    "regularCheck2": "Hablando de forma formal, ¿qué forma de {machen} usas?",
+    "known1": "Esta ya la conoces de una lección anterior.",
+    "known2": "Esta frase ya la aprendiste. Solo escucha.",
+    "known3": "Esta te suena de una lección anterior.",
+    "roleIntro": "Ahora haces el papel de {name}. Yo hago el otro papel. Responde a cada frase.",
+    "returnGrammar": "Bien. Ahora, a la gramática de hoy."
   },
   "it-IT": {
     "how": "Come diresti {translation}?",
@@ -606,7 +621,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "La prossima volta che usi un verbo regolare, parti dalla radice e aggiungi la desinenza ad alta voce. È così che lo schema resta.",
     "regularCheck0": "Quale desinenza va con {du}, un amico?",
     "regularCheck1": "Quale desinenza va con {ihr}, voi tutti?",
-    "regularCheck2": "Parlando in modo formale, quale forma di {machen} usi?"
+    "regularCheck2": "Parlando in modo formale, quale forma di {machen} usi?",
+    "known1": "Questa la conosci già da una lezione precedente.",
+    "known2": "Questa frase l'hai già imparata. Ascolta e basta.",
+    "known3": "Questa ti è familiare da una lezione precedente.",
+    "roleIntro": "Ora fai la parte di {name}. Io faccio l'altra parte. Rispondi a ogni battuta.",
+    "returnGrammar": "Bene. Ora passiamo alla grammatica di oggi."
   },
   "pt-BR": {
     "how": "Como você diria {translation}?",
@@ -758,7 +778,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Da próxima vez que você usar um verbo regular, comece pelo radical e acrescente a terminação em voz alta. É assim que o padrão fica.",
     "regularCheck0": "Qual terminação combina com {du}, um amigo?",
     "regularCheck1": "Qual terminação combina com {ihr}, vocês todos?",
-    "regularCheck2": "Falando de forma formal, qual forma de {machen} você usa?"
+    "regularCheck2": "Falando de forma formal, qual forma de {machen} você usa?",
+    "known1": "Você já conhece esta de uma lição anterior.",
+    "known2": "Você já aprendeu esta frase. Só escute.",
+    "known3": "Esta você já conhece de uma lição anterior.",
+    "roleIntro": "Agora você faz o papel de {name}. Eu faço a outra parte. Responda a cada fala.",
+    "returnGrammar": "Legal. Agora vamos à gramática de hoje."
   },
   "pt-PT": {
     "how": "Como dirias {translation}?",
@@ -910,7 +935,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Da próxima vez que usares um verbo regular, começa no radical e acrescenta a terminação em voz alta. É assim que o padrão fica.",
     "regularCheck0": "Qual terminação corresponde a {du}, um amigo?",
     "regularCheck1": "Qual terminação corresponde a {ihr}, vocês todos?",
-    "regularCheck2": "A falar de forma formal, que forma de {machen} é que usas?"
+    "regularCheck2": "A falar de forma formal, que forma de {machen} é que usas?",
+    "known1": "Já conheces esta de uma lição anterior.",
+    "known2": "Já aprendeste esta frase. Ouve apenas.",
+    "known3": "Esta já te é familiar de uma lição anterior.",
+    "roleIntro": "Agora fazes de {name}. Eu faço a outra parte. Responde a cada fala.",
+    "returnGrammar": "Boa. Agora a gramática de hoje."
   },
   "da-DK": {
     "how": "Hvordan ville du sige {translation}?",
@@ -1062,7 +1092,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Næste gang du bruger et regelmæssigt verbum, så start med stammen og sig endelsen højt. Sådan sætter mønsteret sig fast.",
     "regularCheck0": "Hvilken endelse hører til {du}, en ven?",
     "regularCheck1": "Hvilken endelse hører til {ihr}, I alle?",
-    "regularCheck2": "Når du taler formelt, hvilken form af {machen} bruger du så?"
+    "regularCheck2": "Når du taler formelt, hvilken form af {machen} bruger du så?",
+    "known1": "Den her kender du allerede fra en tidligere lektion.",
+    "known2": "Den sætning har du lært før. Lyt bare.",
+    "known3": "Den her er velkendt fra en tidligere lektion.",
+    "roleIntro": "Nu er du {name}. Jeg tager den anden rolle. Svar på hver replik.",
+    "returnGrammar": "Godt. Nu videre til dagens grammatik."
   },
   "sv-SE": {
     "how": "Hur skulle du säga {translation}?",
@@ -1214,7 +1249,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Nästa gång du använder ett regelbundet verb, börja med stammen och lägg till ändelsen högt. Så fastnar mönstret.",
     "regularCheck0": "Vilken ändelse hör till {du}, en vän?",
     "regularCheck1": "Vilken ändelse hör till {ihr}, ni alla?",
-    "regularCheck2": "När du talar formellt, vilken form av {machen} använder du?"
+    "regularCheck2": "När du talar formellt, vilken form av {machen} använder du?",
+    "known1": "Den här kan du redan från en tidigare lektion.",
+    "known2": "Den meningen har du lärt dig förut. Lyssna bara.",
+    "known3": "Den här känner du igen från en tidigare lektion.",
+    "roleIntro": "Nu är du {name}. Jag tar den andra rollen. Svara på varje replik.",
+    "returnGrammar": "Snyggt. Nu vidare till dagens grammatik."
   },
   "nb-NO": {
     "how": "Hvordan ville du si {translation}?",
@@ -1366,7 +1406,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Neste gang du bruker et regelmessig verb, start med stammen og legg på endelsen høyt. Slik fester mønsteret seg.",
     "regularCheck0": "Hvilken endelse hører til {du}, en venn?",
     "regularCheck1": "Hvilken endelse hører til {ihr}, dere alle?",
-    "regularCheck2": "Når du snakker formelt, hvilken form av {machen} bruker du?"
+    "regularCheck2": "Når du snakker formelt, hvilken form av {machen} bruker du?",
+    "known1": "Denne kan du allerede fra en tidligere leksjon.",
+    "known2": "Den setningen har du lært før. Bare lytt.",
+    "known3": "Denne kjenner du igjen fra en tidligere leksjon.",
+    "roleIntro": "Nå er du {name}. Jeg tar den andre rollen. Svar på hver replikk.",
+    "returnGrammar": "Bra. Nå videre til dagens grammatikk."
   },
   "pl-PL": {
     "how": "Jak powiesz {translation}?",
@@ -1518,7 +1563,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Następnym razem przy czasowniku regularnym zacznij od tematu i dodaj końcówkę na głos. Tak wzorzec zostaje.",
     "regularCheck0": "Która końcówka pasuje do {du}, gdy to przyjaciel?",
     "regularCheck1": "Która końcówka pasuje do {ihr}, wy wszyscy?",
-    "regularCheck2": "Gdy mówisz formalnie, której formy {machen} używasz?"
+    "regularCheck2": "Gdy mówisz formalnie, której formy {machen} używasz?",
+    "known1": "To zdanie znasz już z wcześniejszej lekcji.",
+    "known2": "To zdanie już znasz. Po prostu posłuchaj.",
+    "known3": "To brzmi znajomo z wcześniejszej lekcji.",
+    "roleIntro": "Teraz grasz rolę: {name}. Ja przejmuję drugą rolę. Odpowiadaj na każdą kwestię.",
+    "returnGrammar": "Dobrze. Teraz do dzisiejszej gramatyki."
   },
   "ru-RU": {
     "how": "Как сказать {translation}?",
@@ -1670,7 +1720,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "В следующий раз с правильным глаголом начни с основы и добавь окончание вслух. Так шаблон остаётся.",
     "regularCheck0": "Какое окончание идёт с {du}, если это друг?",
     "regularCheck1": "Какое окончание идёт с {ihr}, вы все?",
-    "regularCheck2": "На вы какую форму {machen} берёшь?"
+    "regularCheck2": "На вы какую форму {machen} берёшь?",
+    "known1": "Эту фразу ты уже знаешь по прошлому уроку.",
+    "known2": "Эта фраза тебе уже знакома. Просто послушай.",
+    "known3": "Эта фраза уже была в одном из прошлых уроков.",
+    "roleIntro": "Теперь твоя роль: {name}. Я беру другую роль. Отвечай на каждую реплику.",
+    "returnGrammar": "Хорошо. Теперь к сегодняшней грамматике."
   },
   "tr-TR": {
     "how": "Nasıl dersin {translation}?",
@@ -1822,7 +1877,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Bir dahaki sefere düzenli bir fiilde gövdeyle başla ve eki sesli ekle. Kalıp böyle kalır.",
     "regularCheck0": "{du}, bir arkadaş, ile hangi ek gider?",
     "regularCheck1": "{ihr}, hepiniz, ile hangi ek gider?",
-    "regularCheck2": "Resmi konuşurken {machen} fiilinin hangi biçimini kullanırsın?"
+    "regularCheck2": "Resmi konuşurken {machen} fiilinin hangi biçimini kullanırsın?",
+    "known1": "Bunu önceki bir dersten zaten biliyorsun.",
+    "known2": "Bu cümleyi daha önce öğrendin. Sadece dinle.",
+    "known3": "Bu, önceki bir dersten tanıdık.",
+    "roleIntro": "Şimdi {name} rolündesin. Diğer rolü ben alıyorum. Her cümleye cevap ver.",
+    "returnGrammar": "İyi. Şimdi bugünün dilbilgisine."
   },
   "ar-EG": {
     "how": "إزاي تقول {translation}؟",
@@ -1974,7 +2034,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "المرة الجاية لما تستخدم فعل عادي، ابدأ بالجذر وضيف النهاية بصوت واضح. كده القاعدة هتثبت.",
     "regularCheck0": "أي نهاية تمشي مع {du}، يعني صاحب؟",
     "regularCheck1": "أي نهاية تمشي مع {ihr}، يعني إنتو؟",
-    "regularCheck2": "لما تتكلم رسمي، بتستخدم أي صيغة من {machen}؟"
+    "regularCheck2": "لما تتكلم رسمي، بتستخدم أي صيغة من {machen}؟",
+    "known1": "الجملة دي إنت عارفها من درس قبل كده.",
+    "known2": "الجملة دي اتعلمتها قبل كده. اسمع بس.",
+    "known3": "دي مألوفة من درس فات.",
+    "roleIntro": "دلوقتي إنت {name}. أنا هاخد الدور التاني. رد على كل جملة.",
+    "returnGrammar": "كويس. ويلا على قواعد النهاردة."
   },
   "hi-IN": {
     "how": "आप कैसे कहेंगे {translation}?",
@@ -2126,7 +2191,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "अगली बार जब आप एक नियमित क्रिया इस्तेमाल करें, धातु से शुरू कीजिए और अंत ज़ोर से जोड़िए. ऐसे नियम बैठता है.",
     "regularCheck0": "{du} के साथ कौन सा अंत जाता है, एक दोस्त?",
     "regularCheck1": "{ihr} के साथ कौन सा अंत जाता है, तुम सब?",
-    "regularCheck2": "औपचारिक बोलते समय, आप {machen} का कौन सा रूप इस्तेमाल करते हैं?"
+    "regularCheck2": "औपचारिक बोलते समय, आप {machen} का कौन सा रूप इस्तेमाल करते हैं?",
+    "known1": "यह वाक्य आप पिछले पाठ से पहले से जानते हैं.",
+    "known2": "यह वाक्य आप पहले सीख चुके हैं. बस सुनिए.",
+    "known3": "यह वाक्य पिछले पाठ से जाना-पहचाना है.",
+    "roleIntro": "अब आप {name} हैं. दूसरी भूमिका मैं निभाऊंगी. हर वाक्य का जवाब दीजिए.",
+    "returnGrammar": "अच्छा. अब आज के व्याकरण पर."
   },
   "bn-IN": {
     "how": "আপনি কীভাবে বলবেন {translation}?",
@@ -2278,7 +2348,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "পরের বার যখন একটা নিয়মিত ক্রিয়া ব্যবহার করবেন, ধাতু দিয়ে শুরু করুন আর শেষটা জোরে যোগ করুন. এভাবেই নিয়মটা থেকে যায়.",
     "regularCheck0": "{du} এর সঙ্গে কোন শেষ যায়, একজন বন্ধুর?",
     "regularCheck1": "{ihr} এর সঙ্গে কোন শেষ যায়, তোমরা সবাই?",
-    "regularCheck2": "আনুষ্ঠানিক বলে, আপনি {machen} এর কোন রূপ ব্যবহার করেন?"
+    "regularCheck2": "আনুষ্ঠানিক বলে, আপনি {machen} এর কোন রূপ ব্যবহার করেন?",
+    "known1": "এই বাক্যটা আপনি আগের পাঠ থেকেই জানেন.",
+    "known2": "এই বাক্যটা আপনি আগে শিখেছেন. শুধু শুনুন.",
+    "known3": "এটা আগের পাঠ থেকে চেনা.",
+    "roleIntro": "এবার আপনি {name}. অন্য ভূমিকাটা আমি নিচ্ছি. প্রতিটি কথার উত্তর দিন.",
+    "returnGrammar": "ভালো. এখন আজকের ব্যাকরণে."
   },
   "gu-IN": {
     "how": "તમે કેવી રીતે કહેશો {translation}?",
@@ -2430,7 +2505,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "આગલી વાર જ્યારે નિયમિત ક્રિયા વાપરો, ધાતુથી શરૂ કરો અને અંત મોટેથી ઉમેરો. એમ નિયમ ગોઠાય છે.",
     "regularCheck0": "{du} સાથે કયો અંત જાય છે, એક મિત્ર?",
     "regularCheck1": "{ihr} સાથે કયો અંત જાય છે, તમે બધા?",
-    "regularCheck2": "ઔપચારિક બોલતાં, તમે {machen} નું કયું રૂપ વાપરો છો?"
+    "regularCheck2": "ઔપચારિક બોલતાં, તમે {machen} નું કયું રૂપ વાપરો છો?",
+    "known1": "આ વાક્ય તમે અગાઉના પાઠમાંથી જાણો છો.",
+    "known2": "આ વાક્ય તમે પહેલાં શીખી ગયા છો. બસ સાંભળો.",
+    "known3": "આ વાક્ય અગાઉના પાઠમાંથી જાણીતું છે.",
+    "roleIntro": "હવે તમે {name} છો. બીજી ભૂમિકા હું ભજવીશ. દરેક વાક્યનો જવાબ આપો.",
+    "returnGrammar": "સારું. હવે આજના વ્યાકરણ પર."
   },
   "kn-IN": {
     "how": "ನೀವು ಹೇಗೆ ಹೇಳ್ತೀರಿ {translation}?",
@@ -2582,7 +2662,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "ಮುಂದಿನ ಸಾರಿ ನಿಯಮಿತ ಕ್ರಿಯಾಪದ ಬಳಸುವಾಗ, ಧಾತುವಿನಿಂದ ಶುರು ಮಾಡಿ ಮತ್ತು ಅಂತ್ಯವನ್ನು ಜೋರಾಗಿ ಸೇರಿಸಿ. ಹೀಗೆ ನಿಯಮ ನಿಲ್ಲುತ್ತದೆ.",
     "regularCheck0": "{du} ಜೊತೆ ಯಾವ ಅಂತ್ಯ ಹೋಗುತ್ತದೆ, ಒಬ್ಬ ಸ್ನೇಹಿತ?",
     "regularCheck1": "{ihr} ಜೊತೆ ಯಾವ ಅಂತ್ಯ ಹೋಗುತ್ತದೆ, ನೀವೆಲ್ಲರೂ?",
-    "regularCheck2": "ಔಪಚಾರಿಕ ಮಾತಾಡುವಾಗ, ನೀವು {machen} ನ ಯಾವ ರೂಪ ಬಳಸುತ್ತೀರಿ?"
+    "regularCheck2": "ಔಪಚಾರಿಕ ಮಾತಾಡುವಾಗ, ನೀವು {machen} ನ ಯಾವ ರೂಪ ಬಳಸುತ್ತೀರಿ?",
+    "known1": "ಈ ವಾಕ್ಯ ನಿಮಗೆ ಹಿಂದಿನ ಪಾಠದಿಂದಲೇ ಗೊತ್ತು.",
+    "known2": "ಈ ವಾಕ್ಯವನ್ನು ನೀವು ಮೊದಲೇ ಕಲಿತಿದ್ದೀರಿ. ಸುಮ್ಮನೆ ಕೇಳಿ.",
+    "known3": "ಇದು ಹಿಂದಿನ ಪಾಠದಿಂದ ಪರಿಚಿತ.",
+    "roleIntro": "ಈಗ ನೀವು {name}. ಇನ್ನೊಂದು ಪಾತ್ರ ನಾನು ಮಾಡುತ್ತೇನೆ. ಪ್ರತಿ ವಾಕ್ಯಕ್ಕೂ ಉತ್ತರಿಸಿ.",
+    "returnGrammar": "ಒಳ್ಳೆಯದು. ಈಗ ಇವತ್ತಿನ ವ್ಯಾಕರಣಕ್ಕೆ."
   },
   "ml-IN": {
     "how": "നിങ്ങൾ എങ്ങനെ പറയും {translation}?",
@@ -2734,7 +2819,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "അടുത്ത തവണ ഒരു സാധാരണ ക്രിയ ഉപയോഗിക്കുമ്പോൾ, ധാതുവിൽ തുടങ്ങി അവസാനം ഉറക്കെ ചേർക്കൂ. അങ്ങനെ നിയമം നിൽക്കും.",
     "regularCheck0": "{du} നൊപ്പം ഏത് അവസാനം പോകും, ഒരു സുഹൃത്ത്?",
     "regularCheck1": "{ihr} നൊപ്പം ഏത് അവസാനം പോകും, നിങ്ങളെല്ലാവരും?",
-    "regularCheck2": "ഔപചാരിക ആയി സംസാരിക്കുമ്പോൾ, നിങ്ങൾ {machen} ന്റെ ഏത് രൂപം ഉപയോഗിക്കും?"
+    "regularCheck2": "ഔപചാരിക ആയി സംസാരിക്കുമ്പോൾ, നിങ്ങൾ {machen} ന്റെ ഏത് രൂപം ഉപയോഗിക്കും?",
+    "known1": "ഈ വാക്യം നിങ്ങൾക്ക് മുൻപത്തെ പാഠത്തിൽ നിന്നേ അറിയാം.",
+    "known2": "ഈ വാക്യം നിങ്ങൾ മുൻപ് പഠിച്ചതാണ്. കേട്ടാൽ മതി.",
+    "known3": "ഇത് മുൻപത്തെ ഒരു പാഠത്തിൽ നിന്ന് പരിചിതമാണ്.",
+    "roleIntro": "ഇപ്പോൾ നിങ്ങൾ {name} ആണ്. മറ്റേ റോൾ ഞാൻ ചെയ്യാം. ഓരോ വാക്യത്തിനും മറുപടി പറയൂ.",
+    "returnGrammar": "നല്ലത്. ഇനി ഇന്നത്തെ വ്യാകരണത്തിലേക്ക്."
   },
   "pa-IN": {
     "how": "ਤੁਸੀਂ ਕਿਵੇਂ ਕਹੋਗੇ {translation}?",
@@ -2886,7 +2976,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "ਅਗਲੀ ਵਾਰ ਜਦੋਂ ਨਿਯਮਿਤ ਕਿਰਿਆ ਵਰਤੋ, ਧਾਤੂ ਤੋਂ ਸ਼ੁਰੂ ਕਰੋ ਅਤੇ ਅੰਤ ਉੱਚੀ ਆਵਾਜ਼ ਵਿੱਚ ਜੋੜੋ. ਇਸ ਤਰ੍ਹਾਂ ਨਿਯਮ ਰਹਿ ਜਾਂਦਾ ਹੈ.",
     "regularCheck0": "{du} ਨਾਲ ਕਿਹੜਾ ਅੰਤ ਜਾਂਦਾ ਹੈ, ਇੱਕ ਦੋਸਤ?",
     "regularCheck1": "{ihr} ਨਾਲ ਕਿਹੜਾ ਅੰਤ ਜਾਂਦਾ ਹੈ, ਤੁਸੀਂ ਸਾਰੇ?",
-    "regularCheck2": "ਰਸਮੀ ਬੋਲਦੇ ਹੋਏ, ਤੁਸੀਂ {machen} ਦਾ ਕਿਹੜਾ ਰੂਪ ਵਰਤਦੇ ਹੋ?"
+    "regularCheck2": "ਰਸਮੀ ਬੋਲਦੇ ਹੋਏ, ਤੁਸੀਂ {machen} ਦਾ ਕਿਹੜਾ ਰੂਪ ਵਰਤਦੇ ਹੋ?",
+    "known1": "ਇਹ ਵਾਕ ਤੁਸੀਂ ਪਿਛਲੇ ਪਾਠ ਤੋਂ ਪਹਿਲਾਂ ਹੀ ਜਾਣਦੇ ਹੋ.",
+    "known2": "ਇਹ ਵਾਕ ਤੁਸੀਂ ਪਹਿਲਾਂ ਸਿੱਖ ਚੁੱਕੇ ਹੋ. ਬੱਸ ਸੁਣੋ.",
+    "known3": "ਇਹ ਪਿਛਲੇ ਪਾਠ ਤੋਂ ਜਾਣਿਆ-ਪਛਾਣਿਆ ਹੈ.",
+    "roleIntro": "ਹੁਣ ਤੁਸੀਂ {name} ਹੋ. ਦੂਜੀ ਭੂਮਿਕਾ ਮੈਂ ਨਿਭਾਵਾਂਗੀ. ਹਰ ਵਾਕ ਦਾ ਜਵਾਬ ਦਿਓ.",
+    "returnGrammar": "ਵਧੀਆ. ਹੁਣ ਅੱਜ ਦੇ ਵਿਆਕਰਨ ਵੱਲ."
   },
   "ta-IN": {
     "how": "நீங்கள் எப்படி சொல்வீர்கள் {translation}?",
@@ -3038,7 +3133,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "அடுத்த முறை ஒரு வழக்கமான வினையைப் பயன்படுத்தும்போது, வேரில் தொடங்கி முடிவைச் சத்தமாகச் சேருங்கள். அப்படித்தான் முறை நிற்கும்.",
     "regularCheck0": "{du} உடன் எந்த முடிவு போகும், ஒரு நண்பர்?",
     "regularCheck1": "{ihr} உடன் எந்த முடிவு போகும், நீங்கள் எல்லாரும்?",
-    "regularCheck2": "மரியாதையாகப் பேசும்போது, நீங்கள் {machen} இன் எந்த வடிவத்தைப் பயன்படுத்துகிறீர்கள்?"
+    "regularCheck2": "மரியாதையாகப் பேசும்போது, நீங்கள் {machen} இன் எந்த வடிவத்தைப் பயன்படுத்துகிறீர்கள்?",
+    "known1": "இந்த வாக்கியம் உங்களுக்கு முந்தைய பாடத்திலிருந்தே தெரியும்.",
+    "known2": "இந்த வாக்கியத்தை நீங்கள் முன்பே கற்றுக்கொண்டீர்கள். கேட்டால் போதும்.",
+    "known3": "இது முந்தைய பாடத்திலிருந்து பழக்கமானது.",
+    "roleIntro": "இப்போது நீங்கள் {name}. மற்ற பாத்திரத்தை நான் ஏற்கிறேன். ஒவ்வொரு வாக்கியத்திற்கும் பதில் சொல்லுங்கள்.",
+    "returnGrammar": "நல்லது. இப்போது இன்றைய இலக்கணத்துக்கு."
   },
   "ja-JP": {
     "how": "こう言います。{translation}",
@@ -3190,7 +3290,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "次に規則動詞を使うとき、語幹から始めて語尾を声に出して足してください。そうやって型が残ります。",
     "regularCheck0": "どの語尾が{du}、友達、に付きますか。",
     "regularCheck1": "どの語尾が{ihr}、みんな、に付きますか。",
-    "regularCheck2": "丁寧に言うとき、{machen}のどの形を使いますか。"
+    "regularCheck2": "丁寧に言うとき、{machen}のどの形を使いますか。",
+    "known1": "これは前のレッスンでもう覚えた表現です。",
+    "known2": "この文は前に習いましたね。聞くだけで大丈夫です。",
+    "known3": "これは前のレッスンで出てきた表現です。",
+    "roleIntro": "今度はあなたが{name}です。もう一人の役は私がやります。一つずつ答えてください。",
+    "returnGrammar": "では、今日の文法に進みます。"
   },
   "ko-KR": {
     "how": "이렇게 말해요. {translation}",
@@ -3342,7 +3447,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "다음에 규칙 동사를 쓸 때, 어간으로 시작해서 어미를 소리 내 붙여요. 그래야 형태가 남아요.",
     "regularCheck0": "어떤 어미가 {du}, 친구, 에 붙나요?",
     "regularCheck1": "어떤 어미가 {ihr}, 너희, 에 붙나요?",
-    "regularCheck2": "존댓말로 말할 때, {machen}의 어떤 형태를 쓰나요?"
+    "regularCheck2": "존댓말로 말할 때, {machen}의 어떤 형태를 쓰나요?",
+    "known1": "이 문장은 이전 수업에서 이미 배웠어요.",
+    "known2": "이 문장은 전에 배웠죠. 그냥 들어 보세요.",
+    "known3": "이건 이전 수업에서 나온 표현이에요.",
+    "roleIntro": "이제 당신이 {name} 역할이에요. 다른 역할은 제가 할게요. 한 문장씩 대답해 보세요.",
+    "returnGrammar": "그럼 오늘 문법으로 갈게요."
   },
   "zh-TW": {
     "how": "這樣說。{translation}",
@@ -3494,7 +3604,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "下次用規則動詞，先從詞幹開始，再把字尾大聲加上去。這樣句型才留得住。",
     "regularCheck0": "哪一個字尾配{du}，朋友？",
     "regularCheck1": "哪一個字尾配{ihr}，你們？",
-    "regularCheck2": "正式說話時，{machen}用哪一個形式？"
+    "regularCheck2": "正式說話時，{machen}用哪一個形式？",
+    "known1": "這句你在之前的課已經學過了。",
+    "known2": "這句之前學過，聽就好。",
+    "known3": "這句在之前的課出現過。",
+    "roleIntro": "現在你來演{name}。另一個角色由我來。每一句都回答看看。",
+    "returnGrammar": "不錯。現在進入今天的文法。"
   },
   "vi-VN": {
     "how": "Nói như thế này. {translation}",
@@ -3646,7 +3761,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Lần sau dùng động từ đều, bắt đầu từ gốc rồi thêm đuôi thành tiếng. Mẫu câu nhớ được là nhờ vậy.",
     "regularCheck0": "Đuôi nào đi với {du}, một người bạn?",
     "regularCheck1": "Đuôi nào đi với {ihr}, các bạn?",
-    "regularCheck2": "Khi nói trang trọng, bạn dùng dạng nào của {machen}?"
+    "regularCheck2": "Khi nói trang trọng, bạn dùng dạng nào của {machen}?",
+    "known1": "Câu này bạn đã biết từ một bài trước.",
+    "known2": "Câu này bạn đã học rồi. Chỉ cần nghe thôi.",
+    "known3": "Câu này quen thuộc từ một bài trước.",
+    "roleIntro": "Bây giờ bạn đóng vai {name}. Tôi đóng vai còn lại. Hãy đáp lại từng câu.",
+    "returnGrammar": "Hay. Bây giờ sang phần ngữ pháp hôm nay."
   },
   "id-ID": {
     "how": "Ucapkan seperti ini. {translation}",
@@ -3798,7 +3918,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Lain kali memakai kata kerja beraturan, mulai dari batang lalu tambahkan akhiran dengan suara keras. Begitu polanya melekat.",
     "regularCheck0": "Akhiran mana yang cocok dengan {du}, seorang teman?",
     "regularCheck1": "Akhiran mana yang cocok dengan {ihr}, kalian?",
-    "regularCheck2": "Saat berbicara resmi, bentuk {machen} yang mana yang kamu pakai?"
+    "regularCheck2": "Saat berbicara resmi, bentuk {machen} yang mana yang kamu pakai?",
+    "known1": "Kalimat ini sudah kamu kenal dari pelajaran sebelumnya.",
+    "known2": "Kalimat ini sudah pernah kamu pelajari. Dengarkan saja.",
+    "known3": "Yang ini sudah tidak asing dari pelajaran sebelumnya.",
+    "roleIntro": "Sekarang kamu jadi {name}. Aku ambil peran yang lain. Jawab setiap kalimat.",
+    "returnGrammar": "Baik. Sekarang ke tata bahasa hari ini."
   },
   "ms-MY": {
     "how": "Cakap begini. {translation}",
@@ -3950,7 +4075,12 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Lain kali menggunakan kata kerja biasa, mulakan dengan pangkal lalu tambah akhiran dengan kuat. Begitulah coraknya kekal.",
     "regularCheck0": "Akhiran mana yang sesuai dengan {du}, seorang kawan?",
     "regularCheck1": "Akhiran mana yang sesuai dengan {ihr}, kamu semua?",
-    "regularCheck2": "Semasa bercakap secara rasmi, bentuk {machen} yang mana awak guna?"
+    "regularCheck2": "Semasa bercakap secara rasmi, bentuk {machen} yang mana awak guna?",
+    "known1": "Ayat ini awak sudah tahu daripada pelajaran sebelum ini.",
+    "known2": "Ayat ini awak sudah belajar dahulu. Dengar sahaja.",
+    "known3": "Yang ini sudah biasa daripada pelajaran sebelum ini.",
+    "roleIntro": "Sekarang awak jadi {name}. Saya ambil peranan yang satu lagi. Jawab setiap ayat.",
+    "returnGrammar": "Baik. Sekarang ke tatabahasa hari ini."
   },
   "fil-PH": {
     "how": "Sabihin nang ganito. {translation}",
@@ -4102,6 +4232,11 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "regularClosing": "Sa susunod na gumamit ka ng pandiwang may takdang hulapi, magsimula sa ugat at idagdag ang hulapi nang malakas. Ganoon nananatili ang kayarian.",
     "regularCheck0": "Aling hulapi ang kasama ng {du}, isang kaibigan?",
     "regularCheck1": "Aling hulapi ang kasama ng {ihr}, kayong lahat?",
-    "regularCheck2": "Kapag magalang, aling anyo ng {machen} ang ginagamit mo?"
+    "regularCheck2": "Kapag magalang, aling anyo ng {machen} ang ginagamit mo?",
+    "known1": "Alam mo na ang pangungusap na ito mula sa naunang aralin.",
+    "known2": "Natutunan mo na ang linyang ito. Makinig ka lang.",
+    "known3": "Pamilyar na ito mula sa naunang aralin.",
+    "roleIntro": "Ngayon, ikaw si {name}. Ako ang gaganap sa kabila. Sagutin mo ang bawat linya.",
+    "returnGrammar": "Ayos. Ngayon sa gramatika ngayong araw."
   }
 };

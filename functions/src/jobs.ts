@@ -5,7 +5,9 @@ import {
   LanguageIdSchema,
   LessonTypeSchema,
   applyTargetVoices,
+  conversationMemory,
   displayLessonSegment,
+  grammarMemory,
   type GeneratedLesson,
   type LessonSegment,
 } from "@resolingo/shared";
@@ -17,6 +19,7 @@ import { sendUserPush } from "./push.js";
 import { withoutReservation } from "./quota.js";
 import { lessonAudioUnits } from "./speech.js";
 import { loadDueReviewPhrases } from "./reviews.js";
+import { learnerContextPath, loadLearnerContext } from "./context.js";
 import { synthesizeScene, synthesizeSegment } from "./tts.js";
 
 type JobPayload = { uid: string; lessonId: string };
@@ -166,13 +169,21 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
         inputLanguage,
       };
     }
+    // Conversation and grammar lessons build on each other and on what the learner already knows.
+    const builds = type === "conversation" || type === "grammar";
+    const [topics, priorReviews, learner] = await Promise.all([
+      recentTopics(payload.uid, topicKey),
+      builds ? loadDueReviewPhrases(payload.uid, targetLanguage, nativeLanguage) : Promise.resolve([]),
+      builds ? loadLearnerContext(payload.uid, targetLanguage, nativeLanguage) : Promise.resolve(undefined),
+    ]);
     const content = await generateLessonContent({
       type,
       nativeLanguage,
       targetLanguage,
       level,
-      recentTopics: await recentTopics(payload.uid, topicKey),
-      ...(type === "conversation" ? { priorReviews: await loadDueReviewPhrases(payload.uid, targetLanguage, nativeLanguage) } : {}),
+      recentTopics: topics,
+      ...(priorReviews.length > 0 ? { priorReviews } : {}),
+      ...(learner ? { learner } : {}),
       ...(phrase ? { phrase } : {}),
     });
     if (type !== "grammar") {
@@ -226,6 +237,10 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
 
     const usageRef = db.doc(`users/${payload.uid}/dailyUsage/${lessonData.quotaDate}`);
     const topicRef = db.doc(`users/${payload.uid}/recentTopics/${topicKey}`);
+    const contextRef = db.doc(learnerContextPath(payload.uid, targetLanguage));
+    const memory = type === "grammar"
+      ? { grammar: grammarMemory(content, targetLanguage) }
+      : type === "conversation" ? { conversation: conversationMemory(content, targetLanguage) } : undefined;
     let published = false;
     await db.runTransaction(async (transaction) => {
       published = false;
@@ -263,6 +278,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
         ].filter((fingerprint, index, values) => values.indexOf(fingerprint) === index).slice(0, 20),
         updatedAt: FieldValue.serverTimestamp(),
       }, { merge: true });
+      if (memory) transaction.set(contextRef, { ...memory, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     });
     if (!published) return;
     await sendUserPush(payload.uid, {

@@ -21,6 +21,7 @@ import {
   type CefrLevel,
   type GeneratedLesson,
   type LanguageId,
+  type LearnerContext,
   type LessonType,
   type PimsleurPhrase,
 } from "@resolingo/shared";
@@ -29,13 +30,15 @@ import { DEFAULT_GEMINI_LESSON_MODEL, DEFAULT_GEMINI_LOCATION, GEMINI_LESSON_MOD
 import { lessonPrompt } from "./prompts.js";
 
 const SYSTEM_INSTRUCTION = [
-  "You are Resolingo's expert multilingual lesson designer.",
-  "Return only a JSON object with title, topic, summary, conversationSkill, speakerNames, lines, phrases, and cues. Optional fields are usageTip, roleplay, and recombinations.",
-  "Build one short scene with one practical speaking goal. Follow the provided level limits for dialogue length and focus phrases. Plain listening turns support the goal without becoming new material to memorize.",
-  "Each dialogue line has speaker (speakerA or speakerB), text, translation, and a BCP-47 language code. phrases lists only the few highest-value lines the learner should be able to say. Each matches one dialogue line exactly.",
+  "You are Resolingo's expert multilingual lesson designer. You teach with the Pimsleur method: graduated recall, anticipation (the learner answers before hearing the model), backward buildup of long lines, and lots of speaking.",
+  "Return only a JSON object with title, topic, summary, conversationSkill, speakerNames, lines, phrases, and cues. Optional fields are usageTip, grammarLink, and recombinations.",
+  "Write one complete conversation of four or five turns with one practical goal. It has a clear opening, a middle where the goal is reached, and a natural close, so it never stops mid-exchange. Every turn stays within the level's word limit and uses language the learner can be expected to say at that level.",
+  "Each dialogue line has speaker (speakerA or speakerB), text, translation, and a BCP-47 language code. The learner practises every turn, so phrases has one entry for every line, in dialogue order, with the exact same speaker and text.",
+  "Each phrase has a short teaching note on meaning or use. A line of four or more words has chunks: one or two pieces taken from the end of the line, growing toward the whole line, each with its own translation. Give a gloss only for a word the learner has not met before.",
   "Keep teaching notes short and conversational. An optional usageTip is one reliable observation that helps the learner use what they just heard, such as when the same wording sounds polite. Skip trivia, stereotypes, and extra vocabulary. Notes and transitions before a model invite listening only.",
-  "For one difficult focus phrase, an optional chunk can isolate a useful part with its own translation. Skip the breakdown if the whole line is easy.",
-  "Any allowed recombination changes one small detail of a taught line. roleplay uses an existing stimulus and an already taught reply.",
+  "A recombination changes one small detail of a taught line, such as the object or the time, and keeps the rest.",
+  "When a line repeats or nearly repeats a phrase the learner already knows, set known: true on that line. Prefer new lines, and keep at least three turns new.",
+  "When the learner's last grammar point is given, use it naturally in at least one line, and return grammarLink with line (that exact dialogue text) and note (one or two teaching-language sentences pointing out the pattern).",
   "cues has welcome, listen, afterDialogue, buildup, again, closing, speak, and echo. closing is one short, calm, matter-of-fact wrap-up in the teaching language. No superlatives, no stacked exclamation marks, and no praise such as amazing, fantastic, or great job. echo is 4 different brief teaching-language invitations to imitate a line the learner just heard.",
   "speak has 4 to 6 conversational recall cues. Each includes {translation}. Some can include {name}. Vary the situation, instruction, and question styles without giving the target-language answer.",
   "A phrase can also have a recallCue with a natural situation specific to that line and its exact teaching-language meaning. The learner hears the meaning and a clear model before any of these cues.",
@@ -67,12 +70,14 @@ const PHRASE_INSTRUCTION = [
 ].join(" ");
 
 const GRAMMAR_INSTRUCTION = [
-  "You are Resolingo's grammar teacher.",
+  "You are Resolingo's grammar teacher. You teach one pattern well: show it, let the learner notice it, explain it, break it down, then drill it from guided to free with spaced recall.",
   "Return only a JSON object for a lesson spoken by one teacher. Do not write a dialogue and do not use speakerA or speakerB as speakers.",
   "Teach only the narrow use named in the assigned grammar topic. Follow the learner level and the example and drill limits in the request. Use one practical outcome with familiar vocabulary.",
-  "Fields: title, topic, summary, goal, speakerNames, hook, examples, noticeCue, notice, rule, drills, closing, and targetTerms. Optional: one usageTip or mnemonic, one check, and one recombination.",
-  "Use two or three short target-language examples with translations that isolate the same pattern. Ask the learner to notice one concrete change they have heard, then explain it simply.",
-  "Start the exercises with familiar modeled lines. Supply support for the first try, then allow the learner to recall without hearing the answer again. An optional application uses the same rule and familiar vocabulary in a short real-life context.",
+  "Fields: title, topic, summary, goal, speakerNames, hook, examples, noticeCue, notice, rule, breakdown, drills, recombinations, checks, closing, and targetTerms. Optional: bridge, and one usageTip or mnemonic.",
+  "Use four short target-language examples with translations that isolate the same pattern. Ask the learner to notice one concrete change they have heard, then explain it simply.",
+  "breakdown walks through the pattern in two or three short steps. Each step has explanation, one teaching-language sentence about one form or one position, and an optional example with text and translation.",
+  "Order the drills from guided to free: a fill-the-gap with ___, then a transformation of a given sentence, then full sentences from the meaning alone. Supply support for the first try, then allow the learner to recall without hearing the answer again.",
+  "recombinations apply the same rule in short real-life situations with familiar vocabulary. When the learner's last conversation is given, set them in that scene and reuse its words, and write bridge as one teaching-language sentence that connects a line from that conversation to today's rule.",
   "Use varied speaking cues and give the meaning or exact source sentence. Name whether the learner is speaking to a friend, a group, or formally when this changes the answer.",
   "Wrap every target-language span inside a teaching-language line as [[lang:BCP-47]]...[[/lang]], including isolated letters, stems, prefixes, endings, pronouns, and words spelled the same in both languages. Include the hyphen within an affix span. This applies to explanations, questions, answers, and drill cues. Close each tag, and never include teaching-language words inside it.",
   "targetTerms lists the exact target words and fragments used in teaching-language lines. Include stems and endings with their written hyphens.",
@@ -177,6 +182,8 @@ export async function generateLessonContent(
     level: CefrLevel;
     recentTopics: string[];
     priorReviews?: PimsleurPhrase[];
+    /** What the learner already knows and studied last, for conversation and grammar lessons. */
+    learner?: LearnerContext;
     phrase?: {
       phraseId: string;
       nativeText: string;
@@ -200,6 +207,7 @@ export async function generateLessonContent(
     targetLanguage: languageById[input.targetLanguage],
     level: input.level,
     recentTopics: input.recentTopics,
+    ...(input.learner && input.type !== "phrase" ? { learner: input.learner } : {}),
     ...(grammarTopic ? { topic: grammarTopic } : {}),
     ...(input.phrase ? {
       phrase: {
@@ -215,9 +223,9 @@ export async function generateLessonContent(
   let sawInvalid = false;
   let phraseRepair = "";
   const repair = input.type === "grammar"
-    ? "Return complete grammar source for the assigned topic. Use distinct examples and tag every target-language span with the requested language code."
+    ? "Return complete grammar source for the assigned topic, with four distinct examples, a breakdown, and the full set of drills. Tag every target-language span with the requested language code."
     : input.type === "conversation"
-    ? "Return a complete short dialogue on a fresh topic. Check the level's turn and word limits. List only the focus lines the learner will practice."
+    ? "Return a complete dialogue of four or five turns on a fresh topic, with an opening and a natural close. Check the level's word limit for every turn. Give phrases for every turn, with chunks for every turn of four or more words."
     : "The previous response was refused, malformed, or repeated a recent topic. Produce a completely valid lesson with a different topic.";
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -279,12 +287,16 @@ export async function generateLessonContent(
         targetLanguage: input.targetLanguage,
         level: input.level,
         topic: grammarTopic!,
+        ...(input.priorReviews && input.priorReviews.length > 0
+          ? { priorReviews: input.priorReviews.flatMap((item) => item.translation ? [{ text: item.text, translation: item.translation }] : []) }
+          : {}),
       })
       : shapePimsleurLesson(json, {
         nativeLanguage: input.nativeLanguage,
         targetLanguage: input.targetLanguage,
         level: input.level,
         ...(input.type === "conversation" && input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
+        ...(input.learner && input.learner.known.length > 0 ? { known: input.learner.known } : {}),
       });
     if (!shaped) {
       sawInvalid = true;
