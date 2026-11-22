@@ -110,17 +110,23 @@ function PhraseDetail() {
     if (linked?.status === "ready") open(id, { expand: true });
     else router.push(`/lesson/${id}`);
   };
-  const createLesson = async () => {
+  const createLesson = () => {
     if (!phrase || creating || control !== "create") return;
+    const lessonId = Crypto.randomUUID();
     setCreating(true);
-    try {
-      const result = await api.createPhraseLesson(phrase.id, Crypto.randomUUID());
-      router.push(`/lesson/${result.lessonId}`);
-    } catch (error) {
-      Alert.alert("Couldn’t create a lesson", messageOf(error));
-    } finally {
-      setCreating(false);
-    }
+    router.push(`/lesson/${lessonId}`);
+    void (async () => {
+      try {
+        const result = await api.createPhraseLesson(phrase.id, lessonId);
+        if (result.lessonId !== lessonId) router.replace(`/lesson/${result.lessonId}`);
+      } catch (error) {
+        Alert.alert("Couldn’t create a lesson", messageOf(error));
+        if (router.canGoBack()) router.back();
+        else router.replace("/(tabs)");
+      } finally {
+        setCreating(false);
+      }
+    })();
   };
   const retryLesson = async () => {
     const id = linked?.id ?? phrase?.lessonId;

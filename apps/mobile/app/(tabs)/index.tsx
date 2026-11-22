@@ -63,16 +63,23 @@ export default function HomeScreen() {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] : undefined, [openedLessonIds, openedLessonsReady, today, visible]);
   const recent = visible.filter((lesson) => lesson.status === "ready" && lesson.id !== finished?.id).slice(0, 3);
   const startDisabled = Boolean(starting || active) || dailyCapBlocksStart(used, unlimited);
-  const start = async (type: DailyLessonType) => {
+  const start = (type: DailyLessonType) => {
+    if (startDisabled) return;
+    const lessonId = Crypto.randomUUID();
     setStarting(type);
-    try {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const result = await api.createDailyLesson(type, Crypto.randomUUID());
-      if (profile?.telemetryConsent) await track("lesson_requested", { type });
-      router.push(`/lesson/${result.lessonId}`);
-    } catch (error) {
-      report(error); Alert.alert("Couldn’t start a lesson", error instanceof Error ? error.message : "Please try again.");
-    } finally { setStarting(null); }
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push(`/lesson/${lessonId}`);
+    void (async () => {
+      try {
+        await api.createDailyLesson(type, lessonId);
+        if (profile?.telemetryConsent) await track("lesson_requested", { type });
+      } catch (error) {
+        report(error);
+        Alert.alert("Couldn’t start a lesson", error instanceof Error ? error.message : "Please try again.");
+        if (router.canGoBack()) router.back();
+        else router.replace("/(tabs)");
+      } finally { setStarting(null); }
+    })();
   };
   if (loading || !profile) return <LoadingScreen />;
   return (

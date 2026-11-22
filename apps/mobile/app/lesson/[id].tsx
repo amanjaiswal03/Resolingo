@@ -75,7 +75,19 @@ export default function LessonScreen() {
       </Screen>
     );
   }
-  if (!lesson || !user || lesson.status === "ready" || (!HOW_WOULD_YOU_SAY_ENABLED && lesson.type === "phrase")) return <LoadingScreen />;
+  if (!user || (lesson?.status === "ready") || (lesson && !HOW_WOULD_YOU_SAY_ENABLED && lesson.type === "phrase")) return <LoadingScreen />;
+  if (!lesson) {
+    return (
+      <Screen style={styles.center}>
+        <View style={[styles.orb, { backgroundColor: theme.primaryFill }]}><Body style={styles.orbText}>✦</Body></View>
+        <Title style={styles.centerText}>Starting your lesson</Title>
+        <Body muted style={styles.centerText}>Your lesson is safely queued.</Body>
+        <View style={[styles.progress, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.brand, width: percentWidth(5) }]} /></View>
+        <Body muted>Getting started · You can leave this screen</Body>
+        <Button label="Back to today" variant="secondary" onPress={leave} />
+      </Screen>
+    );
+  }
   const retry = async () => {
     if (!id) return;
     setRetrying(true);
