@@ -1,4 +1,4 @@
-import { languageIds } from "@resolingo/shared";
+import { languageIds, speakPrefix } from "@resolingo/shared";
 import { describe, expect, it } from "vitest";
 import { PhraseTranslationError } from "./translate.js";
 import {
@@ -49,6 +49,12 @@ describe("speech recognize request", () => {
       return { results: [{ alternatives: [{ transcript: "Ich brauche Schuhe." }] }, { alternatives: [{ transcript: "" }] }] };
     });
     expect(heard).toBe("Ich brauche Schuhe.");
+    expect(transcriptFromRecognize({
+      results: [{ alternatives: [{ transcript: `${speakPrefix("de-DE")}: Ich brauche Schuhe` }] }],
+    }, "de-DE")).toBe("Ich brauche Schuhe");
+    expect(transcriptFromRecognize({
+      results: [{ alternatives: [{ transcript: `${speakPrefix("fr-FR")} des chaussures` }] }],
+    }, "fr-FR")).toBe("des chaussures");
     expect(transcriptFromRecognize({ results: [] })).toBe("");
     await expect(transcribeWithSpeechToText({
       audioBase64,

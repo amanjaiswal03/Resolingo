@@ -366,7 +366,7 @@ export const translatePhrase = onCall({ ...callableOptions, timeoutSeconds: 120 
     if (existing) return phraseResponse(await attachPreview(uid, existing, level, targetLanguage));
   } else {
     const text = parsed.data.text ?? "";
-    phraseId = phraseIdFor(targetLanguage, level, text);
+    phraseId = phraseIdFor(targetLanguage, level, text, nativeLanguage);
     phraseRef = db.doc(`users/${uid}/phrases/${phraseId}`);
     const existing = storedPhrase(phraseId, (await phraseRef.get()).data());
     if (existing) return phraseResponse(await attachPreview(uid, existing, level, targetLanguage));

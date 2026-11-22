@@ -3,6 +3,7 @@ import { applyTargetVoices, repairMarkup } from "./markup.js";
 import { ConversationSkillSchema, type ConversationSkill } from "./conversation-skills.js";
 import { MAX_LESSON_SEGMENTS, type LessonSegment } from "./schemas.js";
 import { dialogueText, normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
+import { line, template, type TeachingKey } from "./teaching.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 
 /**
@@ -276,24 +277,30 @@ function uniquePrompts(values: string[]): string[] {
 }
 
 /** Model prompts when there are enough of them; otherwise the seeded fallback pool. */
-export function speakPromptPool(modelPrompts: readonly string[] | undefined, cues: LessonCues): string[] {
+export function speakPromptPool(modelPrompts: readonly string[] | undefined, cues: LessonCues, teaching: LanguageId = "en-US"): string[] {
   const provided = uniquePrompts([...(modelPrompts ?? [])]);
   if (provided.length >= 4) return provided;
   const ask = cues.howWouldYouSay.includes("{")
     ? cues.howWouldYouSay
     : `${cues.howWouldYouSay.replace(/[?？]\s*$/u, "")} {translation}?`;
-  return uniquePrompts([ask, cues.sayIt, cues.yourTurn, ...provided, ...FALLBACK_SPEAK_PROMPTS]);
+  return uniquePrompts([ask, cues.sayIt, cues.yourTurn, ...provided, ...fallbackSpeakPrompts(teaching)]);
 }
 
-function promptPicker(templates: string[], seed: number): (vars: { translation?: string; name: string }) => string {
-  const withMeaning = uniquePrompts(templates.filter((template) => template.includes("{translation}")));
+function fallbackSpeakPrompts(teaching: LanguageId): string[] {
+  if (teaching === "en-US" || teaching === "en-GB" || teaching === "en-AU") return [...FALLBACK_SPEAK_PROMPTS];
+  const keys = ["how", "plainTurn", "plainGive", "can", "try", "imagine", "repeat", "nowTry", "howAsk", "plainLoud", "plainNow"] as const;
+  return keys.map((key) => template(teaching, key));
+}
+
+function promptPicker(templates: string[], seed: number, teaching: LanguageId): (vars: { translation?: string; name: string }) => string {
+  const withMeaning = uniquePrompts(templates.filter((prompt) => prompt.includes("{translation}")));
   const meaningPool = withMeaning.length >= 2
     ? withMeaning
-    : uniquePrompts([...withMeaning, "Can you say {translation}?", "Try saying {translation}.", "How would you say {translation}?"]);
+    : uniquePrompts([...withMeaning, template(teaching, "can"), template(teaching, "try"), template(teaching, "how")]);
   const withoutMeaning = uniquePrompts([
-    ...templates.filter((template) => !template.includes("{translation}")),
-    "Repeat after me.",
-    "Now you try.",
+    ...templates.filter((prompt) => !prompt.includes("{translation}")),
+    template(teaching, "repeat"),
+    template(teaching, "nowTry"),
   ]);
   let meaningIndex = seed % meaningPool.length;
   let plainIndex = seed % withoutMeaning.length;
@@ -319,7 +326,10 @@ function promptPicker(templates: string[], seed: number): (vars: { translation?:
     if (vars.translation) meaningIndex = index;
     else plainIndex = index;
     previous = chosen;
-    return chosen || (vars.translation ? `Can you say ${vars.translation.replace(/[.!?？。]+$/u, "")}?` : "Repeat after me.");
+    const fallback = vars.translation
+      ? line(teaching, "can", { translation: vars.translation.replace(/[.!?？。]+$/u, "") })
+      : line(teaching, "repeat");
+    return chosen || fallback;
   };
 }
 
@@ -339,35 +349,9 @@ function longestMeaning(prompt: string, meanings: string[]): string | undefined 
 const RECALL_PHASES = new Set(["recall", "review", "warmup", "recombine", "roleplay"]);
 
 /** Narrator lines that open a block of phrases from earlier lessons. */
-const PRIOR_LEAD_INS = [
-  "Before we start, let's see what you remember from last time.",
-  "Let's take a moment to recall something you learned earlier.",
-  "We'll start by checking what stuck from last time.",
-  "A moment to remember something from an earlier lesson.",
-] as const;
-
-/** The question that follows a lead-in. Each lesson uses a wording once. */
-const PRIOR_REMEMBER = [
-  "Do you remember how to say {translation}?",
-  "Can you recall how to say {translation}?",
-  "See if you remember how to say {translation}.",
-  "Do you still remember how to say {translation}?",
-] as const;
-
-/** One line that both bridges back and asks for a phrase mixed in later. */
-const PRIOR_BRIDGES = [
-  "Here's one from a previous lesson. Do you remember how to say {translation}?",
-  "Let's pull in one from an earlier lesson. Do you remember how to say {translation}?",
-  "One from a previous lesson, before we continue. Do you remember how to say {translation}?",
-  "From an earlier lesson, before we go on. Do you remember how to say {translation}?",
-] as const;
-
-const PRIOR_RETURNS = [
-  "Great, now on to today's conversation.",
-  "Nice. Now on to today's conversation.",
-  "Good. Let's get into today's conversation.",
-  "All right. On to today's conversation.",
-] as const;
+function priorLines(teaching: LanguageId, keys: readonly TeachingKey[]): readonly string[] {
+  return keys.map((key) => template(teaching, key));
+}
 
 function linePicker(options: readonly string[], seed: number): () => string {
   const used = new Set<string>();
@@ -497,8 +481,8 @@ export function speakPromptsMatchAnswers(segments: LessonSegment[]): boolean {
   return true;
 }
 
-function meaningPrompt(meaning: string): string {
-  return `How would you say ${meaning}?`;
+function meaningPrompt(meaning: string, teaching: LanguageId): string {
+  return line(teaching, "how", { translation: meaning });
 }
 
 function enforcePromptAnswers(segments: LessonSegment[]): LessonSegment[] {
@@ -512,24 +496,27 @@ function enforcePromptAnswers(segments: LessonSegment[]): LessonSegment[] {
     const longest = longestMeaning(segment.text, known);
     const recall = RECALL_PHASES.has(segment.phase ?? "");
     if (segment.phase === "roleplay") {
-      return cites(segment.text, own) ? segment : { ...segment, text: meaningPrompt(own) };
+      return cites(segment.text, own) ? segment : { ...segment, text: meaningPrompt(own, segment.language) };
     }
     if (recall) {
       if (justHeardTarget(segments, index, answer) && !longest) return segment;
       if (own && longest?.toLocaleLowerCase() === own.toLocaleLowerCase()) return segment;
-      return own ? { ...segment, text: meaningPrompt(own) } : segment;
+      return own ? { ...segment, text: meaningPrompt(own, segment.language) } : segment;
     }
     if (!longest || longest.toLocaleLowerCase() === own.toLocaleLowerCase()) return segment;
-    return { ...segment, text: own ? meaningPrompt(own) : "Repeat after me." };
+    return { ...segment, text: own ? meaningPrompt(own, segment.language) : line(segment.language, "repeat") };
   });
 }
 
-function linkedGloss(chunk: string, gloss: string, translation: string | undefined, language: LanguageId): string {
+function linkedGloss(chunk: string, gloss: string, translation: string | undefined, language: LanguageId, teaching: LanguageId): string {
   const wrapped = `[[lang:${language}]]${chunk}[[/lang]]`;
   if (gloss.includes("[[lang:") && gloss.includes(chunk)) return gloss.slice(0, 240);
-  if (gloss.includes(chunk) && /means|is how you say/i.test(gloss)) return gloss.replace(chunk, wrapped).slice(0, 240);
+  const glossCue = template(teaching, "gloss").split("{target}")[1]?.split("{meaning}")[0] ?? " means \"";
+  if (gloss.includes(chunk) && (gloss.includes(glossCue.trim()) || /means|is how you say/i.test(gloss))) {
+    return gloss.replace(chunk, wrapped).slice(0, 240);
+  }
   const meaning = meaningOf(translation || gloss);
-  return `${wrapped} means "${meaning}".`.slice(0, 240);
+  return line(teaching, "gloss", { target: wrapped, meaning }).slice(0, 240);
 }
 
 function cueText(value: unknown, fallback: string): string {
@@ -538,19 +525,30 @@ function cueText(value: unknown, fallback: string): string {
   return trimmed ? trimmed.slice(0, 180) : fallback;
 }
 
-export function cuesFrom(value: unknown): LessonCues {
+export function cuesFrom(value: unknown, teaching: LanguageId = "en-US"): LessonCues {
   const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const fallback = {
+    welcome: line(teaching, "cueWelcome"),
+    listen: line(teaching, "cueListen"),
+    afterDialogue: line(teaching, "cueAfter"),
+    buildup: line(teaching, "cueBuildup"),
+    howWouldYouSay: line(teaching, "cueHow"),
+    sayIt: line(teaching, "cueSayIt"),
+    yourTurn: line(teaching, "cueYourTurn"),
+    again: line(teaching, "cueAgain"),
+    closing: line(teaching, "cueClosing"),
+  };
   return {
-    welcome: cueText(record.welcome, DEFAULT_CUES.welcome),
-    listen: cueText(record.listen, DEFAULT_CUES.listen),
-    afterDialogue: cueText(record.afterDialogue, DEFAULT_CUES.afterDialogue),
-    buildup: cueText(record.buildup, DEFAULT_CUES.buildup),
-    howWouldYouSay: cueText(record.howWouldYouSay, DEFAULT_CUES.howWouldYouSay),
-    sayIt: cueText(record.sayIt, DEFAULT_CUES.sayIt),
-    yourTurn: cueText(record.yourTurn, DEFAULT_CUES.yourTurn),
+    welcome: cueText(record.welcome, fallback.welcome),
+    listen: cueText(record.listen, fallback.listen),
+    afterDialogue: cueText(record.afterDialogue, fallback.afterDialogue),
+    buildup: cueText(record.buildup, fallback.buildup),
+    howWouldYouSay: cueText(record.howWouldYouSay, fallback.howWouldYouSay),
+    sayIt: cueText(record.sayIt, fallback.sayIt),
+    yourTurn: cueText(record.yourTurn, fallback.yourTurn),
     ...(Array.isArray(record.echo) ? { echo: uniquePrompts(record.echo.filter((cue): cue is string => typeof cue === "string" && !cue.includes("{"))) } : {}),
-    again: cueText(record.again, DEFAULT_CUES.again),
-    closing: cueText(record.closing, DEFAULT_CUES.closing),
+    again: cueText(record.again, fallback.again),
+    closing: cueText(record.closing, fallback.closing),
   };
 }
 
@@ -596,8 +594,9 @@ export function arrangePimsleur(input: {
   const phrases = phrasesForLines(lines, input.phrases.slice(0, MAX_PHRASES));
   const segments: LessonSegment[] = [];
   const nextPrompt = promptPicker(
-    speakPromptPool(input.speakPrompts, input.cues),
+    speakPromptPool(input.speakPrompts, input.cues, input.nativeLanguage),
     input.seed ?? hashSeed(lines.map((line) => line.text).join("|")),
+    input.nativeLanguage,
   );
   const partnerName = (speaker: PimsleurPhrase["speaker"]): string => (
     speaker === "speakerA" ? names.speakerB : names.speakerA
@@ -659,8 +658,8 @@ export function arrangePimsleur(input: {
   const practicedChunks = new Set<string>();
   const echoes = uniquePrompts(input.cues.echo ?? []);
   const nextEcho = linePicker(echoes.length >= 2 ? echoes : uniquePrompts([
-    input.cues.yourTurn, input.cues.sayIt, "Try it the way you just heard it.",
-    "Give that a try.", "See if you can say it the same way.",
+    input.cues.yourTurn, input.cues.sayIt, line(input.nativeLanguage, "echo1"),
+    line(input.nativeLanguage, "echo2"), line(input.nativeLanguage, "echo3"),
   ]), input.seed ?? 0);
   const canAdd = (count: number, phrasesLeft: number): boolean => (
     segments.length + count + phrasesLeft * 4 <= MAX_PIMSLEUR_SEGMENTS - reserved
@@ -692,7 +691,7 @@ export function arrangePimsleur(input: {
       speaker: "teacher",
       phase: promptPhase,
       language: input.nativeLanguage,
-      text: cites(prompt, meaning) || (promptText && canEcho) ? prompt : meaningPrompt(meaning),
+      text: cites(prompt, meaning) || (promptText && canEcho) ? prompt : meaningPrompt(meaning, input.nativeLanguage),
       delivery: "curious",
     }, speakingPauseMs(phrase.text, phrase.language));
     if (!prompted) return false;
@@ -707,10 +706,10 @@ export function arrangePimsleur(input: {
     });
     return true;
   };
-  const nextLead = linePicker(PRIOR_LEAD_INS, input.seed ?? 0);
-  const nextReturn = linePicker(PRIOR_RETURNS, (input.seed ?? 0) + 1);
-  const nextRemember = linePicker(PRIOR_REMEMBER, (input.seed ?? 0) + 2);
-  const nextBridge = linePicker(PRIOR_BRIDGES, (input.seed ?? 0) + 3);
+  const nextLead = linePicker(priorLines(input.nativeLanguage, ["lead1", "lead2", "lead3", "lead4"]), input.seed ?? 0);
+  const nextReturn = linePicker(priorLines(input.nativeLanguage, ["return1", "return2", "return3", "return4"]), (input.seed ?? 0) + 1);
+  const nextRemember = linePicker(priorLines(input.nativeLanguage, ["remember1", "remember2", "remember3", "remember4"]), (input.seed ?? 0) + 2);
+  const nextBridge = linePicker(priorLines(input.nativeLanguage, ["bridge1", "bridge2", "bridge3", "bridge4"]), (input.seed ?? 0) + 3);
   const recallPrior = (phrase: PimsleurPhrase, phase: string, bridge: boolean): boolean => {
     const meaning = meaningOf(phrase.translation);
     if (!meaning) return false;
@@ -849,7 +848,7 @@ export function arrangePimsleur(input: {
         ?? drilled.chunks.find((chunk) => chunkTranslation(chunk, drilled.phrase));
       for (const chunk of drilled.chunks) {
         const translation = chunkTranslation(chunk, drilled.phrase);
-        const gloss = chunk.gloss ? linkedGloss(chunk.text, chunk.gloss, translation, drilled.phrase.language) : undefined;
+        const gloss = chunk.gloss ? linkedGloss(chunk.text, chunk.gloss, translation, drilled.phrase.language, input.nativeLanguage) : undefined;
         const explanation = gloss ?? (translation ? `“${meaningOf(translation)}.”` : undefined);
         if (!canAdd(explanation ? 2 : 1, phrasesLeft + 1)) break;
         const part: PimsleurPhrase = {
@@ -1050,7 +1049,7 @@ export function shapePimsleurLesson(value: unknown, context: {
   const title = textOf(record.title);
   if (title.length < 3) return null;
   const names = normalizeSpeakerNames(record.speakerNames);
-  const cues = cuesFrom(record.cues);
+  const cues = cuesFrom(record.cues, context.nativeLanguage);
   const cueRecord = record.cues && typeof record.cues === "object" ? record.cues as Record<string, unknown> : {};
   const speakPrompts = Array.isArray(cueRecord.speak)
     ? cueRecord.speak.filter((item): item is string => typeof item === "string")

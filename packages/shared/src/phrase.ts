@@ -1,11 +1,22 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel, LessonSegment } from "./schemas.js";
 import { MAX_LESSON_SEGMENTS } from "./schemas.js";
-import { languageById } from "./languages.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
 import { REVIEW_GAPS } from "./pimsleur.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 import { normalizeSpeakerNames, type SpeakerNames } from "./speakers.js";
+import {
+  glossSubject,
+  isGlossLine,
+  languageName,
+  line,
+  smoothCue,
+  withArticle,
+  situationFlags,
+  stripSpeakPrefix,
+  template,
+  type TeachingKey,
+} from "./teaching.js";
 
 /** Lookups kept on the profile. Older ones are deleted on the next save. */
 export const MAX_STORED_PHRASES = 100;
@@ -14,32 +25,15 @@ export const PHRASE_LOOKUP_UNLIMITED = 100;
 /** The same target sentence is modeled and asked only a handful of times. */
 export const MAX_IDENTICAL_PHRASE_ANSWERS = 5;
 
-const SPEAK_FRAMES = [
-  "How would you say {translation}?",
-  "Can you say {translation}?",
-  "Try saying {translation}.",
-  "Give it a try: {translation}.",
-  "Your turn: {translation}.",
-  "Say it out loud: {translation}.",
-  "Now you say it: {translation}.",
-] as const;
+const SPEAK_KEYS = ["how", "can", "try", "give", "turn", "loud", "nowSay"] as const satisfies readonly TeachingKey[];
 
-const SWAP_FRAMES = [
-  "Now, instead of {from}, {to}. How would you say {translation}?",
-  "This time it's {to}, not {from}. Can you say {translation}?",
-  "Same idea, but {to}. Try saying {translation}.",
-  "Keep the sentence, and use {to}. Your turn: {translation}.",
-] as const;
+const SWAP_KEYS = ["swapInstead", "swapThis", "swapSame", "swapKeep"] as const satisfies readonly TeachingKey[];
 
 const MAX_IDENTICAL_CUES = 2;
 /** A gloss longer than this is a whole sentence, not a new word. */
 const MAX_GLOSS_WORDS = 3;
 
-const QUICK_FRAMES = [
-  "Quick check. How would you say {translation}?",
-  "One more. Can you say {translation}?",
-  "And the line you came in with. Try saying {translation}.",
-] as const;
+const QUICK_KEYS = ["quick1", "quick2", "quick3"] as const satisfies readonly TeachingKey[];
 
 export type PhraseAlternative = { label: string; text: string; transliteration?: string; words?: PhraseLine[] };
 export type PhraseLine = { text: string; translation: string };
@@ -121,13 +115,13 @@ function hashKey(text: string): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-/** Cache id for one learner query. The English frame in the placeholder does not create a second phrase. */
-export function normalizePhraseQuery(text: string): string {
-  return normalize(text.replace(/^\s*how would you say\b[:\s]*/i, ""));
+/** Cache id for one learner query. The spoken "how would you say" frame does not create a second phrase. */
+export function normalizePhraseQuery(text: string, language: LanguageId = "en-US"): string {
+  return normalize(stripSpeakPrefix(text, language));
 }
 
-export function phraseIdFor(targetLanguage: string, level: string, query: string): string {
-  return `phrase_${hashKey(`${targetLanguage}:${level}:${normalizePhraseQuery(query)}`)}`;
+export function phraseIdFor(targetLanguage: string, level: string, query: string, language: LanguageId = "en-US"): string {
+  return `phrase_${hashKey(`${targetLanguage}:${level}:${normalizePhraseQuery(query, language)}`)}`;
 }
 
 export function phraseIdsToPrune(idsNewestFirst: readonly string[], keep = MAX_STORED_PHRASES): string[] {
@@ -165,8 +159,11 @@ function linesOf(value: unknown): Record<string, unknown>[] {
   });
 }
 
-function gloss(text: string, translation: string, language: LanguageId): string {
-  return `[[lang:${language}]]${meaningOf(text)}[[/lang]] means "${meaningOf(translation)}".`;
+function gloss(text: string, translation: string, language: LanguageId, teaching: LanguageId): string {
+  return line(teaching, "gloss", {
+    target: `[[lang:${language}]]${meaningOf(text)}[[/lang]]`,
+    meaning: meaningOf(translation),
+  });
 }
 
 function contentWords(text: string): string[] {
@@ -208,7 +205,7 @@ function shortWordGlosses(words: PhraseLine[] | undefined): PhraseLine[] {
 }
 
 /** A register alternative is glossed as the new words, never as the whole sentence. */
-function registerGloss(alternative: PhraseAlternative, core: string): { focus: string; focusTranslation: string; words?: PhraseLine[] } {
+function registerGloss(alternative: PhraseAlternative, core: string, teaching: LanguageId): { focus: string; focusTranslation: string; words?: PhraseLine[] } {
   const provided = shortWordGlosses(alternative.words);
   if (provided.length > 0) {
     const [first, ...rest] = provided;
@@ -220,7 +217,7 @@ function registerGloss(alternative: PhraseAlternative, core: string): { focus: s
   }
   const phrases = novelFocuses(alternative.text, core);
   const [first, ...rest] = phrases.length > 0 ? phrases : [alternative.text.split(/\s+/u).slice(0, MAX_GLOSS_WORDS).join(" ")];
-  const label = alternative.label.trim() || "a more formal way";
+  const label = alternative.label.trim() || line(teaching, "moreFormal");
   return {
     focus: first!,
     focusTranslation: label,
@@ -231,9 +228,7 @@ function registerGloss(alternative: PhraseAlternative, core: string): { focus: s
 /** The words a gloss or same-word note actually teaches, ignoring a full-sentence translation. */
 function taughtWords(segment: LessonSegment): string[] {
   const shown = lessonDisplayText(segment.text);
-  const sameWord = shown.match(/^(.+?)\s+is the same word\b/i);
-  const means = shown.match(/^(.+?)\s+means\s+["“]/i);
-  const span = (sameWord?.[1] ?? means?.[1] ?? "").trim();
+  const span = (glossSubject(shown, segment.language) ?? "").trim();
   if (!span) return [];
   const words = spokenWords(span);
   if (words.length === 0 || words.length > MAX_GLOSS_WORDS) return [];
@@ -276,35 +271,36 @@ function sharesPart(answer: string, part: string): boolean {
   return keys.some((key) => words.some((word) => word === key || (key.length >= 3 && word.startsWith(key))));
 }
 
-function formatCue(frame: string, translation: string, extra: { from?: string; to?: string } = {}): string {
+function formatCue(frame: string, translation: string, teaching: LanguageId, extra: { from?: string; to?: string } = {}): string {
   const meaning = meaningOf(translation);
-  let template = frame;
-  if (/^can\b/i.test(meaning)) {
-    template = template.replaceAll("Can you say {translation}?", "Your turn: {translation}.");
-    template = template.replaceAll("Can you say {translation}", "Your turn: {translation}");
+  let cueTemplate = frame;
+  const can = template(teaching, "canWord");
+  if (new RegExp(`^${can.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "iu").test(meaning)) {
+    cueTemplate = cueTemplate.replaceAll(template(teaching, "can"), template(teaching, "turn"));
   }
-  let cue = template
+  let cue = cueTemplate
     .replaceAll("{translation}", meaning)
     .replaceAll("{from}", extra.from ?? "")
     .replaceAll("{to}", extra.to ?? "");
   if (/[?？]\s*$/u.test(translation.trim()) && !/[?？]\s*$/u.test(cue)) {
     cue = cue.replace(/[.!]\s*$/u, "?");
   }
-  return cue;
+  return smoothCue(cue, teaching);
 }
 
-function produceCues(translation: string): string[] {
-  return SPEAK_FRAMES.map((frame) => formatCue(frame, translation));
+function produceCues(translation: string, teaching: LanguageId): string[] {
+  return SPEAK_KEYS.map((key) => formatCue(template(teaching, key), translation, teaching));
 }
 
-function swapCues(swap: PhraseSwap): string[] {
-  return SWAP_FRAMES.map((frame) => {
-    let template: string = frame;
-    if (/^now$/i.test(swap.to) && /^Now, /u.test(template)) {
-      template = template.replace(/^Now, /u, "");
-      template = template.charAt(0).toUpperCase() + template.slice(1);
-    }
-    return formatCue(template, swap.translation, { from: swap.from, to: swap.to });
+function swapCues(swap: PhraseSwap, teaching: LanguageId, nativeText: string): string[] {
+  const now = template(teaching, "nowWord");
+  const from = withArticle(swap.from, nativeText);
+  const to = withArticle(swap.to, swap.translation);
+  return SWAP_KEYS.map((key) => {
+    const frame = key === "swapInstead" && swap.to.localeCompare(now, teaching, { sensitivity: "accent" }) === 0
+      ? template(teaching, "swapBare")
+      : template(teaching, key);
+    return formatCue(frame, swap.translation, teaching, { from, to });
   });
 }
 
@@ -419,7 +415,8 @@ export function phraseLinesAreDistinct(segments: readonly LessonSegment[]): bool
     const previous = lessonDisplayText(segments[index - 1]?.text ?? "");
     const current = lessonDisplayText(segments[index]?.text ?? "");
     if (!previous || !current || same(previous, current)) return false;
-    const gloss = /means\s+["“]/i.test(previous) || /means\s+["“]/i.test(current);
+    const gloss = isGlossLine(previous, segments[index - 1]?.language ?? "en-US")
+      || isGlossLine(current, segments[index]?.language ?? "en-US");
     if (gloss) continue;
     const left = previous.toLocaleLowerCase();
     const right = current.toLocaleLowerCase();
@@ -436,8 +433,8 @@ export function focusesAreGlossedFirst(segments: readonly LessonSegment[], focus
     const needle = normalize(focus);
     if (needle.length < 2) continue;
     const glossAt = segments.findIndex((segment) => {
-      const teaches = /means\s+["“]/i.test(segment.text) || /is the same word/i.test(segment.text);
-      return teaches && normalize(lessonDisplayText(segment.text)).includes(needle);
+      const shown = lessonDisplayText(segment.text);
+      return isGlossLine(shown, segment.language) && normalize(shown).includes(needle);
     });
     const produceAt = segments.findIndex((segment, index) => {
       const previous = segments[index - 1];
@@ -480,26 +477,28 @@ export function phraseAnswersStayVaried(segments: readonly LessonSegment[], lang
   return true;
 }
 
-function introFor(context: PhraseLessonContext, targetLabel: string): string {
+function introFor(context: PhraseLessonContext): string {
   const meaning = meaningOf(context.nativeText);
+  const language = context.nativeLanguage;
+  const named = languageName(language, context.targetLanguage);
   if (context.inputLanguage === "target") {
-    return `You already said this in ${targetLabel}. It means "${meaning}". We'll practice it in a few real situations.`;
+    return line(language, "already", { language: named, meaning });
   }
   if (context.inputLanguage === "mixed") {
-    return `Part of that was already in ${targetLabel}. The whole sentence means "${meaning}". Let's learn it as one line.`;
+    return line(language, "mixed", { language: named, meaning });
   }
-  return `You wanted to say "${meaning}". Here's how that sounds in ${targetLabel}.`;
+  return line(language, "wanted", { meaning, language: named });
 }
 
-function closingFor(meaning: string, situations: readonly PhraseSituation[]): string {
-  const clerk = situations.find((item) => /\b(clerk|shop)\b/i.test(item.setup));
-  const casual = situations.find((item) => /\bcasual\b/i.test(`${item.setup} ${item.usage ?? ""}`));
-  const friend = situations.find((item) => /\bfriend\b/i.test(item.setup));
-  const lines = ["Nice work."];
-  if (clerk) lines.push(`With a clerk, use the line that means "${meaningOf(clerk.translation)}".`);
-  if (casual) lines.push(`With a friend, the casual way is "${casual.answer}".`);
-  else if (friend && friend !== clerk) lines.push(`With a friend, use the line that means "${meaningOf(friend.translation)}".`);
-  lines.push(`The line you came in with means "${meaning}".`);
+function closingFor(meaning: string, situations: readonly PhraseSituation[], teaching: LanguageId): string {
+  const clerk = situations.find((item) => situationFlags(item.setup, teaching).clerk);
+  const casual = situations.find((item) => situationFlags(`${item.setup} ${item.usage ?? ""}`, teaching).casual);
+  const friend = situations.find((item) => situationFlags(item.setup, teaching).friend);
+  const lines = [line(teaching, "nice")];
+  if (clerk) lines.push(line(teaching, "clerkUse", { meaning: meaningOf(clerk.translation) }));
+  if (casual) lines.push(line(teaching, "friendCasual", { answer: casual.answer }));
+  else if (friend && friend !== clerk) lines.push(line(teaching, "friendUse", { meaning: meaningOf(friend.translation) }));
+  lines.push(line(teaching, "cameWith", { meaning }));
   return lines.join(" ");
 }
 
@@ -589,16 +588,22 @@ export function shapePhraseLesson(
   for (const alternative of context.alternatives ?? []) {
     if (chosenSituations.some((item) => same(item.answer, alternative.text)) || same(alternative.text, core)) continue;
     if (isLiteral(alternative.text, note) || !sharesCorePattern(alternative.text, core)) continue;
-    const glossed = registerGloss(alternative, core);
+    const glossed = registerGloss(alternative, core, context.nativeLanguage);
     const register = alternative.label.trim();
-    const formalRegister = /formal/i.test(register);
+    const formalRegister = template(context.nativeLanguage, "formalHint").split("|").some((word) => (
+      word.length > 0 && new RegExp(word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(register)
+    ));
     chosenSituations.push({
-      setup: formalRegister ? "You want to sound a bit more formal." : `You want a more ${register || "casual"} way to say it.`,
+      setup: formalRegister
+        ? line(context.nativeLanguage, "formalSetup")
+        : line(context.nativeLanguage, "casualSetup", { register: register || template(context.nativeLanguage, "casualHint").split("|")[0] || "casual" }),
       answer: alternative.text,
       translation: context.nativeText,
       focus: glossed.focus,
       focusTranslation: glossed.focusTranslation,
-      usage: formalRegister ? "A more formal way to say it." : `This is the ${register || "other"} way to say it.`,
+      usage: formalRegister
+        ? line(context.nativeLanguage, "formalUsage")
+        : line(context.nativeLanguage, "otherUsage", { register: register || "other" }),
       ...(glossed.words && glossed.words.length > 0 ? { words: glossed.words } : {}),
     });
     break;
@@ -614,14 +619,14 @@ export function shapePhraseLesson(
       kind: "phrase",
       answer: core,
       translation: context.nativeText,
-      cues: produceCues(context.nativeText),
+      cues: produceCues(context.nativeText, context.nativeLanguage),
       ...(context.transliteration ? { transliteration: context.transliteration } : {}),
     },
     ...swaps.map((swap) => ({
       kind: "swap" as const,
       answer: swap.answer,
       translation: swap.translation,
-      cues: swapCues(swap),
+      cues: swapCues(swap, context.nativeLanguage, context.nativeText),
       focus: swap.focus,
       focusTranslation: swap.focusTranslation,
       ...(swap.usage ? { usage: swap.usage } : {}),
@@ -632,7 +637,7 @@ export function shapePhraseLesson(
       setup: situation.setup,
       answer: situation.answer,
       translation: situation.translation,
-      cues: produceCues(situation.translation),
+      cues: produceCues(situation.translation, context.nativeLanguage),
       focus: situation.focus,
       focusTranslation: situation.focusTranslation,
       ...(situation.usage ? { usage: situation.usage } : {}),
@@ -643,7 +648,7 @@ export function shapePhraseLesson(
       setup: roleSetup,
       answer: roleSituation.answer,
       translation: roleSituation.translation,
-      cues: produceCues(roleSituation.translation),
+      cues: produceCues(roleSituation.translation, context.nativeLanguage),
     },
   ];
 
@@ -700,18 +705,17 @@ export function shapePhraseLesson(
     if (!word || !translation) return;
     push({ kind: "example", phase, language: context.targetLanguage, text: word, translation: meaningOf(translation), delivery: "clear" });
     const note = same(word, translation)
-      ? `${meaningOf(word)} is the same word.`
-      : gloss(word, translation, context.targetLanguage);
+      ? line(context.nativeLanguage, "sameWord", { word: meaningOf(word) })
+      : gloss(word, translation, context.targetLanguage, context.nativeLanguage);
     push({ kind: "explanation", phase, language: context.nativeLanguage, text: note, delivery: "clear" });
     if (usage) push({ kind: "explanation", phase, language: context.nativeLanguage, text: usage, delivery: "clear" });
     if (!repeat || same(word, core)) return;
-    ask({ answer: word, translation, cues: produceCues(translation) }, "focus", 1);
+    ask({ answer: word, translation, cues: produceCues(translation, context.nativeLanguage) }, "focus", 1);
   };
 
-  const targetLabel = languageById[context.targetLanguage].label;
   const teacherName = normalizeSpeakerNames(source.speakerNames).teacher;
-  push({ kind: "narration", phase: "intro", language: context.nativeLanguage, text: introFor(context, targetLabel), delivery: "warm" });
-  push({ kind: "narration", phase: "hook", language: context.nativeLanguage, text: "Listen once, then we'll build it and try it in a few places.", delivery: "warm" });
+  push({ kind: "narration", phase: "intro", language: context.nativeLanguage, text: introFor(context), delivery: "warm" });
+  push({ kind: "narration", phase: "hook", language: context.nativeLanguage, text: line(context.nativeLanguage, "listenBuild"), delivery: "warm" });
   push({
     kind: "example",
     phase: "hook",
@@ -721,24 +725,24 @@ export function shapePhraseLesson(
     ...(context.transliteration ? { transliteration: context.transliteration } : {}),
     delivery: "clear",
   });
-  push({ kind: "explanation", phase: "hook", language: context.nativeLanguage, text: gloss(core, meaning, context.targetLanguage), delivery: "clear" });
+  push({ kind: "explanation", phase: "hook", language: context.nativeLanguage, text: gloss(core, meaning, context.targetLanguage, context.nativeLanguage), delivery: "clear" });
   if (note && !same(note, meaning) && !same(note, core)) {
     push({ kind: "explanation", phase: "note", language: context.nativeLanguage, text: note, delivery: "clear" });
-    push({ kind: "explanation", phase: "note", language: context.nativeLanguage, text: "We'll practice the natural sentence, not the word-for-word version.", delivery: "clear" });
+    push({ kind: "explanation", phase: "note", language: context.nativeLanguage, text: line(context.nativeLanguage, "naturalSentence"), delivery: "clear" });
   }
   if (sentenceLines.length > 1) {
-    push({ kind: "narration", phase: "chunk", language: context.nativeLanguage, text: "We'll learn one sentence at a time, then say both together.", delivery: "warm" });
+    push({ kind: "narration", phase: "chunk", language: context.nativeLanguage, text: line(context.nativeLanguage, "oneAtATime"), delivery: "warm" });
     sentenceLines.forEach((sentence, index) => {
-      const lead = index === 0 ? "The first sentence." : "The next sentence.";
+      const lead = line(context.nativeLanguage, index === 0 ? "firstSentence" : "nextSentence");
       push({ kind: "narration", phase: "chunk", language: context.nativeLanguage, text: lead, delivery: "warm" });
       chunks
         .filter((chunk) => normalize(sentence.text).includes(normalize(chunk.text)) && !same(chunk.text, sentence.text))
         .forEach((chunk) => teach(chunk.text, chunk.translation, "chunk", true));
-      ask({ answer: sentence.text, translation: sentence.translation, cues: produceCues(sentence.translation) }, "practice", index);
+      ask({ answer: sentence.text, translation: sentence.translation, cues: produceCues(sentence.translation, context.nativeLanguage) }, "practice", index);
     });
-    push({ kind: "narration", phase: "chunk", language: context.nativeLanguage, text: "Now both sentences together.", delivery: "warm" });
+    push({ kind: "narration", phase: "chunk", language: context.nativeLanguage, text: line(context.nativeLanguage, "bothTogether"), delivery: "warm" });
   } else if (chunks.length > 0) {
-    push({ kind: "narration", phase: "chunk", language: context.nativeLanguage, text: "We'll take it in pieces, starting from the end.", delivery: "warm" });
+    push({ kind: "narration", phase: "chunk", language: context.nativeLanguage, text: line(context.nativeLanguage, "piecesFromEnd"), delivery: "warm" });
     chunks.forEach((chunk) => teach(chunk.text, chunk.translation, "chunk", true));
   }
   if (pattern) {
@@ -758,15 +762,15 @@ export function shapePhraseLesson(
       }
       if (drill.kind === "situation") {
         push({ kind: "example", phase: drill.kind, language: context.targetLanguage, text: drill.answer, translation: drill.translation, delivery: "clear" });
-        push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: gloss(drill.answer, drill.translation, context.targetLanguage), delivery: "clear" });
+        push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: gloss(drill.answer, drill.translation, context.targetLanguage, context.nativeLanguage), delivery: "clear" });
       }
       if (drill.usage) push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: drill.usage, delivery: "clear" });
     } else if (drill.focus && drill.focusTranslation) {
       for (const word of drill.words ?? []) teach(word.text, word.translation, drill.kind, true);
       push({ kind: "example", phase: drill.kind, language: context.targetLanguage, text: drill.answer, translation: drill.translation, delivery: "clear" });
       const sentenceNote = same(drill.focus, drill.focusTranslation)
-        ? `${meaningOf(drill.focus)} is the same word.`
-        : gloss(drill.focus, drill.focusTranslation, context.targetLanguage);
+        ? line(context.nativeLanguage, "sameWord", { word: meaningOf(drill.focus) })
+        : gloss(drill.focus, drill.focusTranslation, context.targetLanguage, context.nativeLanguage);
       push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: sentenceNote, delivery: "clear" });
       if (drill.usage) push({ kind: "explanation", phase: drill.kind, language: context.nativeLanguage, text: drill.usage, delivery: "clear" });
     }
@@ -792,38 +796,49 @@ export function shapePhraseLesson(
 
   const quickItems = [
     swaps[0] ? { answer: swaps[0].answer, translation: swaps[0].translation } : null,
-    chosenSituations.find((item) => /\bfriend\b/i.test(item.setup))
+    chosenSituations.find((item) => situationFlags(item.setup, context.nativeLanguage).friend)
       ?? chosenSituations.find((item) => !same(item.answer, roleSituation.answer))
       ?? null,
     { answer: core, translation: context.nativeText },
   ].filter((item): item is { answer: string; translation: string } => Boolean(item));
   quickItems.slice(0, 3).forEach((item, index) => {
-    const frame = QUICK_FRAMES[index] ?? QUICK_FRAMES[0];
+    const frame = template(context.nativeLanguage, QUICK_KEYS[index] ?? QUICK_KEYS[0]);
     ask({
       answer: item.answer,
       translation: item.translation,
-      cues: [formatCue(frame, item.translation)],
+      cues: [formatCue(frame, item.translation, context.nativeLanguage)],
     }, "quick", index);
   });
 
-  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `The sentence you wanted is the one that means "${meaning}".`, delivery: "clear" });
+  push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: line(context.nativeLanguage, "wantedMeans", { meaning }), delivery: "clear" });
   push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: core, translation: meaning, delivery: "clear" });
   const swapLine = swaps[0];
   if (swapLine) {
-    push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: `To change ${swapLine.from} to ${swapLine.to}, you say the new sentence like this.`, delivery: "clear" });
+    push({
+      kind: "recap",
+      phase: "summary",
+      language: context.nativeLanguage,
+      text: smoothCue(line(context.nativeLanguage, "toChange", {
+        from: withArticle(swapLine.from, context.nativeText),
+        to: withArticle(swapLine.to, swapLine.translation),
+      }), context.nativeLanguage),
+      delivery: "clear",
+    });
     push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: swapLine.answer, translation: meaningOf(swapLine.translation), delivery: "clear" });
   }
-  const clerk = chosenSituations.find((item) => /\b(clerk|shop)\b/i.test(item.setup));
-  const formal = chosenSituations.find((item) => /\bformal\b/i.test(item.setup));
+  const clerk = chosenSituations.find((item) => situationFlags(item.setup, context.nativeLanguage).clerk);
+  const formal = chosenSituations.find((item) => template(context.nativeLanguage, "formalHint").split("|").some((word) => (
+    word.length > 0 && new RegExp(`(?:^|[^\\p{L}])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "iu").test(item.setup)
+  )));
   const recapSituation = clerk ?? formal ?? roleSituation;
   const recapLine = clerk
-    ? `With a clerk, the polite version means "${meaningOf(recapSituation.translation)}", and it sounds like this.`
+    ? line(context.nativeLanguage, "clerkPolite", { meaning: meaningOf(recapSituation.translation) })
     : formal
-      ? `A more formal way to say it means "${meaningOf(recapSituation.translation)}", and it sounds like this.`
-      : `Another way to say it means "${meaningOf(recapSituation.translation)}", and it sounds like this.`;
+      ? line(context.nativeLanguage, "formalMeans", { meaning: meaningOf(recapSituation.translation) })
+      : line(context.nativeLanguage, "anotherMeans", { meaning: meaningOf(recapSituation.translation) });
   push({ kind: "recap", phase: "summary", language: context.nativeLanguage, text: recapLine, delivery: "clear" });
   push({ kind: "recap", phase: "summary", language: context.targetLanguage, text: recapSituation.answer, translation: meaningOf(recapSituation.translation), delivery: "clear" });
-  push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: closingFor(meaning, chosenSituations), delivery: "praise" });
+  push({ kind: "recap", phase: "closing", language: context.nativeLanguage, text: closingFor(meaning, chosenSituations, context.nativeLanguage), delivery: "praise" });
 
   const focuses = [
     ...chunks.map((chunk) => chunk.text),

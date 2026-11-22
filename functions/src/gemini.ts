@@ -73,7 +73,7 @@ const GRAMMAR_INSTRUCTION = [
   "Fields: title, topic, summary, speakerNames, hook, examples, notice, rule, mnemonic, drills, checks, recombinations, targetTerms.",
   "hook and examples are distinct short target-language sentences with a native translation. The noticing answer must be true for this exact point.",
   "rule lists every form the examples use. For a verb, teach the full level-appropriate paradigm, one person first and the rest later.",
-  "drills has at least 12 items: substitution, a transformation that includes the source sentence, a fill-the-gap with ___, and a which-form question. Disambiguate you as you, to a friend; you all; or you, formally, and she versus they.",
+  "drills has at least 12 items: substitution, a transformation that includes the source sentence, a fill-the-gap with ___, and a which-form question. When the teaching language can mean a friend, a group, or a formal person, name which one. In English that is: you, to a friend; you all; or you, formally, and she versus they.",
   "The same cue sentence appears at most twice. Vary How would you say, Can you say, and Try saying, and always keep the meaning or the source sentence.",
   "recombinations has 2 new sentences that reuse the rule. Each cue includes the native meaning.",
   "Wrap every target-language span inside a teaching-language line as [[lang:BCP-47]]...[[/lang]], including isolated letters, stems, prefixes, endings, pronouns, and words spelled the same in both languages. Include the hyphen within an affix span. This applies to explanations, questions, answers, and drill cues. Close each tag, and never include teaching-language words inside it.",
