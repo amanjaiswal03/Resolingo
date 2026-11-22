@@ -83,14 +83,14 @@ export default function HomeScreen() {
       {active ? <Pressable onPressIn={closeOpenRow} onPress={() => router.push(`/lesson/${active.id}`)} style={styles.above}><Card style={[styles.statusCard, { backgroundColor: theme.surfaceMuted }]}><Body muted style={styles.statusMeta}>IN PROGRESS</Body><Heading style={styles.statusTitle}>{active.title}</Heading><View style={[styles.progressTrack, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.brand, width: percentWidth(active.progress) }]} /></View><Body muted style={styles.statusMeta}>{Number.isFinite(active.progress) ? active.progress : 0}% · Tap to follow progress</Body></Card></Pressable> : null}
       <View style={styles.choices}>
         <Pressable disabled={startDisabled} onPressIn={closeOpenRow} onPress={() => void start("conversation")} accessibilityRole="button" accessibilityLabel="Start a conversation lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
-          <Card style={[styles.lessonCard, { backgroundColor: theme.brand }]}><Body style={styles.eyebrow}>CONVERSATION</Body><Title style={styles.dark}>Speak through a fresh everyday topic.</Title><Body style={styles.darkMuted}>{starting === "conversation" ? "Starting…" : "3–5 minutes · Two voices"}</Body></Card>
+          <Card style={[styles.lessonCard, { backgroundColor: theme.amber }]}><Body style={styles.eyebrow}>CONVERSATION</Body><Title style={styles.dark}>Speak through a fresh everyday topic.</Title><Body style={styles.darkMuted}>{starting === "conversation" ? "Starting…" : "3–5 minutes · Two voices"}</Body></Card>
         </Pressable>
         <Pressable disabled={startDisabled} onPressIn={closeOpenRow} onPress={() => void start("grammar")} accessibilityRole="button" accessibilityLabel="Start a grammar lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
-          <Card style={[styles.lessonCard, { backgroundColor: theme.successFill }]}><Body style={styles.eyebrow}>GRAMMAR</Body><Title style={styles.dark}>Understand one useful pattern clearly.</Title><Body style={styles.darkMuted}>{starting === "grammar" ? "Starting…" : "8–12 minutes · One narrator"}</Body></Card>
+          <Card style={[styles.lessonCard, { backgroundColor: theme.mint }]}><Body style={styles.eyebrow}>GRAMMAR</Body><Title style={styles.dark}>Understand one useful pattern clearly.</Title><Body style={styles.darkMuted}>{starting === "grammar" ? "Starting…" : "8–12 minutes · One narrator"}</Body></Card>
         </Pressable>
         {HOW_WOULD_YOU_SAY_ENABLED ? (
           <Pressable onPressIn={closeOpenRow} onPress={() => router.push("/say")} accessibilityRole="button" accessibilityLabel="How would you say">
-            <Card style={[styles.lessonCard, { backgroundColor: theme.sky }]}><Body style={styles.eyebrow}>HOW WOULD YOU SAY?</Body><Title style={styles.dark}>Ask for a sentence, then practice it.</Title><Body style={styles.darkMuted}>Type it · One narrator</Body></Card>
+            <Card style={[styles.lessonCard, { backgroundColor: theme.coral }]}><Body style={styles.eyebrow}>HOW WOULD YOU SAY?</Body><Title style={styles.dark}>Ask for a sentence, then practice it.</Title><Body style={styles.darkMuted}>Type it · One narrator</Body></Card>
           </Pressable>
         ) : null}
       </View>

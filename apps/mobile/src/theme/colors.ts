@@ -20,6 +20,8 @@ const shared = {
   onDark: "#5DDEC8",
   coral: "#FF775F",
   amber: "#FFC857",
+  /** Light card fill. Navy text stays readable on it. */
+  mint: "#66E0C2",
   /** Phrase lessons. Not a warning color. */
   sky: "#8EB7F5",
   navy: "#08152F",
