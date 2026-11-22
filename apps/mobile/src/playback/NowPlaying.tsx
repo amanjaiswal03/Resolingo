@@ -221,29 +221,32 @@ function Transcript({ lesson, activeSegmentId, onJump }: { lesson: Lesson; activ
   const scrollY = useRef(0);
   const viewportHeight = useRef(0);
   const scrollFrame = useRef<number | null>(null);
+  const programmatic = useRef(false);
+  const following = useRef(true);
   const [jumpDirection, setJumpDirection] = useState<"up" | "down" | null>(null);
+  const frameOf = useCallback((id: string | null) => id ? frames.current[id] : undefined, []);
+  const visible = useCallback((frame: { y: number; height: number } | undefined) => {
+    const viewHeight = viewportHeight.current;
+    if (!frame || viewHeight <= 0) return false;
+    const top = scrollY.current;
+    return frame.y + frame.height > top + 12 && frame.y < top + viewHeight - 12;
+  }, []);
   const syncJump = useCallback(() => {
-    const frame = activeSegmentId ? frames.current[activeSegmentId] : undefined;
+    const frame = frameOf(activeSegmentId);
     const viewHeight = viewportHeight.current;
     if (!frame || viewHeight <= 0) {
       setJumpDirection((current) => current === null ? current : null);
       return;
     }
-    const top = scrollY.current;
-    const bottom = top + viewHeight;
-    const visible = frame.y + frame.height > top + 12 && frame.y < bottom - 12;
-    const next = visible ? null : frame.y < top ? "up" : "down";
+    const next = visible(frame) ? null : frame.y < scrollY.current ? "up" : "down";
     setJumpDirection((current) => current === next ? current : next);
-  }, [activeSegmentId]);
-  useEffect(() => { syncJump(); }, [syncJump]);
-  const scrollToActive = () => {
-    if (!activeSegmentId) return;
-    const frame = frames.current[activeSegmentId];
-    if (!frame) return;
+  }, [activeSegmentId, frameOf, visible]);
+  const glideTo = useCallback((target: number) => {
     const start = scrollY.current;
-    const change = Math.max(0, frame.y - 24) - start;
+    const change = Math.max(0, target) - start;
     if (Math.abs(change) < 2) return;
     if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
+    programmatic.current = true;
     const duration = Math.min(560, Math.max(260, Math.abs(change) * 0.38));
     const startedAt = Date.now();
     const tick = () => {
@@ -252,18 +255,65 @@ function Transcript({ lesson, activeSegmentId, onJump }: { lesson: Lesson; activ
       scrollY.current = start + change * eased;
       transcriptRef.current?.scrollTo({ y: scrollY.current, animated: false });
       if (t < 1) scrollFrame.current = requestAnimationFrame(tick);
-      else scrollFrame.current = null;
+      else {
+        scrollFrame.current = null;
+        programmatic.current = false;
+        syncJump();
+      }
     };
     scrollFrame.current = requestAnimationFrame(tick);
+  }, [syncJump]);
+  const revealActive = useCallback(() => {
+    const frame = frameOf(activeSegmentId);
+    const viewHeight = viewportHeight.current;
+    if (!frame || viewHeight <= 0 || visible(frame)) return;
+    const padding = 24;
+    const top = scrollY.current;
+    const bottom = top + viewHeight;
+    const target = frame.y < top + padding
+      ? frame.y - padding
+      : frame.y + frame.height - viewHeight + padding;
+    glideTo(Math.min(target, Math.max(0, frame.y - padding)));
+  }, [activeSegmentId, frameOf, glideTo, visible]);
+  const scrollToActive = () => {
+    const frame = frameOf(activeSegmentId);
+    if (!frame) return;
+    following.current = true;
+    glideTo(frame.y - 24);
   };
+  useEffect(() => {
+    if (!following.current) {
+      syncJump();
+      return;
+    }
+    revealActive();
+  }, [activeSegmentId, revealActive, syncJump]);
   return (
     <View style={styles.transcript}>
-      <ScrollView ref={transcriptRef} contentContainerStyle={styles.transcriptContent} showsVerticalScrollIndicator={false} scrollEventThrottle={32} onLayout={(event) => { viewportHeight.current = event.nativeEvent.layout.height; syncJump(); }} onScroll={(event) => { scrollY.current = event.nativeEvent.contentOffset.y; viewportHeight.current = event.nativeEvent.layoutMeasurement.height; syncJump(); }}>
+      <ScrollView
+        ref={transcriptRef}
+        contentContainerStyle={styles.transcriptContent}
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={32}
+        onScrollBeginDrag={() => {
+          if (scrollFrame.current != null) cancelAnimationFrame(scrollFrame.current);
+          scrollFrame.current = null;
+          programmatic.current = false;
+        }}
+        onLayout={(event) => { viewportHeight.current = event.nativeEvent.layout.height; if (following.current) revealActive(); else syncJump(); }}
+        onScroll={(event) => {
+          scrollY.current = event.nativeEvent.contentOffset.y;
+          viewportHeight.current = event.nativeEvent.layoutMeasurement.height;
+          if (programmatic.current) return;
+          following.current = visible(frameOf(activeSegmentId));
+          syncJump();
+        }}
+      >
         <Heading>Transcript</Heading>
         {lesson.segments.map((segment) => {
           const highlighted = segment.id === activeSegmentId;
           return (
-            <Pressable key={segment.id} accessibilityRole="button" accessibilityLabel="Play this part" onPress={() => onJump(segment.id)} onLayout={(event) => { frames.current[segment.id] = { y: event.nativeEvent.layout.y, height: event.nativeEvent.layout.height }; if (segment.id === activeSegmentId) syncJump(); }}>
+            <Pressable key={segment.id} accessibilityRole="button" accessibilityLabel="Play this part" onPress={() => onJump(segment.id)} onLayout={(event) => { frames.current[segment.id] = { y: event.nativeEvent.layout.y, height: event.nativeEvent.layout.height }; if (segment.id === activeSegmentId && following.current) revealActive(); else if (segment.id === activeSegmentId) syncJump(); }}>
               <Card style={highlighted ? { backgroundColor: theme.surfaceMuted, borderColor: theme.primary, borderWidth: 2 } : undefined}>
                 <Body muted>{speakerLabel(segment.speaker, lesson.speakerNames)}</Body>
                 <Body>{lessonDisplayText(segment.text)}</Body>
