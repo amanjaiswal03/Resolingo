@@ -1,4 +1,4 @@
-import { LanguageIdSchema, line, type LanguageId } from "@resolingo/shared";
+import { LanguageIdSchema, type LanguageId } from "@resolingo/shared";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { requireUid } from "./auth.js";
 import { REGION } from "./config.js";
@@ -6,8 +6,8 @@ import { db } from "./firebase.js";
 import { answerFeedbackLines } from "./answer-feedback-lines.js";
 import { synthesizeTeacherFeedback } from "./tts.js";
 
-// A spoken answer is never sent out for feedback. A match is two short calm
-// lines from the teaching table. A miss is a short close or unclear line.
+// A spoken answer is never sent out for feedback. A match is two short warm
+// lines. A miss is a short close or unclear line.
 
 const inFlight = new Map<LanguageId, Promise<{ recalled: string[]; compare: string[]; unclear: string[] }>>();
 
@@ -30,8 +30,8 @@ export const lessonVoiceFeedback = onCall({ region: REGION, enforceAppCheck: tru
   const miss = answerFeedbackLines[language.data];
   const speak = (text: string, delivery: "praise" | "gentle") => synthesizeTeacherFeedback(language.data, text, delivery);
   const task = Promise.all([
-    speak(line(language.data, "matchYes"), "praise"),
-    speak(line(language.data, "matchGood"), "praise"),
+    speak(miss.recalled[0], "praise"),
+    speak(miss.recalled[1], "praise"),
     speak(miss.close[0], "gentle"),
     speak(miss.close[1], "gentle"),
     speak(miss.unclear, "gentle"),
