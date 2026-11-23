@@ -10,6 +10,18 @@ export const NO_SPEECH_TIMEOUT_MS = 5_000;
 /** Ignore a single click. A short word still clears this on the next level sample. */
 export const MIN_SPEECH_MS = 200;
 
+/**
+ * A working microphone in a quiet room still reads around -50 to -70 dBFS.
+ * Readings at the floor mean the meter is not reporting (the input was not
+ * ready, or the session was switched), so they must not count as silence.
+ */
+export const DEAD_METER_DB = -100;
+
+/** A metering sample the voice detector can trust, or null when the meter is not reporting. */
+export function usableLevel(db: unknown): number | null {
+  return typeof db === "number" && Number.isFinite(db) && db > DEAD_METER_DB ? db : null;
+}
+
 export type VadState = {
   elapsedMs: number;
   speechMs: number;

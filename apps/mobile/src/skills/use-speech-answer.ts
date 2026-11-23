@@ -3,8 +3,9 @@ import { requestRecordingPermissionsAsync, setAudioModeAsync, useAudioRecorder, 
 import { File } from "expo-file-system";
 import { MAX_PHRASE_AUDIO_SECONDS } from "@resolingo/shared";
 import { api } from "@/services/api";
+import { track } from "@/services/telemetry";
 import { SPEECH_RECORDING } from "@/say/speech-recording";
-import { initialVoiceActivity, stepVoiceActivity, type VadStop } from "@/say/voice-activity";
+import { initialVoiceActivity, stepVoiceActivity, usableLevel, type VadStop } from "@/say/voice-activity";
 import { waitForSessionSettle } from "./audio-session-settle";
 
 export type SpeechAnswer =
@@ -36,7 +37,7 @@ export function meterLevel(db: number | undefined): number {
  * Record one spoken answer, stop by itself after a pause, and transcribe it in
  * the target language. Mirrors the recording flow in Say.
  */
-export function useSpeechAnswer() {
+export function useSpeechAnswer(options: { trackMisses?: boolean } = {}) {
   const recorder = useAudioRecorder(SPEECH_RECORDING);
   const status = useAudioRecorderState(recorder, 120);
   const [phase, setPhase] = useState<Phase>("idle");
@@ -47,6 +48,8 @@ export function useSpeechAnswer() {
   const activity = useRef(initialVoiceActivity());
   const poll = useRef<ReturnType<typeof setInterval> | null>(null);
   const receive = useRef<((answer: SpeechAnswer) => void) | null>(null);
+  const peakDb = useRef(-160);
+  const attempts = useRef(0);
 
   const setBoth = (next: Phase) => {
     phaseRef.current = next;
@@ -66,6 +69,9 @@ export function useSpeechAnswer() {
     const durationMs = Math.min(MAX_PHRASE_AUDIO_SECONDS * 1000, Math.round(recorder.getStatus().durationMillis || 0));
     const missed = !cancel && (reason === "no-speech" || (sawLevel && !heardSpeech) || durationMs < 300);
     const deliver = receive.current;
+    const noteMiss = (why: string) => {
+      if (options.trackMisses) void track("speech_check_missed", { why, attempt: attempts.current, durationMs, peakDb: Math.round(peakDb.current) }).catch(() => undefined);
+    };
     receive.current = null;
     setBoth(cancel || missed ? "idle" : "checking");
     let uri = recorder.uri ?? recorder.getStatus().url;
@@ -75,6 +81,7 @@ export function useSpeechAnswer() {
       if (cancel) return discard(uri);
       if (!uri || missed) {
         discard(uri);
+        noteMiss(!uri ? "no-file" : reason === "no-speech" ? "quiet" : durationMs < 300 ? "short" : "no-voice");
         deliver?.({ kind: "no-speech" });
         return;
       }
@@ -85,21 +92,25 @@ export function useSpeechAnswer() {
     } catch (error) {
       discard(uri);
       const message = messageOf(error);
-      if (!cancel) deliver?.(/catch|silent/i.test(message) ? { kind: "no-speech" } : { kind: "failed", message });
+      const silent = /catch|silent/i.test(message);
+      if (silent) noteMiss("server-silent");
+      if (!cancel) deliver?.(silent ? { kind: "no-speech" } : { kind: "failed", message });
     } finally {
       finishing.current = false;
       cancelled.current = false;
       sawRecording.current = false;
       activity.current = initialVoiceActivity();
       setBoth("idle");
-      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => undefined);
     }
-  }, [recorder]);
+  }, [recorder, options.trackMisses]);
 
+  // Recording mode stays on between answers. Switching the session to playback-only and back after every
+  // answer left later recordings silent on some phones. It goes back to playback when the review closes.
   useEffect(() => () => {
     stopPoll();
     receive.current = null;
     if (phaseRef.current === "listening") void recorder.stop().catch(() => undefined);
+    void setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => undefined);
   }, [recorder]);
 
   const start = async (onAnswer: (answer: SpeechAnswer) => void) => {
@@ -117,6 +128,8 @@ export function useSpeechAnswer() {
       cancelled.current = false;
       sawRecording.current = false;
       activity.current = initialVoiceActivity();
+      peakDb.current = -160;
+      attempts.current += 1;
       setBoth("listening");
       recorder.record({ forDuration: MAX_PHRASE_AUDIO_SECONDS });
       stopPoll();
@@ -124,9 +137,10 @@ export function useSpeechAnswer() {
         if (phaseRef.current !== "listening" || finishing.current) return;
         const current = recorder.getStatus();
         if (current.isRecording) sawRecording.current = true;
+        if (typeof current.metering === "number" && current.metering > peakDb.current) peakDb.current = current.metering;
         const stepped = stepVoiceActivity(activity.current, {
           durationMs: current.durationMillis,
-          meteringDb: typeof current.metering === "number" ? current.metering : null,
+          meteringDb: usableLevel(current.metering),
           capMs: MAX_PHRASE_AUDIO_SECONDS * 1000,
         });
         activity.current = stepped.state;
