@@ -38,3 +38,12 @@ export function cachedPhraseAudio(path: string): Promise<string> {
 export function prefetchPhraseAudio(path: string | undefined | null): void {
   if (path) void cachedPhraseAudio(path).catch(() => undefined);
 }
+
+/** Drop a cached clip that would not play, so the next try downloads it fresh. */
+export function forgetPhraseAudio(path: string): void {
+  pending.delete(path);
+  try {
+    const file = new File(new Directory(Paths.cache, "phrase-audio"), cacheFileName(path));
+    if (file.exists) file.delete();
+  } catch { /* already gone */ }
+}
