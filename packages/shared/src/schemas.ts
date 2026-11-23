@@ -92,6 +92,21 @@ export const UserProfileSchema = z.object({
 });
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 
+export const DailyPickKindSchema = z.enum(["welcome", "daily"]);
+export type DailyPickKind = z.infer<typeof DailyPickKindSchema>;
+
+/** Stored on a lesson that was started from a pick, so the worker can keep to the planned topic. */
+export const LessonPlanSchema = z.object({
+  kind: DailyPickKindSchema,
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** The planned scene for a conversation lesson, in English, used only inside the prompt. */
+  scenario: z.string().min(3).max(160).optional(),
+  conversationSkill: ConversationSkillSchema.optional(),
+  /** Catalog id of the planned grammar point. */
+  ruleId: z.string().min(1).max(40).optional(),
+});
+export type LessonPlan = z.infer<typeof LessonPlanSchema>;
+
 export const LessonSchema = z.object({
   id: z.string().min(1),
   type: LessonTypeSchema,
@@ -107,6 +122,8 @@ export const LessonSchema = z.object({
   ruleId: z.string().min(1).max(40).optional(),
   /** Set when the lesson was built from a saved "How would you say?" phrase. */
   phraseId: z.string().min(1).max(40).optional(),
+  /** Set when the lesson was started from the lesson of the day or is the welcome lesson. */
+  plan: LessonPlanSchema.optional(),
   nativeText: z.string().min(1).max(280).optional(),
   translation: z.string().min(1).max(280).optional(),
   summary: z.string().default(""),
@@ -128,6 +145,8 @@ export const InitializeProfileRequestSchema = UserProfileSchema.omit({
 export const CreateDailyLessonRequestSchema = z.object({
   type: z.enum(["conversation", "grammar"]),
   idempotencyKey: z.string().uuid(),
+  /** Start today's lesson of the day. The server uses the planned type and topic. */
+  lessonOfTheDay: z.literal(true).optional(),
 });
 export const PHRASE_AUDIO_MIME_TYPES = ["audio/m4a", "audio/mp4", "audio/aac", "audio/wav"] as const;
 export const MAX_PHRASE_AUDIO_BYTES = 1_000_000;

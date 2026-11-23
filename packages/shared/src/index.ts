@@ -14,3 +14,4 @@ export * from "./teaching.js";
 export * from "./speaking-timing.js";
 export * from "./learner-context.js";
 export * from "./quotes.js";
+export * from "./lesson-of-the-day.js";

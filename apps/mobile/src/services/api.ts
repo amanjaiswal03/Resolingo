@@ -1,5 +1,5 @@
 import { httpsCallable } from "@react-native-firebase/functions";
-import type { LessonType, UserProfile } from "@resolingo/shared";
+import type { DailyPick, LessonType, UserProfile } from "@resolingo/shared";
 import { functions, initializeFirebaseSecurity } from "./firebase";
 
 async function call<Request, Response>(name: string, data: Request): Promise<Response> {
@@ -14,7 +14,8 @@ export type LessonVoiceClips = { recalled: string[]; compare: string[]; unclear:
 
 export const api = {
   initializeProfile: (profile: Omit<UserProfile, "uid" | "onboardingComplete" | "unlimitedLessons">) => call("initializeProfile", profile),
-  createDailyLesson: (type: DailyLessonType, idempotencyKey: string) => call<unknown, { lessonId: string }>("createDailyLesson", { type, idempotencyKey }),
+  createDailyLesson: (type: DailyLessonType, idempotencyKey: string, options?: { lessonOfTheDay?: true }) => call<unknown, { lessonId: string; alreadyExists?: boolean }>("createDailyLesson", { type, idempotencyKey, ...(options?.lessonOfTheDay ? { lessonOfTheDay: true } : {}) }),
+  getLessonOfTheDay: () => call<Record<string, never>, { pick: DailyPick }>("getLessonOfTheDay", {}),
   lessonVoiceFeedback: (lessonId: string) => call<{ lessonId: string }, LessonVoiceClips>("lessonVoiceFeedback", { lessonId }),
   translatePhrase: (text: string) => call<unknown, {
     phraseId: string;

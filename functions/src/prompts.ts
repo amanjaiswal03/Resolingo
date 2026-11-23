@@ -10,6 +10,8 @@ export function lessonPrompt(input: {
   topic?: GrammarTopic;
   /** What the learner already knows and studied last. Only conversation and grammar lessons use it. */
   learner?: LearnerContext;
+  /** A conversation planned as the lesson of the day, or the learner's welcome lesson. */
+  plan?: { scenario?: string | undefined; conversationSkill?: string | undefined; welcome?: boolean | undefined };
   phrase?: {
     nativeText: string;
     translation: string;
@@ -52,7 +54,12 @@ export function lessonPrompt(input: {
     const grammar = learner?.lastGrammar;
     return [
       `Create a screen-free audio lesson of about six minutes for a ${level} learner of ${targetLanguage.label}. Their teaching language is ${nativeLanguage.label}. ${scope[level]}`,
-      `Choose one real-life outcome for the learner. Avoid recent topics: ${avoid}. Return title, topic, summary, speakerNames, conversationSkill, lines, phrases, cues, and optionally grammarLink, usageTip, and recombinations. Pick one exact conversationSkill ID: ${goals}.`,
+      input.plan?.scenario
+        ? `The situation for this lesson is already chosen: ${input.plan.scenario}. Build the whole conversation around it, at this level, and write title and topic in ${nativeLanguage.label} about that situation. Return title, topic, summary, speakerNames, conversationSkill, lines, phrases, cues, and optionally grammarLink, usageTip, and recombinations. conversationSkill is ${input.plan.conversationSkill && input.plan.conversationSkill in conversationSkills ? `exactly ${input.plan.conversationSkill}` : `one exact ID: ${goals}`}.`
+        : `Choose one real-life outcome for the learner. Avoid recent topics: ${avoid}. Return title, topic, summary, speakerNames, conversationSkill, lines, phrases, cues, and optionally grammarLink, usageTip, and recombinations. Pick one exact conversationSkill ID: ${goals}.`,
+      input.plan?.welcome
+        ? `This is the learner's very first lesson in the app, which is called Resolingo. Also return appIntro: three or four short ${nativeLanguage.label} sentences the teacher says before anything else. They welcome the learner to learning ${targetLanguage.label} with Resolingo and explain how it works: each lesson is about five to eight minutes of audio, so it works with the screen off; when the teacher pauses, the learner says the line out loud before hearing it, because speaking is how it sticks; every lesson builds on the words and grammar from the one before; and the phrases they practise come back later in Skills for short reviews. Plain and warm, one idea per sentence, no hype, no promises about results, and no ${targetLanguage.label} words. Then cues.welcome introduces today's first conversation.`
+        : "",
       `lines is one complete, realistic conversation of ${pacing.minTurns + 1} or ${pacing.turns} turns, alternating speakerA (male) and speakerB (female). It opens naturally, reaches the goal, and closes, for example with thanks, an agreement, or a goodbye. It never ends on an open question. Each turn has speaker, text, translation, and language ${targetLanguage.id}${targetLanguage.transliteration ? ", plus Latin-script transliteration" : ""}. Use at most ${pacing.wordsPerTurn} words per turn, and keep every turn at ${level}: a sentence the learner could say themselves.`,
       knownList
         ? `The learner already knows these phrases from earlier lessons: ${knownList}. Reuse a word or two from them where it fits, but build the conversation mostly from new lines. When a line is the same as one of them, or differs by one small word at most, copy it exactly and add known: true to that line. Never mark a new line as known. At least three turns must be new. The dialogue never mentions earlier lessons, and never brings back people, places, or events from them.`

@@ -3,6 +3,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import {
   CefrLevelSchema,
   LanguageIdSchema,
+  LessonPlanSchema,
   LessonTypeSchema,
   applyTargetVoices,
   conversationMemory,
@@ -128,6 +129,10 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
   const targetLanguage = LanguageIdSchema.parse(user.targetLanguage);
   let level = CefrLevelSchema.parse(user.level);
   const topicKey = `${targetLanguage}-${type}`;
+  const planParse = LessonPlanSchema.safeParse(lessonData.plan);
+  const plan = planParse.success ? planParse.data : undefined;
+  // The welcome lesson is a gift: it never takes one of the day's lessons.
+  const welcome = plan?.kind === "welcome";
 
   try {
     let phrase: {
@@ -184,6 +189,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       recentTopics: topics,
       ...(priorReviews.length > 0 ? { priorReviews } : {}),
       ...(learner ? { learner } : {}),
+      ...(plan && builds ? { plan } : {}),
       ...(phrase ? { phrase } : {}),
     });
     if (type !== "grammar") {
@@ -253,7 +259,9 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       published = true;
       const usage = usageSnapshot.data() ?? {};
       const reservations = withoutReservation(usage.reservations, payload.lessonId);
-      const readyCount = Math.min(DAILY_LIMIT, Number(usage.readyCount ?? 0) + 1);
+      const readyCount = welcome
+        ? Number(usage.readyCount ?? 0)
+        : Math.min(DAILY_LIMIT, Number(usage.readyCount ?? 0) + 1);
       transaction.update(lessonRef, {
         segments: segments.map((segment) => displayLessonSegment(segment)),
         status: "ready",
