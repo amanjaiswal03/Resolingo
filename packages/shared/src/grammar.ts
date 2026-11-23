@@ -3,6 +3,7 @@ import type { CefrLevel } from "./schemas.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup, speechSpans } from "./markup.js";
 import { conversationPacing, scheduleReviewSlots } from "./pimsleur.js";
 import { MAX_WARMUP_REVIEWS } from "./review.js";
+import { quotesStayTrue } from "./quotes.js";
 import { segmentWords, splitSentences } from "./segment.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 import type { LessonSegment } from "./schemas.js";
@@ -995,6 +996,19 @@ export function grammarPromptsAreClear(segments: LessonSegment[]): boolean {
   return true;
 }
 
+/**
+ * A bridge to the last conversation is kept only when there was one, and when
+ * every target-language word it quotes is really in that conversation or in
+ * today's examples. Otherwise the lesson starts without it.
+ */
+function trustedBridge(source: GrammarSource, sceneLines: readonly string[], language: LanguageId): GrammarSource {
+  if (!source.bridge) return source;
+  const today = [source.hook, ...source.examples].map((example) => example.text);
+  if (sceneLines.length > 0 && quotesStayTrue(source.bridge, [...sceneLines, ...today], language)) return source;
+  const { bridge: _dropped, ...rest } = source;
+  return rest;
+}
+
 export function shapeGrammarLesson(value: unknown, context: {
   nativeLanguage: LanguageId;
   targetLanguage: LanguageId;
@@ -1002,13 +1016,16 @@ export function shapeGrammarLesson(value: unknown, context: {
   topic: GrammarTopic;
   /** Due phrases from earlier lessons, recalled in a short warm-up. */
   priorReviews?: Example[];
+  /** Lines of the learner's last conversation. A bridge may only quote these or today's examples. */
+  sceneLines?: string[];
 }): { title: string; topic: string; ruleId: string; summary: string; speakerNames: SpeakerNames; segments: LessonSegment[] } | null {
   const paradigm = PARADIGMS[context.topic.id.replace(/-plural$/u, "")];
   const model = value && typeof value === "object" ? value as { speakerNames?: unknown; bridge?: unknown } : {};
-  const source = paradigm
+  const parsed = paradigm
     ? paradigmSource(paradigm, context.topic, context.nativeLanguage, normalizeSpeakerNames(model.speakerNames).teacher, shortTeachingLine(model.bridge))
     : parseGrammarSource(value, context.topic, context.level, context.targetLanguage);
-  if (!source) return null;
+  if (!parsed) return null;
+  const source = trustedBridge(parsed, context.sceneLines ?? [], context.targetLanguage);
   const arranged = arrangeGrammarLesson({ ...context, source });
   if (paradigm) return {
     title: source.title,

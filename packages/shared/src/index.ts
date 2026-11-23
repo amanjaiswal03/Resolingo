@@ -13,3 +13,4 @@ export * from "./speakers.js";
 export * from "./teaching.js";
 export * from "./speaking-timing.js";
 export * from "./learner-context.js";
+export * from "./quotes.js";

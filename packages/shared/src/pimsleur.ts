@@ -7,6 +7,7 @@ import { dialogueText, normalizeSpeakerNames, type SpeakerNames } from "./speake
 import { line, template, type TeachingKey } from "./teaching.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 import { findKnownPhrase, phraseSimilarity, MAX_WARMUP_REVIEWS } from "./review.js";
+import { quotesStayTrue } from "./quotes.js";
 
 /**
  * Pimsleur's 5s / 25s / 2min steps, counted in other items rather than in a
@@ -215,6 +216,8 @@ export function drillsAreUnique(segments: LessonSegment[]): boolean {
     if (previous.phase === "dialogue" || previous.phase === "closing") continue;
     if (current.phase === "dialogue" || current.phase === "closing") continue;
     if (previous.speaker === "teacher" || current.speaker === "teacher") continue;
+    // An echo: the model, the learner's turn in the pause, then the model again.
+    if (previous.pauseAfterMs) continue;
     if (previous.text === current.text && previous.language === current.language) return false;
   }
   return true;
@@ -644,10 +647,7 @@ export function arrangePimsleur(input: {
     && fitsTurn(item, pacing.wordsPerTurn) && reusesFocus(item, fresh.map((plan) => plan.phrase))) : undefined;
   const seed = input.seed ?? hashSeed(lines.map((item) => item.text).join("|"));
   const nextPrompt = promptPicker(speakPromptPool(input.speakPrompts, cues, nativeLanguage), seed, nativeLanguage);
-  const echoes = uniquePrompts(cues.echo ?? []);
-  const nextEcho = cyclePicker(echoes.length >= 2 ? echoes : uniquePrompts([
-    cues.yourTurn, cues.sayIt, line(nativeLanguage, "echo1"), line(nativeLanguage, "echo2"), line(nativeLanguage, "echo3"),
-  ]), seed);
+  const nextRepeat = cyclePicker(["repeatAfter1", "repeatAfter2"] as const, seed);
   const nextKnown = linePicker(priorLines(nativeLanguage, ["known1", "known2", "known3"]), seed);
   const segments: LessonSegment[] = [];
   const modeled = new Set<string>();
@@ -675,13 +675,23 @@ export function arrangePimsleur(input: {
     play(item, phase, "example");
     modeled.add(normalizeChunk(item.text));
   };
-  /** Model, then a pause to repeat it, then the model again. */
-  const echo = (item: PimsleurLine, phase: string): void => {
-    present(item, phase);
+  /**
+   * "Repeat after Leo." Then Leo says the line, the learner repeats it in the
+   * pause, and Leo says it once more as the answer. The invitation comes
+   * first so the learner knows to copy the line they are about to hear.
+   */
+  const echo = (item: PimsleurLine, phase: string, answerPhase = phase): void => {
+    const name = item.speaker === "speakerB" ? names.speakerB : names.speakerA;
+    narrate(line(nativeLanguage, nextRepeat() as TeachingKey, { name }), phase);
+    const { speaker, language, text, translation, transliteration } = item;
     // Repeating what was just heard needs no extra thinking time.
-    push({ kind: "drill", speaker: "teacher", phase, language: nativeLanguage, text: nextEcho(), delivery: "curious" },
-      speakingPauseMs(item.text, item.language));
-    play(item, phase, "drill");
+    push({
+      speaker, language, text, kind: "example", phase, delivery: "clear",
+      ...(translation ? { translation } : {}),
+      ...(transliteration ? { transliteration } : {}),
+    }, speakingPauseMs(item.text, item.language));
+    modeled.add(normalizeChunk(item.text));
+    play(item, answerPhase, "drill");
   };
   const ask = (item: PimsleurPhrase, phase: string, answerPhase = phase, cue?: string): void => {
     const meaning = meaningOf(item.translation);
@@ -734,9 +744,16 @@ export function arrangePimsleur(input: {
       continue;
     }
     narrate(explained(phrase, cues.listen), "breakdown", "explanation", pacing.listenMs);
-    present(phrase, "breakdown");
-    linkNote(phrase.text);
     const pieces = buildupPieces(phrase, chunks);
+    const beginner = input.level === "A1" || input.level === "A2";
+    if (pieces.length === 0 && beginner) {
+      // A short line for a beginner is simply repeated after the speaker.
+      echo(phrase, "breakdown", "answer");
+      linkNote(phrase.text);
+    } else {
+      present(phrase, "breakdown");
+      linkNote(phrase.text);
+    }
     if (pieces.length > 0) {
       if (!builtUp) narrate(cues.buildup, "buildup");
       builtUp = true;
@@ -745,9 +762,8 @@ export function arrangePimsleur(input: {
         echo({ speaker: phrase.speaker, language: phrase.language, text: piece.text, ...(piece.translation ? { translation: piece.translation } : {}) }, "buildup");
       }
       ask(phrase, "recall", "answer", phrase.recallCue);
-    } else {
-      const beginner = input.level === "A1" || input.level === "A2";
-      ask(phrase, "recall", "answer", beginner ? nextEcho() : phrase.recallCue);
+    } else if (!beginner) {
+      ask(phrase, "recall", "answer", phrase.recallCue);
     }
     for (const slot of slots.filter((item) => item.afterItem === freshIndex)) {
       const earlier = fresh[slot.item];
@@ -835,14 +851,18 @@ function lineFrom(value: unknown, names: SpeakerNames, fallbackLanguage: Languag
 
 /**
  * Lines the model marked as already known. The mark is trusted only when the
- * line shares at least half its words with a phrase the learner really knows.
+ * line shares at least three quarters of its words with a phrase the learner
+ * really knows, so a new line is never acknowledged as one they have learned.
  */
+const KNOWN_MARK_SIMILARITY = 0.75;
+
 function flaggedKnown(raw: unknown[], lines: PimsleurLine[], known: readonly KnownLine[], language: LanguageId): KnownLine[] {
   if (known.length === 0) return [];
   return raw.flatMap((value, index) => {
     const line = lines[index];
     if (!line || !value || typeof value !== "object" || (value as { known?: unknown }).known !== true) return [];
-    const close = known.some((phrase) => phraseSimilarity(line.text, phrase.text, language) >= 0.5);
+    // "Nearly the same" means one small word apart at most. Anything looser is a new line to drill.
+    const close = known.some((phrase) => phraseSimilarity(line.text, phrase.text, language) >= KNOWN_MARK_SIMILARITY);
     return close ? [{ text: line.text, ...(line.translation ? { translation: line.translation } : {}) }] : [];
   });
 }
@@ -855,7 +875,9 @@ function grammarLinkFrom(value: unknown, lines: PimsleurLine[], names: SpeakerNa
   if (!note || note.length > 280) return undefined;
   const wanted = normalizeChunk(textOf(record.line ?? record.text));
   const line = lines.find((item) => normalizeChunk(item.text) === wanted);
-  return { text: line?.text ?? "", note };
+  // A note about a line that is not in the dialogue, or that quotes words the line does not have, is dropped.
+  if (!line || !quotesStayTrue(note, [line.text], line.language)) return undefined;
+  return { text: line.text, note };
 }
 
 function needsBuildup(text: string): boolean {

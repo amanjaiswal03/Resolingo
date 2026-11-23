@@ -56,6 +56,21 @@ describe("spoken answer windows", () => {
       .toEqual(phases.map((_, index) => (6_000 * index + 2_900) / 1_000));
   });
 
+  it("opens the mic after a speaker's model when the learner repeats after them", () => {
+    const invite: LessonSegment = { ...intro, id: "invite", text: "Repeat after Leo.", audioUrl: "https://example.com/invite.wav" };
+    const model: LessonSegment = {
+      ...example, id: "model", kind: "example", phase: "buildup", text: "der Bahnhof", translation: "the station",
+      pauseAfterMs: 2_400, audioUrl: "https://example.com/model.wav",
+    };
+    const again: LessonSegment = { ...model, id: "again", kind: "drill", pauseAfterMs: undefined, audioUrl: "https://example.com/again.wav" };
+    const segments = [invite, model, again];
+    const plan = answerPlan(segments, playbackClips(segments), [1_000, 3_400, 1_000]);
+    expect(plan?.windows).toEqual([expect.objectContaining({ id: "model", answerId: "again", expected: "der Bahnhof", startSeconds: 2.06 })]);
+    // A model followed by a different line is not an echo.
+    const other: LessonSegment = { ...again, text: "Geradeaus." };
+    expect(answerPlan([invite, model, other], playbackClips([invite, model, other]), [1_000, 3_400, 1_000])).toBeNull();
+  });
+
   it("accepts a model answer at the beginning of shared scene audio", () => {
     const reply: LessonSegment = { ...example, id: "next-line", kind: "dialogue", speaker: "speakerB", text: "Gerne." };
     const segments = [prompt, example, reply];
