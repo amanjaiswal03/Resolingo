@@ -33,6 +33,14 @@ Before each lesson the worker loads `users/{uid}/reviewItems` (phrases from fini
 
 Longer lessons roughly double the generated text and the synthesized audio per lesson compared with the earlier three-to-five-minute format, so review the cost estimate under Generation state machine with that in mind.
 
+## Lesson of the day
+
+The home screen shows one highlighted lesson above the lesson choices. `getLessonOfTheDay` plans it on the learner's first visit of their local day and stores it at `users/{uid}/dailyPicks/{yyyy-mm-dd}` (Admin SDK only, read through the callable). Planning reads the last 20 lessons, recent topics, and `learnerContext`, and calls no model: only the type and topic are chosen. The lesson is generated when the learner taps the card, through `createDailyLesson` with `lessonOfTheDay: true`, which copies the pick onto the lesson as `plan` and records the lesson id on the pick, so a second tap opens the same lesson. It counts toward the three lessons a day.
+
+The rhythm is learn, then use it twice: after a grammar lesson comes a conversation that puts it to work, and after two conversations the next grammar point in the level's catalog. Lessons the learner makes themselves count, so the pick balances whatever they chose. Conversations rotate through the conversation goals, least recently practised first, with a fixed everyday scene for each goal and level band (A1 to A2, B1 and up).
+
+A learner with no ready lesson yet gets a welcome lesson instead: a meet-people conversation at their level that opens with three or four teaching-language sentences on how Resolingo works. It starts generating as soon as it is planned, takes no daily slot, and is not counted in `readyCount`.
+
 ## Trust boundary
 
 - The callable derives ownership from `request.auth.uid`; a UID is never accepted in request data.

@@ -14,6 +14,7 @@ import {
   markupIssues,
   normalizeSpeakerNames,
   repairMarkup,
+  grammarTopicById,
   selectGrammarTopic,
   shapeGrammarLesson,
   shapePhraseLesson,
@@ -22,6 +23,7 @@ import {
   type GeneratedLesson,
   type LanguageId,
   type LearnerContext,
+  type LessonPlan,
   type LessonType,
   type PimsleurPhrase,
 } from "@resolingo/shared";
@@ -184,6 +186,8 @@ export async function generateLessonContent(
     priorReviews?: PimsleurPhrase[];
     /** What the learner already knows and studied last, for conversation and grammar lessons. */
     learner?: LearnerContext;
+    /** The lesson of the day or welcome lesson this lesson was started from. */
+    plan?: LessonPlan;
     phrase?: {
       phraseId: string;
       nativeText: string;
@@ -198,8 +202,15 @@ export async function generateLessonContent(
 ): Promise<GeneratedLesson> {
   const model = geminiModel();
   const generator = createVertexLessonClient(client);
+  const planned = input.type === "grammar" && input.plan?.ruleId
+    ? grammarTopicById(input.targetLanguage, input.level, input.plan.ruleId)
+    : undefined;
   const grammarTopic = input.type === "grammar"
-    ? selectGrammarTopic({ language: input.targetLanguage, level: input.level, recentTopics: input.recentTopics })
+    ? planned ?? selectGrammarTopic({ language: input.targetLanguage, level: input.level, recentTopics: input.recentTopics })
+    : undefined;
+  const welcome = input.type === "conversation" && input.plan?.kind === "welcome";
+  const conversationPlan = input.type === "conversation" && input.plan
+    ? { scenario: input.plan.scenario, conversationSkill: input.plan.conversationSkill, welcome }
     : undefined;
   const prompt = lessonPrompt({
     type: input.type,
@@ -209,6 +220,7 @@ export async function generateLessonContent(
     recentTopics: input.recentTopics,
     ...(input.learner && input.type !== "phrase" ? { learner: input.learner } : {}),
     ...(grammarTopic ? { topic: grammarTopic } : {}),
+    ...(conversationPlan ? { plan: conversationPlan } : {}),
     ...(input.phrase ? {
       phrase: {
         nativeText: input.phrase.nativeText,
@@ -298,6 +310,7 @@ export async function generateLessonContent(
         level: input.level,
         ...(input.type === "conversation" && input.priorReviews && input.priorReviews.length > 0 ? { priorReviews: input.priorReviews } : {}),
         ...(input.learner && input.learner.known.length > 0 ? { known: input.learner.known } : {}),
+        ...(welcome ? { welcome: true } : {}),
       });
     if (!shaped) {
       sawInvalid = true;
@@ -319,7 +332,7 @@ export async function generateLessonContent(
     }
     const topic = parsed.data.topic.trim().toLocaleLowerCase();
     const repeated = input.recentTopics.some((recent) => recent.trim().toLocaleLowerCase() === topic);
-    if (input.type === "conversation" && repeated) {
+    if (input.type === "conversation" && repeated && !conversationPlan?.scenario) {
       sawInvalid = true;
       continue;
     }

@@ -17,6 +17,11 @@ export function learnerContextPath(uid: string, targetLanguage: LanguageId): str
   return `users/${uid}/learnerContext/${targetLanguage}`;
 }
 
+/** Admin SDK only: clients read the lesson of the day through getLessonOfTheDay. */
+export function dailyPickPath(uid: string, date: string): string {
+  return `users/${uid}/dailyPicks/${date}`;
+}
+
 function knownFrom(docs: DocumentData[], language: LanguageId, nativeLanguage: LanguageId): LearnerContext["known"] {
   return docs
     .filter((data) => LanguageIdSchema.safeParse(data.language).data === language

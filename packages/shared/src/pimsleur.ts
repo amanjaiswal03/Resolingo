@@ -629,6 +629,8 @@ export function arrangePimsleur(input: {
   known?: KnownLine[];
   /** One teaching-language note on how a line uses the grammar from an earlier lesson. */
   grammarLink?: { text: string; note: string };
+  /** Welcome lesson only: a few teaching-language lines on how the app works, before the lesson starts. */
+  intro?: string[];
 }): LessonSegment[] {
   const pacing = conversationPacing[input.level];
   const { cues, names, nativeLanguage, targetLanguage } = input;
@@ -713,6 +715,7 @@ export function arrangePimsleur(input: {
     if (link && normalizeChunk(link.text) === normalizeChunk(text)) narrate(link.note, "link", "explanation", pacing.listenMs);
   };
 
+  for (const text of input.intro ?? []) narrate(text, "intro");
   narrate(cues.welcome, "intro");
   if (priors.length > 0) {
     const lead = linePicker(priorLines(nativeLanguage, ["lead1", "lead2", "lead3", "lead4"]), seed);
@@ -987,6 +990,22 @@ function reusesFocus(item: PimsleurLine, phrases: PimsleurPhrase[]): boolean {
   });
 }
 
+export const MAX_WELCOME_INTRO_LINES = 4;
+
+/**
+ * The welcome lesson's opening: up to four short teaching-language sentences
+ * on how learning with the app works. Each one is a single sentence, and
+ * anything that is not a plain string is dropped.
+ */
+export function welcomeIntro(value: unknown, names: SpeakerNames): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => typeof item === "string" ? clean(item, names) : "")
+    .map((item) => splitSentences(item)[0] ?? "")
+    .filter((item) => item.length >= 3 && item.length <= 220)
+    .slice(0, MAX_WELCOME_INTRO_LINES);
+}
+
 export function shapePimsleurLesson(value: unknown, context: {
   nativeLanguage: LanguageId;
   targetLanguage: LanguageId;
@@ -994,6 +1013,8 @@ export function shapePimsleurLesson(value: unknown, context: {
   priorReviews?: PimsleurPhrase[];
   /** Phrases from finished lessons, so a repeated line is acknowledged instead of drilled. */
   known?: KnownLine[];
+  /** The learner's first lesson: keep the model's short appIntro about how the app works. */
+  welcome?: boolean;
 }): { title: string; topic: string; summary: string; conversationSkill?: ConversationSkill; speakerNames: SpeakerNames; segments: LessonSegment[] } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -1053,6 +1074,7 @@ export function shapePimsleurLesson(value: unknown, context: {
   const known = [...(context.known ?? []), ...flaggedKnown(explicitLines, keptLines, context.known ?? [], context.targetLanguage)];
   const grammarLink = grammarLinkFrom(record.grammarLink, keptLines, names);
   const usageTip = splitSentences(clean(textOf(record.usageTip), names))[0];
+  const intro = context.welcome ? welcomeIntro(record.appIntro, names) : [];
   const arranged = arrangePimsleur({
     lines: keptLines,
     phrases,
@@ -1067,6 +1089,7 @@ export function shapePimsleurLesson(value: unknown, context: {
     ...(recombinations.length > 0 ? { recombinations } : {}),
     ...(known.length > 0 ? { known } : {}),
     ...(grammarLink ? { grammarLink } : {}),
+    ...(intro.length > 0 ? { intro } : {}),
     seed: hashSeed(title),
   });
   if (!arranged.some((segment) => segment.phase === "answer")) return null;

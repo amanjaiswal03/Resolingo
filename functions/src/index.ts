@@ -19,6 +19,7 @@ export {
 export { cleanupAbandonedJobs, dispatchReminders, processPushReceipts, recoverUnenqueuedLessons } from "./schedules.js";
 export { createUserProfile } from "./accounts.js";
 export { lessonVoiceFeedback } from "./voice-feedback.js";
+export { getLessonOfTheDay } from "./lesson-of-the-day.js";
 
 export const generateLessonTask = onTaskDispatched({
   region: REGION,

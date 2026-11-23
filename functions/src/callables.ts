@@ -6,6 +6,9 @@ import {
   CefrLevelSchema,
   CreateDailyLessonRequestSchema,
   CreatePhraseLessonRequestSchema,
+  DailyPickSchema,
+  type DailyPick,
+  planFromPick,
   InitializeProfileRequestSchema,
   isStaleUnenqueuedLesson,
   lessonCanBeDeleted,
@@ -32,6 +35,7 @@ import { dailyReservationLimit, reserveLesson, withoutReservation } from "./quot
 import { transcribeWithSpeechToText } from "./stt.js";
 import { PhraseTranslationError, transcribePhraseAudio, translatePhraseContent, translateSpokenPhrase, type PhraseTranslation } from "./translate.js";
 import { vertexProjectId } from "./gemini.js";
+import { dailyPickPath } from "./context.js";
 import { synthesizePhrasePreview } from "./tts.js";
 import type { ZodError } from "zod";
 
@@ -116,14 +120,33 @@ export const createDailyLesson = onCall(callableOptions, async (request) => {
   const uid = requireUid(request);
   const parsed = CreateDailyLessonRequestSchema.safeParse(request.data);
   if (!parsed.success) throw new HttpsError("invalid-argument", parsed.error.message);
-  const lessonId = parsed.data.idempotencyKey;
+  return startDailyLesson(uid, {
+    type: parsed.data.type,
+    lessonId: parsed.data.idempotencyKey,
+    lessonOfTheDay: parsed.data.lessonOfTheDay === true,
+  });
+});
+
+/**
+ * Creates and enqueues a conversation or grammar lesson. With lessonOfTheDay,
+ * the type and topic come from today's stored pick, the pick remembers the
+ * lesson, and a second tap returns the lesson that already exists. The
+ * welcome lesson takes no daily slot.
+ */
+export async function startDailyLesson(
+  uid: string,
+  input: { type: "conversation" | "grammar"; lessonId: string; lessonOfTheDay: boolean },
+): Promise<{ lessonId: string; alreadyExists: boolean }> {
+  let lessonId = input.lessonId;
   const userRef = db.doc(`users/${uid}`);
-  const lessonRef = db.doc(`users/${uid}/lessons/${lessonId}`);
   let quotaDate = "";
   let alreadyExists = false;
   const nowMs = Date.now();
 
   await db.runTransaction(async (transaction) => {
+    lessonId = input.lessonId;
+    alreadyExists = false;
+    const lessonRef = db.doc(`users/${uid}/lessons/${lessonId}`);
     const [userSnapshot, lessonSnapshot] = await Promise.all([
       transaction.get(userRef), transaction.get(lessonRef),
     ]);
@@ -135,8 +158,26 @@ export const createDailyLesson = onCall(callableOptions, async (request) => {
     const profile = userSnapshot.data();
     if (!profile?.onboardingComplete) throw new HttpsError("failed-precondition", "Complete onboarding first.");
     if (profile.deletionRequested) throw new HttpsError("failed-precondition", "Account deletion is in progress.");
-    const stale = await inspectActiveLesson(transaction, uid, profile.activeLessonId, nowMs);
     quotaDate = localDate(profile.timezone as string);
+    let pick: DailyPick | undefined;
+    const pickRef = db.doc(dailyPickPath(uid, quotaDate));
+    if (input.lessonOfTheDay) {
+      const pickSnapshot = await transaction.get(pickRef);
+      const stored = DailyPickSchema.safeParse(pickSnapshot.data());
+      if (!stored.success) throw new HttpsError("failed-precondition", "Today's lesson isn't planned yet. Pull down to refresh.");
+      pick = stored.data;
+      if (pick.lessonId) {
+        const started = await transaction.get(db.doc(`users/${uid}/lessons/${pick.lessonId}`));
+        if (started.exists && started.data()?.status !== "failed") {
+          lessonId = pick.lessonId;
+          alreadyExists = true;
+          return;
+        }
+      }
+    }
+    const welcome = pick?.kind === "welcome";
+    const type = pick?.type ?? input.type;
+    const stale = await inspectActiveLesson(transaction, uid, profile.activeLessonId, nowMs);
     const usageRef = db.doc(`users/${uid}/dailyUsage/${quotaDate}`);
     const usageSnapshot = await transaction.get(usageRef);
     const staleUsage = stale?.quotaDate && stale.quotaDate !== quotaDate
@@ -161,43 +202,53 @@ export const createDailyLesson = onCall(callableOptions, async (request) => {
     const usage = usageSnapshot.data() ?? {};
     const reservations = withoutReservation(usage.reservations, stale?.lessonId);
     const readyCount = Number(usage.readyCount ?? 0);
-    let nextReservations: string[];
-    try {
-      nextReservations = reserveLesson(
-        readyCount,
-        reservations,
-        lessonId,
-        dailyReservationLimit(profile.unlimitedLessons, DAILY_LIMIT),
-      );
-    } catch {
-      throw new HttpsError("resource-exhausted", "Daily lesson limit reached.");
+    let nextReservations = reservations;
+    if (!welcome) {
+      try {
+        nextReservations = reserveLesson(
+          readyCount,
+          reservations,
+          lessonId,
+          dailyReservationLimit(profile.unlimitedLessons, DAILY_LIMIT),
+        );
+      } catch {
+        throw new HttpsError("resource-exhausted", "Daily lesson limit reached.");
+      }
     }
     transaction.set(lessonRef, {
       id: lessonId,
-      type: parsed.data.type,
+      type,
       status: "queued",
       enqueuePending: true,
       progress: 5,
       quotaDate,
-      title: "Preparing your lesson",
+      title: pick ? pick.title : "Preparing your lesson",
       topic: "",
       summary: "",
       segments: [],
       completed: false,
+      ...(pick ? { plan: planFromPick(pick) } : {}),
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    transaction.set(usageRef, {
-      readyCount,
-      reservations: nextReservations,
+    if (!welcome) {
+      transaction.set(usageRef, {
+        readyCount,
+        reservations: nextReservations,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+    if (pick) transaction.set(pickRef, { lessonId, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+    transaction.update(userRef, {
+      activeLessonId: lessonId,
+      ...(welcome ? { welcomeLessonId: lessonId } : {}),
       updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true });
-    transaction.update(userRef, { activeLessonId: lessonId, updatedAt: FieldValue.serverTimestamp() });
+    });
   });
 
   if (!alreadyExists) await enqueueOrRollBack(uid, lessonId, quotaDate);
   return { lessonId, alreadyExists };
-});
+}
 
 function translateRequestError(error: ZodError): HttpsError {
   const spoken = error.issues.find((issue) => (

@@ -283,6 +283,29 @@ describe("model shaping", () => {
     }).success).toBe(true);
   });
 
+  it("opens the welcome lesson with the app intro, and ignores it on other lessons", () => {
+    const four = [
+      { speaker: "speakerA", text: "Hallo, ich bin Lukas.", translation: "Hi, I'm Lukas.", language: "de-DE" },
+      { speaker: "speakerB", text: "Hallo, ich bin Anna.", translation: "Hi, I'm Anna.", language: "de-DE" },
+      { speaker: "speakerA", text: "Woher kommst du?", translation: "Where are you from?", language: "de-DE" },
+      { speaker: "speakerB", text: "Aus Berlin. Tschüss!", translation: "From Berlin. Bye!", language: "de-DE" },
+    ];
+    const source = {
+      title: "First hello",
+      topic: "Introduce yourself",
+      summary: "Say hello and your name.",
+      lines: four,
+      appIntro: ["Welcome to Resolingo.", "Each lesson is about six minutes of audio."],
+      cues: { welcome: "Today you will meet two people." },
+    };
+    const options = { nativeLanguage: "en-US", targetLanguage: "de-DE", level: "A1" } as const;
+    const welcome = shapePimsleurLesson(source, { ...options, welcome: true })?.segments ?? [];
+    expect(welcome.slice(0, 3).map((segment) => segment.text)).toEqual(["Welcome to Resolingo.", "Each lesson is about six minutes of audio.", "Today you will meet two people."]);
+    expect(welcome.slice(0, 3).every((segment) => segment.phase === "intro" && segment.speaker === "teacher")).toBe(true);
+    const ordinary = shapePimsleurLesson(source, options)?.segments ?? [];
+    expect(ordinary[0]?.text).toBe("Today you will meet two people.");
+  });
+
   it("uses the model's speak lines, and a gloss only on the matching chunk", () => {
     const shaped = shapePimsleurLesson({
       title: "At the station",

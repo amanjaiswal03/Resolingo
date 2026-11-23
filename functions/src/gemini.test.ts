@@ -195,6 +195,37 @@ describe("Gemini lesson generation", () => {
     expect(lessonGenerationConfig("grammar").systemInstruction).not.toContain("lines is an array of 4 to 6");
   });
 
+  it("teaches the grammar point a lesson of the day planned, even if it was studied recently", async () => {
+    const model = client([{ text: JSON.stringify({
+      title: "Sein in the present",
+      summary: "Say who someone is with the present tense of sein.",
+      hook: { text: "Ich bin müde.", translation: "I am tired." },
+      examples: [
+        { text: "Du bist müde.", translation: "You are tired." },
+        { text: "Wir sind müde.", translation: "We are tired." },
+      ],
+      notice: "The form changes with the person.",
+      rule: "Sein matches the person, and the verb stays the second idea.",
+      mnemonic: "bin, bist, ist, sind.",
+      drills: [
+        { kind: "word", cue: "How would you say I am?", answer: "Ich bin", translation: "I am." },
+        { kind: "word", cue: "How would you say you are?", answer: "Du bist", translation: "you are." },
+        { kind: "phrase", cue: "How would you say I am tired?", answer: "Ich bin müde.", translation: "I am tired." },
+        { kind: "sentence", cue: "How would you say We are ready?", answer: "Wir sind bereit.", translation: "We are ready." },
+      ],
+      checks: [{ cue: "Where does the verb go?", answer: "In second position." }],
+      recombinations: [{ cue: "How would you say I am ready?", answer: "Ich bin bereit.", translation: "I am ready." }],
+    }) }]);
+    const result = await generateLessonContent({
+      ...input,
+      type: "grammar",
+      recentTopics: ["Present tense of sein"],
+      plan: { kind: "daily", date: "2026-11-24", ruleId: "de-sein" },
+    }, model);
+    expect(result.ruleId).toBe("de-sein");
+    expect(model.contents[0]).toContain("Teach exactly this point: Present tense of sein");
+  });
+
   it("builds a teacher-only phrase lesson around the saved sentence", async () => {
     const model = client([{ text: JSON.stringify({
       title: "Buying a pair of shoes",

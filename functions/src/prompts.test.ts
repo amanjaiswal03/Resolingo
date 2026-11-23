@@ -49,6 +49,32 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("closing is one short, calm, matter-of-fact wrap-up");
   });
 
+  it("keeps a planned lesson of the day to its scene, and adds the app intro to the welcome lesson", () => {
+    const planned = lessonPrompt({
+      type: "conversation",
+      nativeLanguage: languageById["en-US"],
+      targetLanguage: languageById["de-DE"],
+      level: "A1",
+      recentTopics: ["Ordering at a bakery"],
+      plan: { scenario: "Ask the way to the station", conversationSkill: "get-around" },
+    });
+    expect(planned).toContain("already chosen: Ask the way to the station");
+    expect(planned).toContain("conversationSkill is exactly get-around");
+    expect(planned).not.toContain("Choose one real-life outcome");
+    expect(planned).not.toContain("appIntro");
+    const welcome = lessonPrompt({
+      type: "conversation",
+      nativeLanguage: languageById["en-US"],
+      targetLanguage: languageById["de-DE"],
+      level: "A1",
+      recentTopics: [],
+      plan: { scenario: "Say hello, give your name, and say where you are from", conversationSkill: "meet-people", welcome: true },
+    });
+    expect(welcome).toContain("very first lesson");
+    expect(welcome).toContain("appIntro: three or four short English (US) sentences");
+    expect(welcome).toContain("no German words");
+  });
+
   it("builds a conversation on the last grammar point and skips what the learner knows", () => {
     const prompt = lessonPrompt({
       type: "conversation",
