@@ -5,6 +5,7 @@ import { MAX_PHRASE_AUDIO_SECONDS } from "@resolingo/shared";
 import { api } from "@/services/api";
 import { SPEECH_RECORDING } from "@/say/speech-recording";
 import { initialVoiceActivity, stepVoiceActivity, type VadStop } from "@/say/voice-activity";
+import { waitForSessionSettle } from "./audio-session-settle";
 
 export type SpeechAnswer =
   | { kind: "heard"; heard: string }
@@ -109,6 +110,7 @@ export function useSpeechAnswer() {
         onAnswer({ kind: "permission" });
         return;
       }
+      await waitForSessionSettle();
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       receive.current = onAnswer;

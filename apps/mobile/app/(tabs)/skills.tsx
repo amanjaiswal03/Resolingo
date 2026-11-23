@@ -23,6 +23,7 @@ import {
 } from "@/skills/model";
 import { subscribeSkillProgress } from "@/skills/progress";
 import { SkillReviewModal, type SkillSession } from "@/skills/SkillReview";
+import { AudioGlyph } from "@/skills/AudioGlyph";
 import { useExampleAudio } from "@/skills/use-example-audio";
 import { useTheme } from "@/theme/tokens";
 
@@ -440,9 +441,10 @@ function PhraseRow({ card, progress, now, audio, kind, onSay, onPractice }: {
   return (
     <View style={[styles.phrase, { backgroundColor: theme.surface, borderColor: theme.border }]}>
       {card.audioPath ? (
-        <Pressable accessibilityRole="button" accessibilityLabel={audio.label(card.audioPath)} onPress={() => card.audioPath && void audio.play(card.audioPath)}
+        <Pressable accessibilityRole="button" accessibilityLabel={audio.label(card.audioPath)} accessibilityState={{ busy: audio.state(card.audioPath) === "loading" }}
+          onPress={() => card.audioPath && void audio.play(card.audioPath)}
           style={[styles.play, { backgroundColor: theme.primaryTint }]}>
-          <Body style={[styles.playGlyph, { color: theme.primary }]}>{audio.label(card.audioPath) === "Pause audio" ? "❚❚" : "▶"}</Body>
+          <AudioGlyph state={audio.state(card.audioPath)} color={theme.primary} style={styles.playGlyph} />
         </Pressable>
       ) : null}
       <View style={styles.phraseCopy}>
