@@ -16,6 +16,8 @@ import {
   masteryLevel, progressForCard, WEEKLY_GOAL_DAYS, type LanguagePair, type MasteryLevel, type ProgressByCard, type ReviewProgress, type ReviewQuestion, type ReviewRating,
 } from "./model";
 import { recordSkillReview } from "./progress";
+import { AudioGlyph } from "./AudioGlyph";
+import { prefetchPhraseAudio } from "./phrase-audio-cache";
 import { useExampleAudio } from "./use-example-audio";
 import { useSpeechAnswer, type SpeechAnswer } from "./use-speech-answer";
 
@@ -49,6 +51,11 @@ function ReviewContent({ session, uid, pair, week, onClose, onSaved }: Omit<Revi
   const audio = useExampleAudio();
   const question = session.questions[completed.length];
   const close = () => { audio.stop(); onClose(); };
+  // Fetch this clip and the next one ahead of time so the play button answers at once.
+  useEffect(() => {
+    prefetchPhraseAudio(question?.card.audioPath);
+    prefetchPhraseAudio(session.questions[completed.length + 1]?.card.audioPath);
+  }, [question, session.questions, completed.length]);
   const total = session.questions.length;
   return (
     <View style={[styles.sheet, { backgroundColor: theme.background }]}>
@@ -188,9 +195,10 @@ function QuestionCard({ question, from, last, pair, audio, save, onNext }: {
         <Card style={styles.promptCard}>
           <Body muted style={styles.small}>What does this mean?</Body>
           {card.audioPath ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={audio.label(card.audioPath)} onPress={() => card.audioPath && void audio.play(card.audioPath)}
+            <Pressable accessibilityRole="button" accessibilityLabel={audio.label(card.audioPath)} accessibilityState={{ busy: audio.state(card.audioPath) === "loading" }}
+              onPress={() => card.audioPath && void audio.play(card.audioPath)}
               style={[styles.listenButton, { backgroundColor: theme.primaryFill }]}>
-              <Body style={styles.listenGlyph}>▶</Body>
+              <AudioGlyph state={audio.state(card.audioPath)} color="#FFFFFF" style={styles.listenGlyph} />
             </Pressable>
           ) : null}
           {showWords || picked ? <Heading style={styles.prompt}>{card.target}</Heading> : (
@@ -279,9 +287,10 @@ function QuestionCard({ question, from, last, pair, audio, save, onNext }: {
         <>
           <View style={[styles.answer, { backgroundColor: theme.primaryTint }]}>
             {card.audioPath ? (
-              <Pressable accessibilityRole="button" accessibilityLabel={audio.label(card.audioPath)} onPress={() => card.audioPath && void audio.play(card.audioPath)}
+              <Pressable accessibilityRole="button" accessibilityLabel={audio.label(card.audioPath)} accessibilityState={{ busy: audio.state(card.audioPath) === "loading" }}
+                onPress={() => card.audioPath && void audio.play(card.audioPath)}
                 style={[styles.smallPlay, { backgroundColor: theme.primaryFill }]}>
-                <Body style={styles.listenGlyph}>▶</Body>
+                <AudioGlyph state={audio.state(card.audioPath)} color="#FFFFFF" style={styles.listenGlyph} />
               </Pressable>
             ) : null}
             <Heading style={styles.answerText}>{card.target}</Heading>
@@ -400,8 +409,8 @@ function ResultCard({ result, tries, card, audio, saved, from, last, attempt, er
         </View>
         <Body style={[styles.small, { color: "#344054" }]}>We heard: “{result.heard}”</Body>
       </View>
-      {card.audioPath ? <Button label={audio.label(card.audioPath) === "Hear example" ? "Hear a native speaker" : audio.label(card.audioPath)} variant="secondary"
-        onPress={() => card.audioPath && void audio.play(card.audioPath)} /> : null}
+      {card.audioPath ? <Button label={audio.state(card.audioPath) === "playing" ? "Pause audio" : "Hear a native speaker"} variant="secondary"
+        loading={audio.state(card.audioPath) === "loading"} onPress={() => card.audioPath && void audio.play(card.audioPath)} /> : null}
       {saved && saved.to > from ? <LevelUp from={from} to={saved.to} /> : null}
       {canRetry ? <Button label="Listen and try again" onPress={onRetry} /> : null}
       {error && attempt ? (
