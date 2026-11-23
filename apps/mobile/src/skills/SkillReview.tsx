@@ -49,6 +49,8 @@ function ReviewContent({ session, uid, pair, week, onClose, onSaved }: Omit<Revi
   const insets = useSafeAreaInsets();
   const [completed, setCompleted] = useState<Reviewed[]>([]);
   const audio = useExampleAudio();
+  // One recorder for the whole review. A fresh recorder for every question is what Say avoids too.
+  const speech = useSpeechAnswer({ trackMisses: true });
   const question = session.questions[completed.length];
   const close = () => { audio.stop(); onClose(); };
   // Fetch this clip and the next one ahead of time so the play button answers at once.
@@ -85,6 +87,7 @@ function ReviewContent({ session, uid, pair, week, onClose, onSaved }: Omit<Revi
             last={completed.length + 1 === total}
             pair={pair}
             audio={audio}
+            speech={speech}
             save={async (attempt) => {
               const updated = await recordSkillReview(uid, pair, question.card, { ...attempt, mode: question.mode });
               onSaved(question.card.id, updated);
@@ -107,17 +110,17 @@ function autoRating(result: Result, tries: number): ReviewRating {
   return result.level === "close" ? "almost" : "forgot";
 }
 
-function QuestionCard({ question, from, last, pair, audio, save, onNext }: {
+function QuestionCard({ question, from, last, pair, audio, speech, save, onNext }: {
   question: ReviewQuestion;
   from: MasteryLevel;
   last: boolean;
   pair: LanguagePair;
   audio: ReturnType<typeof useExampleAudio>;
+  speech: ReturnType<typeof useSpeechAnswer>;
   save: (attempt: Attempt) => Promise<ReviewProgress>;
   onNext: (reviewed: Reviewed) => void;
 }) {
   const theme = useTheme();
-  const speech = useSpeechAnswer();
   const { card } = question;
   const [stage, setStage] = useState<Stage>("prompt");
   const [hint, setHint] = useState(false);

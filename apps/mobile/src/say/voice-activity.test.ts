@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MAX_PHRASE_AUDIO_SECONDS } from "@resolingo/shared";
 import {
+  usableLevel,
   MIN_SPEECH_MS,
   NO_SPEECH_TIMEOUT_MS,
   SILENCE_AFTER_SPEECH_MS,
@@ -65,5 +66,19 @@ describe("voice activity", () => {
     const result = run([{ at: capMs, db: -10 }]);
     expect(result.stop).toBe("cap");
     expect(result.state.heardSpeech).toBe(true);
+  });
+});
+
+describe("usableLevel", () => {
+  it("keeps real room and speech levels", () => {
+    expect(usableLevel(-62)).toBe(-62);
+    expect(usableLevel(-20)).toBe(-20);
+  });
+
+  it("treats a meter stuck at the floor as not reporting, so it never reads as silence", () => {
+    expect(usableLevel(-160)).toBeNull();
+    expect(usableLevel(-120)).toBeNull();
+    expect(usableLevel(undefined)).toBeNull();
+    expect(usableLevel(Number.NaN)).toBeNull();
   });
 });
