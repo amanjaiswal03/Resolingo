@@ -37,9 +37,9 @@ const SYSTEM_INSTRUCTION = [
   "Each phrase has a short teaching note on meaning or use. A line of four or more words has chunks: one or two pieces taken from the end of the line, growing toward the whole line, each with its own translation. Give a gloss only for a word the learner has not met before.",
   "Keep teaching notes short and conversational. An optional usageTip is one reliable observation that helps the learner use what they just heard, such as when the same wording sounds polite. Skip trivia, stereotypes, and extra vocabulary. Notes and transitions before a model invite listening only.",
   "A recombination changes one small detail of a taught line, such as the object or the time, and keeps the rest.",
-  "When a line repeats or nearly repeats a phrase the learner already knows, set known: true on that line. Prefer new lines, and keep at least three turns new.",
+  "When a line repeats a phrase the learner already knows, or differs by one small word at most, set known: true on that line. Prefer new lines, and keep at least three turns new. Never refer to earlier lessons inside the dialogue.",
   "When the learner's last grammar point is given, use it naturally in at least one line, and return grammarLink with line (that exact dialogue text) and note (one or two teaching-language sentences pointing out the pattern).",
-  "cues has welcome, listen, afterDialogue, buildup, again, closing, speak, and echo. closing is one short, calm, matter-of-fact wrap-up in the teaching language. No superlatives, no stacked exclamation marks, and no praise such as amazing, fantastic, or great job. echo is 4 different brief teaching-language invitations to imitate a line the learner just heard.",
+  "cues has welcome, listen, afterDialogue, buildup, again, closing, and speak. closing is one short, calm, matter-of-fact wrap-up in the teaching language. No superlatives, no stacked exclamation marks, and no praise such as amazing, fantastic, or great job.",
   "speak has 4 to 6 conversational recall cues. Each includes {translation}. Some can include {name}. Vary the situation, instruction, and question styles without giving the target-language answer.",
   "A phrase can also have a recallCue with a natural situation specific to that line and its exact teaching-language meaning. The learner hears the meaning and a clear model before any of these cues.",
   "Also return speakerNames with teacher, speakerA, and speakerB. speakerA is male and speakerB is female. Each name is one Latin-script word of letters only, and the three names are different.",
@@ -77,7 +77,7 @@ const GRAMMAR_INSTRUCTION = [
   "Use four short target-language examples with translations that isolate the same pattern. Ask the learner to notice one concrete change they have heard, then explain it simply.",
   "breakdown walks through the pattern in two or three short steps. Each step has explanation, one teaching-language sentence about one form or one position, and an optional example with text and translation.",
   "Order the drills from guided to free: a fill-the-gap with ___, then a transformation of a given sentence, then full sentences from the meaning alone. Supply support for the first try, then allow the learner to recall without hearing the answer again.",
-  "recombinations apply the same rule in short real-life situations with familiar vocabulary. When the learner's last conversation is given, set them in that scene and reuse its words, and write bridge as one teaching-language sentence that connects a line from that conversation to today's rule.",
+  "recombinations apply the same rule in short real-life situations with familiar vocabulary. When the learner's last conversation is given, set them in that scene and reuse its words, and write bridge as one teaching-language sentence that quotes a line from that conversation word for word and connects it to today's rule. Never invent or alter a line from an earlier lesson.",
   "Use varied speaking cues and give the meaning or exact source sentence. Name whether the learner is speaking to a friend, a group, or formally when this changes the answer.",
   "Wrap every target-language span inside a teaching-language line as [[lang:BCP-47]]...[[/lang]], including isolated letters, stems, prefixes, endings, pronouns, and words spelled the same in both languages. Include the hyphen within an affix span. This applies to explanations, questions, answers, and drill cues. Close each tag, and never include teaching-language words inside it.",
   "targetTerms lists the exact target words and fragments used in teaching-language lines. Include stems and endings with their written hyphens.",
@@ -290,6 +290,7 @@ export async function generateLessonContent(
         ...(input.priorReviews && input.priorReviews.length > 0
           ? { priorReviews: input.priorReviews.flatMap((item) => item.translation ? [{ text: item.text, translation: item.translation }] : []) }
           : {}),
+        ...(input.learner?.lastConversation ? { sceneLines: input.learner.lastConversation.lines.map((item) => item.text) } : {}),
       })
       : shapePimsleurLesson(json, {
         nativeLanguage: input.nativeLanguage,

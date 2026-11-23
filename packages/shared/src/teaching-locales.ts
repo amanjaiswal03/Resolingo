@@ -155,6 +155,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Den hast du schon gelernt. Hör einfach zu.",
     "known3": "Der hier ist dir aus einer früheren Lektion bekannt.",
     "roleIntro": "Jetzt bist du {name}. Ich übernehme die andere Rolle. Antworte auf jeden Satz.",
+    "repeatAfter1": "Sprich {name} nach.",
+    "repeatAfter2": "Hör {name} zu und sag es dann selbst.",
     "returnGrammar": "Gut. Jetzt zur Grammatik von heute."
   },
   "fr-FR": {
@@ -312,6 +314,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Tu l'as déjà apprise. Écoute simplement.",
     "known3": "Celle-ci, tu la connais d'une leçon précédente.",
     "roleIntro": "Maintenant, tu joues {name}. Je prends l'autre rôle. Réponds à chaque réplique.",
+    "repeatAfter1": "Répète après {name}.",
+    "repeatAfter2": "Écoute {name}, puis dis-le toi-même.",
     "returnGrammar": "Bien. Passons à la grammaire du jour."
   },
   "es-ES": {
@@ -469,6 +473,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Esta frase ya la aprendiste. Solo escucha.",
     "known3": "Esta te suena de una lección anterior.",
     "roleIntro": "Ahora haces el papel de {name}. Yo hago el otro papel. Responde a cada frase.",
+    "repeatAfter1": "Repite después de {name}.",
+    "repeatAfter2": "Escucha a {name} y luego dilo tú.",
     "returnGrammar": "Bien. Ahora, a la gramática de hoy."
   },
   "it-IT": {
@@ -626,6 +632,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Questa frase l'hai già imparata. Ascolta e basta.",
     "known3": "Questa ti è familiare da una lezione precedente.",
     "roleIntro": "Ora fai la parte di {name}. Io faccio l'altra parte. Rispondi a ogni battuta.",
+    "repeatAfter1": "Ripeti dopo {name}.",
+    "repeatAfter2": "Ascolta {name}, poi dillo tu.",
     "returnGrammar": "Bene. Ora passiamo alla grammatica di oggi."
   },
   "pt-BR": {
@@ -783,6 +791,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Você já aprendeu esta frase. Só escute.",
     "known3": "Esta você já conhece de uma lição anterior.",
     "roleIntro": "Agora você faz o papel de {name}. Eu faço a outra parte. Responda a cada fala.",
+    "repeatAfter1": "Repita depois de {name}.",
+    "repeatAfter2": "Ouça {name} e depois diga você.",
     "returnGrammar": "Legal. Agora vamos à gramática de hoje."
   },
   "pt-PT": {
@@ -940,6 +950,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Já aprendeste esta frase. Ouve apenas.",
     "known3": "Esta já te é familiar de uma lição anterior.",
     "roleIntro": "Agora fazes de {name}. Eu faço a outra parte. Responde a cada fala.",
+    "repeatAfter1": "Repete depois de {name}.",
+    "repeatAfter2": "Ouve {name} e depois diz tu.",
     "returnGrammar": "Boa. Agora a gramática de hoje."
   },
   "da-DK": {
@@ -1097,6 +1109,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Den sætning har du lært før. Lyt bare.",
     "known3": "Den her er velkendt fra en tidligere lektion.",
     "roleIntro": "Nu er du {name}. Jeg tager den anden rolle. Svar på hver replik.",
+    "repeatAfter1": "Sig det efter {name}.",
+    "repeatAfter2": "Lyt til {name}, og sig det så selv.",
     "returnGrammar": "Godt. Nu videre til dagens grammatik."
   },
   "sv-SE": {
@@ -1254,6 +1268,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Den meningen har du lärt dig förut. Lyssna bara.",
     "known3": "Den här känner du igen från en tidigare lektion.",
     "roleIntro": "Nu är du {name}. Jag tar den andra rollen. Svara på varje replik.",
+    "repeatAfter1": "Säg efter {name}.",
+    "repeatAfter2": "Lyssna på {name} och säg det sedan själv.",
     "returnGrammar": "Snyggt. Nu vidare till dagens grammatik."
   },
   "nb-NO": {
@@ -1411,6 +1427,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Den setningen har du lært før. Bare lytt.",
     "known3": "Denne kjenner du igjen fra en tidligere leksjon.",
     "roleIntro": "Nå er du {name}. Jeg tar den andre rollen. Svar på hver replikk.",
+    "repeatAfter1": "Si det etter {name}.",
+    "repeatAfter2": "Hør på {name}, og si det så selv.",
     "returnGrammar": "Bra. Nå videre til dagens grammatikk."
   },
   "pl-PL": {
@@ -1568,6 +1586,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "To zdanie już znasz. Po prostu posłuchaj.",
     "known3": "To brzmi znajomo z wcześniejszej lekcji.",
     "roleIntro": "Teraz grasz rolę: {name}. Ja przejmuję drugą rolę. Odpowiadaj na każdą kwestię.",
+    "repeatAfter1": "Powtórz za {name}.",
+    "repeatAfter2": "Posłuchaj: {name}, a potem powiedz to sam.",
     "returnGrammar": "Dobrze. Teraz do dzisiejszej gramatyki."
   },
   "ru-RU": {
@@ -1725,6 +1745,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Эта фраза тебе уже знакома. Просто послушай.",
     "known3": "Эта фраза уже была в одном из прошлых уроков.",
     "roleIntro": "Теперь твоя роль: {name}. Я беру другую роль. Отвечай на каждую реплику.",
+    "repeatAfter1": "Повтори за {name}.",
+    "repeatAfter2": "Послушай: {name}, а потом скажи сам.",
     "returnGrammar": "Хорошо. Теперь к сегодняшней грамматике."
   },
   "tr-TR": {
@@ -1882,6 +1904,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Bu cümleyi daha önce öğrendin. Sadece dinle.",
     "known3": "Bu, önceki bir dersten tanıdık.",
     "roleIntro": "Şimdi {name} rolündesin. Diğer rolü ben alıyorum. Her cümleye cevap ver.",
+    "repeatAfter1": "{name} ile birlikte tekrar et.",
+    "repeatAfter2": "{name} söylesin, sonra sen söyle.",
     "returnGrammar": "İyi. Şimdi bugünün dilbilgisine."
   },
   "ar-EG": {
@@ -2039,6 +2063,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "الجملة دي اتعلمتها قبل كده. اسمع بس.",
     "known3": "دي مألوفة من درس فات.",
     "roleIntro": "دلوقتي إنت {name}. أنا هاخد الدور التاني. رد على كل جملة.",
+    "repeatAfter1": "كرر بعد {name}.",
+    "repeatAfter2": "اسمع {name}، وبعدين قولها إنت.",
     "returnGrammar": "كويس. ويلا على قواعد النهاردة."
   },
   "hi-IN": {
@@ -2196,6 +2222,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "यह वाक्य आप पहले सीख चुके हैं. बस सुनिए.",
     "known3": "यह वाक्य पिछले पाठ से जाना-पहचाना है.",
     "roleIntro": "अब आप {name} हैं. दूसरी भूमिका मैं निभाऊंगी. हर वाक्य का जवाब दीजिए.",
+    "repeatAfter1": "{name} के बाद दोहराइए.",
+    "repeatAfter2": "{name} को सुनिए, फिर खुद बोलिए.",
     "returnGrammar": "अच्छा. अब आज के व्याकरण पर."
   },
   "bn-IN": {
@@ -2353,6 +2381,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "এই বাক্যটা আপনি আগে শিখেছেন. শুধু শুনুন.",
     "known3": "এটা আগের পাঠ থেকে চেনা.",
     "roleIntro": "এবার আপনি {name}. অন্য ভূমিকাটা আমি নিচ্ছি. প্রতিটি কথার উত্তর দিন.",
+    "repeatAfter1": "{name}-এর পরে বলুন.",
+    "repeatAfter2": "{name}-কে শুনুন, তারপর নিজে বলুন.",
     "returnGrammar": "ভালো. এখন আজকের ব্যাকরণে."
   },
   "gu-IN": {
@@ -2510,6 +2540,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "આ વાક્ય તમે પહેલાં શીખી ગયા છો. બસ સાંભળો.",
     "known3": "આ વાક્ય અગાઉના પાઠમાંથી જાણીતું છે.",
     "roleIntro": "હવે તમે {name} છો. બીજી ભૂમિકા હું ભજવીશ. દરેક વાક્યનો જવાબ આપો.",
+    "repeatAfter1": "{name} પછી બોલો.",
+    "repeatAfter2": "{name}ને સાંભળો, પછી જાતે બોલો.",
     "returnGrammar": "સારું. હવે આજના વ્યાકરણ પર."
   },
   "kn-IN": {
@@ -2667,6 +2699,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "ಈ ವಾಕ್ಯವನ್ನು ನೀವು ಮೊದಲೇ ಕಲಿತಿದ್ದೀರಿ. ಸುಮ್ಮನೆ ಕೇಳಿ.",
     "known3": "ಇದು ಹಿಂದಿನ ಪಾಠದಿಂದ ಪರಿಚಿತ.",
     "roleIntro": "ಈಗ ನೀವು {name}. ಇನ್ನೊಂದು ಪಾತ್ರ ನಾನು ಮಾಡುತ್ತೇನೆ. ಪ್ರತಿ ವಾಕ್ಯಕ್ಕೂ ಉತ್ತರಿಸಿ.",
+    "repeatAfter1": "{name} ನಂತರ ಹೇಳಿ.",
+    "repeatAfter2": "{name} ಹೇಳುವುದನ್ನು ಕೇಳಿ, ನಂತರ ನೀವೇ ಹೇಳಿ.",
     "returnGrammar": "ಒಳ್ಳೆಯದು. ಈಗ ಇವತ್ತಿನ ವ್ಯಾಕರಣಕ್ಕೆ."
   },
   "ml-IN": {
@@ -2824,6 +2858,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "ഈ വാക്യം നിങ്ങൾ മുൻപ് പഠിച്ചതാണ്. കേട്ടാൽ മതി.",
     "known3": "ഇത് മുൻപത്തെ ഒരു പാഠത്തിൽ നിന്ന് പരിചിതമാണ്.",
     "roleIntro": "ഇപ്പോൾ നിങ്ങൾ {name} ആണ്. മറ്റേ റോൾ ഞാൻ ചെയ്യാം. ഓരോ വാക്യത്തിനും മറുപടി പറയൂ.",
+    "repeatAfter1": "{name} പറഞ്ഞതിന് ശേഷം ആവർത്തിക്കൂ.",
+    "repeatAfter2": "{name} പറയുന്നത് കേൾക്കൂ, പിന്നെ നിങ്ങൾ പറയൂ.",
     "returnGrammar": "നല്ലത്. ഇനി ഇന്നത്തെ വ്യാകരണത്തിലേക്ക്."
   },
   "pa-IN": {
@@ -2981,6 +3017,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "ਇਹ ਵਾਕ ਤੁਸੀਂ ਪਹਿਲਾਂ ਸਿੱਖ ਚੁੱਕੇ ਹੋ. ਬੱਸ ਸੁਣੋ.",
     "known3": "ਇਹ ਪਿਛਲੇ ਪਾਠ ਤੋਂ ਜਾਣਿਆ-ਪਛਾਣਿਆ ਹੈ.",
     "roleIntro": "ਹੁਣ ਤੁਸੀਂ {name} ਹੋ. ਦੂਜੀ ਭੂਮਿਕਾ ਮੈਂ ਨਿਭਾਵਾਂਗੀ. ਹਰ ਵਾਕ ਦਾ ਜਵਾਬ ਦਿਓ.",
+    "repeatAfter1": "{name} ਤੋਂ ਬਾਅਦ ਦੁਹਰਾਓ.",
+    "repeatAfter2": "{name} ਨੂੰ ਸੁਣੋ, ਫਿਰ ਆਪ ਬੋਲੋ.",
     "returnGrammar": "ਵਧੀਆ. ਹੁਣ ਅੱਜ ਦੇ ਵਿਆਕਰਨ ਵੱਲ."
   },
   "ta-IN": {
@@ -3138,6 +3176,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "இந்த வாக்கியத்தை நீங்கள் முன்பே கற்றுக்கொண்டீர்கள். கேட்டால் போதும்.",
     "known3": "இது முந்தைய பாடத்திலிருந்து பழக்கமானது.",
     "roleIntro": "இப்போது நீங்கள் {name}. மற்ற பாத்திரத்தை நான் ஏற்கிறேன். ஒவ்வொரு வாக்கியத்திற்கும் பதில் சொல்லுங்கள்.",
+    "repeatAfter1": "{name} சொன்ன பிறகு திரும்பச் சொல்லுங்கள்.",
+    "repeatAfter2": "{name} சொல்வதைக் கேளுங்கள், பிறகு நீங்களே சொல்லுங்கள்.",
     "returnGrammar": "நல்லது. இப்போது இன்றைய இலக்கணத்துக்கு."
   },
   "ja-JP": {
@@ -3295,6 +3335,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "この文は前に習いましたね。聞くだけで大丈夫です。",
     "known3": "これは前のレッスンで出てきた表現です。",
     "roleIntro": "今度はあなたが{name}です。もう一人の役は私がやります。一つずつ答えてください。",
+    "repeatAfter1": "{name}のあとに続けて言ってください。",
+    "repeatAfter2": "{name}の発音を聞いて、そのあと自分で言ってみましょう。",
     "returnGrammar": "では、今日の文法に進みます。"
   },
   "ko-KR": {
@@ -3452,6 +3494,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "이 문장은 전에 배웠죠. 그냥 들어 보세요.",
     "known3": "이건 이전 수업에서 나온 표현이에요.",
     "roleIntro": "이제 당신이 {name} 역할이에요. 다른 역할은 제가 할게요. 한 문장씩 대답해 보세요.",
+    "repeatAfter1": "{name} 다음에 따라 해 보세요.",
+    "repeatAfter2": "{name}의 말을 듣고 직접 말해 보세요.",
     "returnGrammar": "그럼 오늘 문법으로 갈게요."
   },
   "zh-TW": {
@@ -3609,6 +3653,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "這句之前學過，聽就好。",
     "known3": "這句在之前的課出現過。",
     "roleIntro": "現在你來演{name}。另一個角色由我來。每一句都回答看看。",
+    "repeatAfter1": "跟著{name}說一遍。",
+    "repeatAfter2": "先聽{name}說，再自己說一次。",
     "returnGrammar": "不錯。現在進入今天的文法。"
   },
   "vi-VN": {
@@ -3766,6 +3812,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Câu này bạn đã học rồi. Chỉ cần nghe thôi.",
     "known3": "Câu này quen thuộc từ một bài trước.",
     "roleIntro": "Bây giờ bạn đóng vai {name}. Tôi đóng vai còn lại. Hãy đáp lại từng câu.",
+    "repeatAfter1": "Nhắc lại theo {name}.",
+    "repeatAfter2": "Nghe {name} nói, rồi tự nói lại.",
     "returnGrammar": "Hay. Bây giờ sang phần ngữ pháp hôm nay."
   },
   "id-ID": {
@@ -3923,6 +3971,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Kalimat ini sudah pernah kamu pelajari. Dengarkan saja.",
     "known3": "Yang ini sudah tidak asing dari pelajaran sebelumnya.",
     "roleIntro": "Sekarang kamu jadi {name}. Aku ambil peran yang lain. Jawab setiap kalimat.",
+    "repeatAfter1": "Ulangi setelah {name}.",
+    "repeatAfter2": "Dengarkan {name}, lalu ucapkan sendiri.",
     "returnGrammar": "Baik. Sekarang ke tata bahasa hari ini."
   },
   "ms-MY": {
@@ -4080,6 +4130,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Ayat ini awak sudah belajar dahulu. Dengar sahaja.",
     "known3": "Yang ini sudah biasa daripada pelajaran sebelum ini.",
     "roleIntro": "Sekarang awak jadi {name}. Saya ambil peranan yang satu lagi. Jawab setiap ayat.",
+    "repeatAfter1": "Ulang selepas {name}.",
+    "repeatAfter2": "Dengar {name}, kemudian sebut sendiri.",
     "returnGrammar": "Baik. Sekarang ke tatabahasa hari ini."
   },
   "fil-PH": {
@@ -4237,6 +4289,8 @@ export const LOCALES: Record<string, Record<string, string>> = {
     "known2": "Natutunan mo na ang linyang ito. Makinig ka lang.",
     "known3": "Pamilyar na ito mula sa naunang aralin.",
     "roleIntro": "Ngayon, ikaw si {name}. Ako ang gaganap sa kabila. Sagutin mo ang bawat linya.",
+    "repeatAfter1": "Ulitin mo pagkatapos ni {name}.",
+    "repeatAfter2": "Pakinggan si {name}, saka mo sabihin.",
     "returnGrammar": "Ayos. Ngayon sa gramatika ngayong araw."
   }
 };

@@ -331,9 +331,11 @@ describe("model shaping", () => {
     expect(gloss?.pauseAfterMs).toBeLessThan(1_200);
     const glossAt = segments.indexOf(gloss!);
     expect(segments[glossAt - 1]?.text).not.toBe("Bahnhof");
-    // Model, a pause to repeat it, then the model again.
-    expect(segments[glossAt + 1]).toMatchObject({ kind: "example", text: "Bahnhof", speaker: "speakerA" });
-    expect(segments[glossAt + 2]).toMatchObject({ kind: "drill", speaker: "teacher", phase: "buildup" });
+    // "Repeat after Leo" first, then the model with a pause to repeat it, then the model again.
+    expect(segments[glossAt + 1]).toMatchObject({ kind: "narration", speaker: "teacher", phase: "buildup" });
+    expect(segments[glossAt + 1]?.text).toMatch(/^(Repeat after|Listen to) /);
+    expect(segments[glossAt + 1]?.pauseAfterMs).toBeUndefined();
+    expect(segments[glossAt + 2]).toMatchObject({ kind: "example", text: "Bahnhof", speaker: "speakerA" });
     expect(segments[glossAt + 2]?.pauseAfterMs).toBe(speakingPauseMs("Bahnhof", "de-DE"));
     expect(segments[glossAt + 3]).toMatchObject({ kind: "drill", text: "Bahnhof", speaker: "speakerA" });
     expect(segments.some((segment) => segment.text === "Anna" || segment.text === "Anna!")).toBe(false);
@@ -384,14 +386,22 @@ describe("model shaping", () => {
     const segments = shaped?.segments ?? [];
     expect(segments.filter((segment) => segment.phase === "buildup" && segment.kind === "example").map((segment) => segment.text))
       .toEqual(["Bahnhof", "der Bahnhof"]);
-    const echoes = segments.filter((segment) => segment.phase === "buildup" && segment.kind === "drill" && segment.pauseAfterMs);
-    expect(echoes).toHaveLength(2);
-    expect(new Set(echoes.map((segment) => segment.text))).toEqual(new Set(["Try the word on its own.", "Copy the rhythm you just heard."]));
+    // Each piece is introduced before it is heard, and the pause follows the speaker's model.
+    const invitations = segments.filter((segment) => segment.phase === "buildup" && segment.kind === "narration");
+    expect(invitations.map((segment) => segment.text)).toEqual(expect.arrayContaining([expect.stringMatching(/^(Repeat after|Listen to) /)]));
+    const echoes = segments.filter((segment) => segment.phase === "buildup" && segment.kind === "example" && segment.pauseAfterMs);
+    expect(echoes.map((segment) => segment.text)).toEqual(["Bahnhof", "der Bahnhof"]);
+    for (const echo of echoes) {
+      const at = segments.indexOf(echo);
+      expect(segments[at - 1]).toMatchObject({ speaker: "teacher", kind: "narration" });
+      expect(segments[at + 1]).toMatchObject({ kind: "drill", text: echo.text });
+    }
     const gloss = segments.find((segment) => segment.kind === "explanation" && segment.phase === "buildup" && segment.text.includes("der Bahnhof"));
     expect(gloss?.text).toContain("[[lang:de-DE]]der Bahnhof[[/lang]]");
     expect(gloss?.text.toLowerCase()).toMatch(/means|is how you say/);
     expect(gloss?.text.trim()).not.toBe("the train station");
-    expect(segments[segments.indexOf(gloss!) + 1]).toMatchObject({ kind: "example", text: "der Bahnhof" });
+    expect(segments[segments.indexOf(gloss!) + 1]).toMatchObject({ kind: "narration", speaker: "teacher" });
+    expect(segments[segments.indexOf(gloss!) + 2]).toMatchObject({ kind: "example", text: "der Bahnhof" });
     // After the pieces, the whole line is asked for by its meaning.
     const whole = segments.findIndex((segment) => segment.phase === "recall" && segment.pauseAfterMs);
     expect(segments[whole - 1]).toMatchObject({ kind: "drill", text: "der Bahnhof" });
@@ -523,11 +533,12 @@ describe("model shaping", () => {
     });
     const segments = shaped?.segments ?? [];
     const answers = segments.filter((segment) => segment.phase === "answer").map((segment) => segment.text);
-    // Exact repeat (punctuation aside) and the model's trusted mark are skipped. A shared word alone is not enough.
-    expect(answers).toEqual(["Guten Tag!", "Guten Tag. Was darf es sein?", "Nein, danke."]);
+    // An exact repeat (punctuation aside) is skipped. The model's mark on a line with a new word
+    // ("Sonst") is not trusted, so that line is drilled rather than called known.
+    expect(answers).toEqual(["Guten Tag!", "Guten Tag. Was darf es sein?", "Gern. Sonst noch etwas?", "Nein, danke."]);
     const known = segments.filter((segment) => segment.phase === "known");
     expect(known.map((segment) => segment.speaker === "teacher" ? "T" : segment.text)).toEqual([
-      "T", "Einen Kaffee, bitte.", "T", "Gern. Sonst noch etwas?",
+      "T", "Einen Kaffee, bitte.",
     ]);
     expect(known.filter((segment) => segment.speaker === "teacher").every((segment) => /already know|learned this|familiar/i.test(segment.text))).toBe(true);
     expect(known.every((segment) => !segment.pauseAfterMs)).toBe(true);

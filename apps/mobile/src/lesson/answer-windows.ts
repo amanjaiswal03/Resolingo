@@ -32,13 +32,17 @@ export function answerPlan(segments: LessonSegment[], clips: PlaybackClip[], dur
     const answerClip = clips[index + 1];
     const answer = answerClip?.segments[0];
     const pause = prompt?.pauseAfterMs;
+    // A teacher cue in the teaching language, or a speaker's model the learner repeats
+    // ("Repeat after Leo", the model, the pause, then the model again).
+    const cue = prompt?.kind === "drill" && prompt.speaker === "teacher" && prompt.language !== answer?.language;
+    const echo = prompt?.kind === "example" && prompt.speaker !== "teacher" && answer?.kind === "drill"
+      && prompt.language === answer.language && sameLine(prompt.text, answer.text);
     if (clip.segments.length !== 1 ||
         !prompt || !answer || !pause || pause < 1_200 || duration < pause ||
-        prompt.kind !== "drill" || prompt.speaker !== "teacher" ||
+        (!cue && !echo) ||
         prompt.phase === "notice" || prompt.phase === "check" ||
         (answer.kind !== "drill" && answer.kind !== "example") ||
         followingSegment.get(prompt.id) !== answer.id ||
-        prompt.language === answer.language ||
         (language && language !== answer.language)) continue;
     const expected = lessonDisplayText(answer.text).trim();
     if (!expected) continue;
@@ -57,4 +61,9 @@ export function answerPlan(segments: LessonSegment[], clips: PlaybackClip[], dur
     });
   }
   return language ? { language, windows } : null;
+}
+
+function sameLine(left: string, right: string): boolean {
+  const plain = (text: string) => lessonDisplayText(text).toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return plain(left) === plain(right);
 }
