@@ -1,4 +1,4 @@
-const DAILY_LESSON_CAP = 3;
+export const DAILY_LESSON_CAP = 3;
 
 export function dailyQuotaLabel(used: number, unlimitedLessons: boolean): string {
   if (unlimitedLessons) return "Unlimited";

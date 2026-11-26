@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Alert, Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -7,9 +7,10 @@ import { runOnJS, useAnimatedReaction, type SharedValue } from "react-native-rea
 import { lessonCanBeDeleted, type Lesson } from "@resolingo/shared";
 import { useLessonDelete } from "@/lessons/delete-lesson";
 import { usePlayback } from "@/playback/PlaybackProvider";
+import { lessonAccent } from "@/theme/colors";
 import { useTheme } from "@/theme/tokens";
-import { Card } from "./Card";
 import { LessonArtwork } from "./LessonArtwork";
+import { PlayGlyph } from "./PlayGlyph";
 import { Body, Heading } from "./Typography";
 
 const kindLabel = { conversation: "Conversation", grammar: "Grammar", phrase: "Phrase" } as const;
@@ -37,6 +38,12 @@ function DeleteAction({ translation, onArmed, onPress }: { translation: SharedVa
       <Body style={styles.actionLabel}>Delete</Body>
     </Pressable>
   );
+}
+
+function metaLine(lesson: Lesson): string {
+  const minutes = lesson.manifest?.totalDurationMs ? ` · ${Math.max(1, Math.round(lesson.manifest.totalDurationMs / 60_000))} min` : "";
+  if (lesson.status !== "ready") return `${statusLabel[lesson.status]} · ${kindLabel[lesson.type]}`;
+  return `${kindLabel[lesson.type]}${minutes}`;
 }
 
 export function LessonRow({ lesson }: { lesson: Lesson }) {
@@ -89,7 +96,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${lesson.title}, ${playing ? "Playing" : statusLabel[lesson.status]}`}
+        accessibilityLabel={`${lesson.title}, ${playing ? "Playing" : metaLine(lesson)}${lesson.status === "ready" && lesson.completed ? ", done" : ""}`}
         accessibilityHint={deletable ? "Swipe left to delete, or long press for a delete menu." : "This lesson is still being created."}
         accessibilityActions={deletable ? [{ name: "delete", label: "Delete lesson" }] : undefined}
         onAccessibilityAction={(event) => {
@@ -105,11 +112,22 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
         }}
         onLongPress={confirm}
       >
-        <Card style={styles.card}>
-          <LessonArtwork lesson={lesson} size={44} radius={12} />
-          <View style={styles.copy}><Heading numberOfLines={2} style={styles.title}>{lesson.title}</Heading><Body muted style={styles.meta}>{playing ? <Body style={[styles.meta, { color: theme.primary }]}>Playing</Body> : statusLabel[lesson.status]} · {kindLabel[lesson.type]}</Body></View>
-          <Body muted>›</Body>
-        </Card>
+        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: playing ? theme.brand : theme.border }]}>
+          <LessonArtwork lesson={lesson} size={56} radius={14} />
+          <View style={styles.copy}>
+            <Heading numberOfLines={2} style={styles.title}>{lesson.title}</Heading>
+            <View style={styles.metaRow}>
+              <View style={[styles.typeDot, { backgroundColor: lessonAccent(theme, lesson.type) }]} />
+              <Body muted numberOfLines={1} style={styles.meta}>{metaLine(lesson)}</Body>
+              {lesson.status === "ready" && lesson.completed && !playing ? <Text style={[styles.done, { color: theme.success }]}>✓ Done</Text> : null}
+            </View>
+          </View>
+          {lesson.status === "ready" ? (
+            <View style={[styles.play, { backgroundColor: playing ? theme.primaryFill : theme.primaryTint }]}>
+              {playing ? <Text style={[styles.playingText, { color: theme.onPrimary }]}>♪</Text> : <PlayGlyph playing={false} color={theme.primary} size={14} />}
+            </View>
+          ) : <Body muted>›</Body>}
+        </View>
       </Pressable>
     </ReanimatedSwipeable>
   );
@@ -124,8 +142,13 @@ const styles = StyleSheet.create({
   trashHandle: { width: 8, height: 2, backgroundColor: "#FFFFFF", borderRadius: 1 },
   trashLid: { width: 18, height: 2, backgroundColor: "#FFFFFF", borderRadius: 1, marginTop: 2, marginBottom: 2 },
   trashBin: { width: 14, height: 12, borderWidth: 2, borderTopWidth: 0, borderColor: "#FFFFFF", borderBottomLeftRadius: 3, borderBottomRightRadius: 3 },
-  card: { flexDirection: "row", alignItems: "center", paddingVertical: 10, paddingHorizontal: 14, gap: 10 },
-  copy: { flex: 1, gap: 0 },
-  title: { fontSize: 17, lineHeight: 22 },
-  meta: { fontSize: 14, lineHeight: 18 },
+  card: { flexDirection: "row", alignItems: "center", borderRadius: 22, borderWidth: StyleSheet.hairlineWidth, paddingVertical: 10, paddingLeft: 10, paddingRight: 14, gap: 12 },
+  copy: { flex: 1, gap: 3 },
+  title: { fontSize: 16, lineHeight: 21 },
+  metaRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  typeDot: { width: 7, height: 7, borderRadius: 4 },
+  meta: { flexShrink: 1, fontSize: 13, lineHeight: 18 },
+  done: { fontSize: 12, lineHeight: 16, fontWeight: "700", marginLeft: 4 },
+  play: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  playingText: { fontSize: 16, lineHeight: 20, fontWeight: "800" },
 });
