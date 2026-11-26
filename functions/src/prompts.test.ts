@@ -163,6 +163,17 @@ describe("lesson prompts", () => {
     expect(prompt).toContain("formally");
   });
 
+  it("asks for the {learner} placeholder only when the learner has a name, and never sends the name", () => {
+    const base = { nativeLanguage: languageById["en-US"], targetLanguage: languageById["de-DE"], level: "A2" as const, recentTopics: [] };
+    const conversation = lessonPrompt({ ...base, type: "conversation", addressLearner: true });
+    expect(conversation).toContain("once in cues.welcome and once in cues.closing");
+    expect(conversation).toContain("never confuse {learner} with {name}");
+    const grammar = lessonPrompt({ ...base, type: "grammar", addressLearner: true });
+    expect(grammar).toContain("use it once, in closing");
+    expect(lessonPrompt({ ...base, type: "conversation" })).not.toContain("{learner}");
+    expect(lessonPrompt({ ...base, type: "grammar" })).not.toContain("{learner}");
+  });
+
   it("requires transliteration for configured writing systems", () => {
     const prompt = lessonPrompt({
       type: "conversation",

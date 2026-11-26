@@ -191,6 +191,8 @@ export async function generateLessonContent(
     learner?: LearnerContext;
     /** The lesson of the day or welcome lesson this lesson was started from. */
     plan?: LessonPlan;
+    /** The learner has a first name, so the model may write {learner} in a greeting and the closing. */
+    addressLearner?: boolean;
     phrase?: {
       phraseId: string;
       nativeText: string;
@@ -224,6 +226,7 @@ export async function generateLessonContent(
     ...(input.learner && input.type !== "phrase" ? { learner: input.learner } : {}),
     ...(grammarTopic ? { topic: grammarTopic } : {}),
     ...(conversationPlan ? { plan: conversationPlan } : {}),
+    ...(input.addressLearner && input.type !== "phrase" ? { addressLearner: true } : {}),
     ...(input.phrase ? {
       phrase: {
         nativeText: input.phrase.nativeText,
