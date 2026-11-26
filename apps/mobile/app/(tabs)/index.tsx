@@ -10,7 +10,7 @@ import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
 import { LessonOfTheDayCard, LessonOfTheDayPlaceholder } from "@/home/LessonOfTheDayCard";
-import { countsTowardCap, pickCardState } from "@/home/lesson-of-the-day";
+import { countsTowardCap, pickCardState, showPickCard } from "@/home/lesson-of-the-day";
 import { useLessonOfTheDay } from "@/home/use-lesson-of-the-day";
 import { HOW_WOULD_YOU_SAY_ENABLED, showHowWouldYouSayLesson } from "@/features";
 import { dailyCapBlocksStart, dailyQuotaLabel, lessonsReadyToday } from "@/home/daily-quota";
@@ -63,12 +63,12 @@ export default function HomeScreen() {
   const pick = daily.pick;
   const capReached = dailyCapBlocksStart(used, unlimited);
   const pickState = pick ? pickCardState({ pick, lessons, capReached }) : undefined;
+  const showPick = Boolean(pickState && showPickCard(pickState));
   const visible = useMemo(() => lessons.filter((lesson) => showHowWouldYouSayLesson(lesson.type)), [lessons]);
   const active = visible.find((lesson) => ["queued", "generating_content", "synthesizing_audio"].includes(lesson.status));
-  // The lesson of the day card already shows its own lesson, so it is not repeated below it.
   const finished = useMemo(() => openedLessonsReady ? visible
-    .filter((lesson) => lesson.status === "ready" && lesson.quotaDate === today && !openedLessonIds.has(lesson.id) && lesson.id !== pick?.lessonId)
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] : undefined, [openedLessonIds, openedLessonsReady, pick?.lessonId, today, visible]);
+    .filter((lesson) => lesson.status === "ready" && lesson.quotaDate === today && !openedLessonIds.has(lesson.id))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0] : undefined, [openedLessonIds, openedLessonsReady, today, visible]);
   const recent = visible.filter((lesson) => lesson.status === "ready" && lesson.id !== finished?.id).slice(0, 3);
   const startDisabled = Boolean(starting || active) || capReached;
   const [startingPick, setStartingPick] = useState(false);
@@ -132,7 +132,7 @@ export default function HomeScreen() {
     <Screen onScrollBeginDrag={closeOpenRow}>
       <LessonRowDismiss />
       <View style={styles.header} onTouchStart={closeOpenRow}><Body muted>GOOD TO SEE YOU, {profile.nickname.toUpperCase()}</Body><Title>What will you practice?</Title><Body muted>{dailyQuotaLabel(used, unlimited)}</Body></View>
-      {pick && pickState ? (
+      {showPick && pick && pickState ? (
         <LessonOfTheDayCard
           pick={pick}
           state={pickState}
@@ -143,8 +143,8 @@ export default function HomeScreen() {
         />
       ) : daily.loading ? <LessonOfTheDayPlaceholder /> : null}
       {finished ? <Pressable onPressIn={closeOpenRow} onPress={() => open(finished.id, { expand: true })} accessibilityRole="button" accessibilityLabel={`${finished.title}, ready to play`} style={styles.above}><Card style={[styles.statusCard, styles.highlight, { borderColor: theme.brand, backgroundColor: theme.primaryTint }]}><Body style={[styles.ready, { color: theme.primary }]}>READY</Body><Heading style={styles.statusTitle}>{finished.title}</Heading><Body muted style={styles.statusMeta}>{kindLabel[finished.type]} · Tap to play</Body></Card></Pressable> : null}
-      {active && active.id !== pick?.lessonId ? <Pressable onPressIn={closeOpenRow} onPress={() => router.push(`/lesson/${active.id}`)} style={styles.above}><Card style={[styles.statusCard, { backgroundColor: theme.surfaceMuted }]}><Body muted style={styles.statusMeta}>IN PROGRESS</Body><Heading style={styles.statusTitle}>{active.title}</Heading><View style={[styles.progressTrack, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.brand, width: percentWidth(active.progress) }]} /></View><Body muted style={styles.statusMeta}>{Number.isFinite(active.progress) ? active.progress : 0}% · Tap to follow progress</Body></Card></Pressable> : null}
-      {pick ? <Body muted style={styles.section} onPress={closeOpenRow}>OR CHOOSE YOUR OWN</Body> : null}
+      {active ? <Pressable onPressIn={closeOpenRow} onPress={() => router.push(`/lesson/${active.id}`)} style={styles.above}><Card style={[styles.statusCard, { backgroundColor: theme.surfaceMuted }]}><Body muted style={styles.statusMeta}>IN PROGRESS</Body><Heading style={styles.statusTitle}>{active.title}</Heading><View style={[styles.progressTrack, { backgroundColor: theme.border }]}><View style={[styles.progressFill, { backgroundColor: theme.brand, width: percentWidth(active.progress) }]} /></View><Body muted style={styles.statusMeta}>{Number.isFinite(active.progress) ? active.progress : 0}% · Tap to follow progress</Body></Card></Pressable> : null}
+      {showPick ? <Body muted style={styles.section} onPress={closeOpenRow}>OR CHOOSE YOUR OWN</Body> : null}
       <View style={styles.choices}>
         <Pressable disabled={startDisabled} onPressIn={closeOpenRow} onPress={() => void start("conversation")} accessibilityRole="button" accessibilityLabel="Start a conversation lesson" style={{ opacity: startDisabled ? 0.5 : 1 }}>
           <Card style={[styles.lessonCard, { backgroundColor: theme.amber }]}><Body style={styles.eyebrow}>CONVERSATION</Body><Title style={styles.dark}>Speak through a fresh everyday topic.</Title><Body style={styles.darkMuted}>{starting === "conversation" ? "Starting…" : "5–8 minutes · Two voices"}</Body></Card>

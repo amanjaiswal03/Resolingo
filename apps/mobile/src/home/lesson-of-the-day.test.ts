@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DailyPick, Lesson } from "@resolingo/shared";
-import { countsTowardCap, pickCardState, pickDateLabel } from "./lesson-of-the-day";
+import { countsTowardCap, pickCardState, pickDateLabel, showPickCard } from "./lesson-of-the-day";
 
 const pick = (extra: Partial<DailyPick> = {}): DailyPick => ({
   kind: "daily",
@@ -33,12 +33,16 @@ const lesson = (extra: Partial<Lesson>): Lesson => ({
 
 describe("lesson of the day card", () => {
   it("shows only the topic until the learner starts it", () => {
-    expect(pickCardState({ pick: pick(), lessons: [], capReached: false })).toEqual({ kind: "planned", retry: false });
+    const planned = pickCardState({ pick: pick(), lessons: [], capReached: false });
+    expect(planned).toEqual({ kind: "planned", retry: false });
+    expect(showPickCard(planned)).toBe(true);
   });
 
   it("follows the lesson from preparing to ready to done", () => {
     const started = pick({ lessonId: "l1" });
-    expect(pickCardState({ pick: started, lessons: [], capReached: false })).toEqual({ kind: "preparing", progress: 5 });
+    const preparing = pickCardState({ pick: started, lessons: [], capReached: false });
+    expect(preparing).toEqual({ kind: "preparing", progress: 5 });
+    expect(showPickCard(preparing)).toBe(false);
     expect(pickCardState({ pick: started, lessons: [lesson({ status: "synthesizing_audio", progress: 60 })], capReached: false }))
       .toEqual({ kind: "preparing", progress: 60 });
     expect(pickCardState({ pick: started, lessons: [lesson({})], capReached: true }).kind).toBe("ready");
@@ -47,7 +51,9 @@ describe("lesson of the day card", () => {
 
   it("lets a failed lesson start again, unless the day's lessons are used up", () => {
     const started = pick({ lessonId: "l1" });
-    expect(pickCardState({ pick: started, lessons: [lesson({ status: "failed" })], capReached: false })).toEqual({ kind: "planned", retry: true });
+    const retry = pickCardState({ pick: started, lessons: [lesson({ status: "failed" })], capReached: false });
+    expect(retry).toEqual({ kind: "planned", retry: true });
+    expect(showPickCard(retry)).toBe(true);
     expect(pickCardState({ pick: started, lessons: [lesson({ status: "failed" })], capReached: true })).toEqual({ kind: "blocked" });
   });
 

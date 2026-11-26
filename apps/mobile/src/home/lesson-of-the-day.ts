@@ -49,7 +49,7 @@ export function countsTowardCap(lesson: Pick<Lesson, "plan">): boolean {
 
 export const typeLabel = { conversation: "Conversation", grammar: "Grammar" } as const;
 
-/** The lesson ids the pick card already covers, so the home screen does not show them twice. */
-export function pickLessonId(pick: DailyPick | null | undefined): string | undefined {
-  return pick?.lessonId;
+/** The featured card stays until the learner starts today's lesson. After that, the lesson uses the normal cards. */
+export function showPickCard(state: PickCardState): boolean {
+  return state.kind === "planned" || state.kind === "blocked";
 }
