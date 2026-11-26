@@ -66,7 +66,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
       return;
     }
     Alert.alert("Delete this lesson?", "You can undo it for a few seconds.", [
-      { text: "Cancel", style: "cancel" },
+      { text: "Cancel", style: "cancel", onPress: () => row.current?.close() },
       { text: "Delete", style: "destructive", onPress: remove },
     ]);
   };
@@ -78,7 +78,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
       overshootFriction={1}
       rightThreshold={48}
       {...(deletable ? { renderRightActions: (_progress: SharedValue<number>, translation: SharedValue<number>) => (
-        <DeleteAction translation={translation} onArmed={() => { armed.current = true; }} onPress={remove} />
+        <DeleteAction translation={translation} onArmed={() => { armed.current = true; }} onPress={confirm} />
       ) } : {})}
       onSwipeableWillOpen={() => {
         void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -87,7 +87,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
       onSwipeableOpen={() => {
         if (!armed.current) return;
         armed.current = false;
-        remove();
+        confirm();
       }}
       onSwipeableClose={() => {
         armed.current = false;
@@ -95,25 +95,27 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
       }}
       containerStyle={[styles.swipe, styles.aboveDismiss]}
     >
-      <PressableScale haptic="none" scaleTo={0.98}
-        accessibilityRole="button"
-        accessibilityLabel={`${lesson.title}, ${playing ? "Playing" : metaLine(lesson)}${lesson.status === "ready" && lesson.completed ? ", done" : ""}`}
-        accessibilityHint={deletable ? "Swipe left to delete, or long press for a delete menu." : "This lesson is still being created."}
-        accessibilityActions={deletable ? [{ name: "delete", label: "Delete lesson" }] : undefined}
-        onAccessibilityAction={(event) => {
-          if (event.nativeEvent.actionName === "delete") confirm();
-        }}
-        onPress={() => {
-          if (openRowId) {
-            closeOpenRow();
-            return;
-          }
-          if (lesson.status === "ready") open(lesson.id, { expand: true });
-          else router.push(`/lesson/${lesson.id}`);
-        }}
-        onLongPress={confirm}
-      >
-        <View style={[styles.card, { backgroundColor: theme.surface, borderColor: playing ? theme.brand : theme.border }]}>
+      {/* Stays full size while the card sinks, so the delete action underneath never peeks out on a tap. */}
+      <View style={[styles.cover, { backgroundColor: theme.surface }]}>
+        <PressableScale haptic="none" scaleTo={0.98}
+          accessibilityRole="button"
+          accessibilityLabel={`${lesson.title}, ${playing ? "Playing" : metaLine(lesson)}${lesson.status === "ready" && lesson.completed ? ", done" : ""}`}
+          accessibilityHint={deletable ? "Swipe left to delete, or long press for a delete menu." : "This lesson is still being created."}
+          accessibilityActions={deletable ? [{ name: "delete", label: "Delete lesson" }] : undefined}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === "delete") confirm();
+          }}
+          onPress={() => {
+            if (openRowId) {
+              closeOpenRow();
+              return;
+            }
+            if (lesson.status === "ready") open(lesson.id, { expand: true });
+            else router.push(`/lesson/${lesson.id}`);
+          }}
+          onLongPress={confirm}
+        >
+          <View style={[styles.card, { backgroundColor: theme.surface, borderColor: playing ? theme.brand : theme.border }]}>
           <LessonArtwork lesson={lesson} size={56} radius={14} />
           <View style={styles.copy}>
             <Heading numberOfLines={2} style={styles.title}>{lesson.title}</Heading>
@@ -128,14 +130,16 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
               {playing ? <Text style={[styles.playingText, { color: theme.onPrimary }]}>♪</Text> : <PlayGlyph playing={false} color={theme.primary} size={14} />}
             </View>
           ) : <Body muted>›</Body>}
-        </View>
-      </PressableScale>
+          </View>
+        </PressableScale>
+      </View>
     </ReanimatedSwipeable>
   );
 }
 
 const styles = StyleSheet.create({
   swipe: { borderRadius: 22 },
+  cover: { borderRadius: 22, overflow: "hidden" },
   aboveDismiss: { zIndex: 2 },
   action: { height: "100%", alignItems: "center", justifyContent: "center", gap: 4, backgroundColor: "#BA1A1A" },
   actionLabel: { color: "#FFFFFF", fontSize: 13, lineHeight: 16, fontWeight: "700" },
