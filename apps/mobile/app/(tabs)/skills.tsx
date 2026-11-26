@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -12,6 +12,7 @@ import { ProgressRing } from "@/components/ProgressRing";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
 import { HOW_WOULD_YOU_SAY_ENABLED } from "@/features";
+import { languageFlag } from "@/languages/flags";
 import { usePlayback } from "@/playback/PlaybackProvider";
 import { subscribeCompletedLessons } from "@/services/lessons";
 import { subscribePhrases } from "@/services/phrases";
@@ -138,10 +139,17 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
     <Screen>
       <View style={styles.header}>
         <View style={styles.headerCopy}>
-          <Body muted style={styles.small}>{languageById[targetLanguage].label}</Body>
           <Title>Skills</Title>
+          <View style={styles.languageRow}>
+            <Text style={styles.flag}>{languageFlag(targetLanguage)}</Text>
+            <Body muted style={styles.languageLabel}>{languageById[targetLanguage].label}</Body>
+          </View>
         </View>
-        {skills.cards.length ? <Body muted style={styles.small}>{skills.cards.length} {skills.cards.length === 1 ? "phrase" : "phrases"}</Body> : null}
+        {skills.cards.length ? (
+          <View style={[styles.countChip, { backgroundColor: theme.surfaceMuted }]}>
+            <Body style={styles.countLabel}>{skills.cards.length} {skills.cards.length === 1 ? "phrase" : "phrases"}</Body>
+          </View>
+        ) : null}
       </View>
 
       <WeekCard week={week} due={due} hasCards={skills.cards.length > 0} synced={progress !== null}
@@ -161,7 +169,7 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
         {shownViews.map(({ id, label }) => (
           <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: view === id }}
             onPress={() => { stopAudio(); setSelected(id); }}
-            style={[styles.viewButton, view === id && { backgroundColor: theme.surface }]}>
+            style={[styles.viewButton, view === id && [styles.viewSelected, { backgroundColor: theme.surface }]]}>
             <Body muted={view !== id} style={styles.viewLabel}>{label}</Body>
           </Pressable>
         ))}
@@ -479,7 +487,12 @@ function PhraseRow({ card, progress, now, audio, kind, onSay, onPractice }: {
 
 const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 8 },
-  headerCopy: { gap: 3 },
+  headerCopy: { gap: 4 },
+  languageRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  flag: { fontSize: 18, lineHeight: 22 },
+  languageLabel: { fontSize: 15, lineHeight: 20, fontWeight: "600" },
+  countChip: { borderRadius: 999, paddingHorizontal: 12, paddingVertical: 5, marginBottom: 2 },
+  countLabel: { fontSize: 13, lineHeight: 17, fontWeight: "700" },
   small: { fontSize: 13, lineHeight: 19 },
   tiny: { fontSize: 12, lineHeight: 16 },
   eyebrow: { fontSize: 12, lineHeight: 16, fontWeight: "700", letterSpacing: 0.5, textTransform: "uppercase" },
@@ -502,8 +515,9 @@ const styles = StyleSheet.create({
   legend: { flexDirection: "row", flexWrap: "wrap", columnGap: 14, rowGap: 4 },
   legendItem: { flexDirection: "row", alignItems: "center", gap: 6 },
   swatch: { width: 10, height: 10, borderRadius: 3 },
-  viewPicker: { flexDirection: "row", padding: 4, gap: 4, borderRadius: 14 },
-  viewButton: { flex: 1, minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 11, paddingHorizontal: 3 },
+  viewPicker: { flexDirection: "row", padding: 3, gap: 4, borderRadius: 999 },
+  viewButton: { flex: 1, minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 999, paddingHorizontal: 3 },
+  viewSelected: { shadowColor: "#08152F", shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
   viewLabel: { fontSize: 14, lineHeight: 19, fontWeight: "700", textAlign: "center" },
   grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   tile: { flexGrow: 1, flexBasis: "45%", minHeight: 168, borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, padding: 14, gap: 10 },
