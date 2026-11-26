@@ -47,7 +47,9 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
   const closedY = useSharedValue(closed);
   const dragStart = useSharedValue(closed);
   const floor = useSharedValue(expanded ? 300 : MINI_PLAYER_HEIGHT);
-  closedY.value = closed;
+  useEffect(() => {
+    closedY.value = closed;
+  }, [closed, closedY]);
   const settle = useCallback((open: boolean) => {
     setPresented(open ? "full" : "mini");
     setInteractive(open);
@@ -121,9 +123,11 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
     wasExpanded.current = expanded;
   }, [expanded, glideTo, y]);
   const dockGap = useSharedValue(collapsedOffset);
-  dockGap.value = collapsedOffset;
   const screenH = useSharedValue(screenHeight);
-  screenH.value = screenHeight;
+  useEffect(() => {
+    dockGap.value = collapsedOffset;
+    screenH.value = screenHeight;
+  }, [collapsedOffset, dockGap, screenH, screenHeight]);
   const sheetStyle = useAnimatedStyle(() => {
     const span = Math.max(closedY.value, 1);
     const bottom = interpolate(y.value, [0, span], [0, dockGap.value]);

@@ -50,16 +50,29 @@ export function subscribeReadyCount(uid: string, quotaDate: string, callback: (c
 
 export function subscribeLessons(uid: string, callback: (lessons: Lesson[]) => void, onError?: (error: Error) => void): () => void {
   const lessonsQuery = query(collection(firestore, "users", uid, "lessons"), orderBy("createdAt", "desc"), limit(50));
+  const cached = new Map<string, { updatedAt: string; lesson: Lesson }>();
   return onSnapshot(lessonsQuery, (snapshot) => {
     const lessons: Lesson[] = [];
+    const live = new Set<string>();
     let firstError: Error | undefined;
     for (const document of snapshot.docs) {
+      live.add(document.id);
+      const data = document.data();
+      const updatedAt = data?.updatedAt ? iso(data.updatedAt) : "";
+      const previous = updatedAt ? cached.get(document.id) : undefined;
+      if (previous && previous.updatedAt === updatedAt) {
+        lessons.push(previous.lesson);
+        continue;
+      }
       try {
-        lessons.push(mapLesson(document));
+        const lesson = mapLesson(document);
+        if (updatedAt) cached.set(document.id, { updatedAt, lesson });
+        lessons.push(lesson);
       } catch {
         firstError ??= new Error(`Could not read lesson ${document.id}.`);
       }
     }
+    for (const id of cached.keys()) if (!live.has(id)) cached.delete(id);
     callback(lessons);
     if (firstError) onError?.(firstError);
   }, onError);
