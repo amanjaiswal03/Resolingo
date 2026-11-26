@@ -93,12 +93,31 @@ export function subscribeCompletedLessons(
   }, onError);
 }
 
+const artworkUrls = new Map<string, Promise<string | undefined>>();
+
+/** Resolves the artwork download URL once per path. Missing or unreadable artwork falls back to the badge. */
+export function resolveArtworkUrl(artworkPath: string | undefined): Promise<string | undefined> {
+  if (!artworkPath) return Promise.resolve(undefined);
+  let pending = artworkUrls.get(artworkPath);
+  if (!pending) {
+    pending = getDownloadURL(ref(storage, artworkPath)).catch(() => {
+      artworkUrls.delete(artworkPath);
+      return undefined;
+    });
+    artworkUrls.set(artworkPath, pending);
+  }
+  return pending;
+}
+
 export async function resolveAudioUrls(lesson: Lesson): Promise<Lesson> {
-  const segments = await Promise.all(lesson.segments.map(async (segment) => ({
-    ...segment,
-    audioUrl: segment.audioPath ? await getDownloadURL(ref(storage, segment.audioPath)) : undefined,
-  })));
-  return { ...lesson, segments };
+  const [segments, artworkUrl] = await Promise.all([
+    Promise.all(lesson.segments.map(async (segment) => ({
+      ...segment,
+      audioUrl: segment.audioPath ? await getDownloadURL(ref(storage, segment.audioPath)) : undefined,
+    }))),
+    resolveArtworkUrl(lesson.artworkPath),
+  ]);
+  return { ...lesson, segments, ...(artworkUrl ? { artworkUrl } : {}) };
 }
 
 export async function markLessonCompleted(uid: string, lessonId: string): Promise<void> {

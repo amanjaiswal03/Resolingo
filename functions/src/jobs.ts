@@ -23,6 +23,7 @@ import { lessonAudioUnits } from "./speech.js";
 import { loadDueReviewPhrases } from "./reviews.js";
 import { learnerContextPath, loadLearnerContext } from "./context.js";
 import { synthesizeScene, synthesizeSegment } from "./tts.js";
+import { createLessonArtwork } from "./artwork.js";
 
 type JobPayload = { uid: string; lessonId: string };
 
@@ -226,6 +227,8 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       updatedAt: FieldValue.serverTimestamp(),
     });
 
+    // Artwork is drawn while the audio renders and never holds up or fails the lesson.
+    const artwork = createLessonArtwork({ uid: payload.uid, lessonId: payload.lessonId, type, topic });
     let completedSegments = 0;
     const units = lessonAudioUnits(content.segments as LessonSegment[]);
     const rendered = await mapConcurrent(units, 4, async (unit) => {
@@ -247,6 +250,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       return synthesized;
     });
     const segments = rendered.flat();
+    const artworkPath = await artwork;
 
     const usageRef = db.doc(`users/${payload.uid}/dailyUsage/${lessonData.quotaDate}`);
     const topicRef = db.doc(`users/${payload.uid}/recentTopics/${topicKey}`);
@@ -273,6 +277,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
         segments: segments.map((segment) => displayLessonSegment(segment)),
         status: "ready",
         progress: 100,
+        ...(artworkPath ? { artworkPath } : {}),
         manifest: {
           totalDurationMs: segments.reduce((total, segment) => total + (segment.durationMs ?? 0), 0),
           segmentCount: segments.length,

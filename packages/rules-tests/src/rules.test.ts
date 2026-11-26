@@ -138,6 +138,16 @@ describe("Storage owner rules", () => {
     await assertFails(uploadBytes(ref(env.authenticatedContext("alice").storage(), path), new Uint8Array([4])));
   });
 
+  it("allows the owner to read lesson artwork and rejects other users and client writes", async () => {
+    const path = "users/alice/lessons/lesson-1/artwork.jpg";
+    await env.withSecurityRulesDisabled(async (context) => {
+      await uploadBytes(ref(context.storage(), path), new Uint8Array([1, 2, 3]));
+    });
+    await assertSucceeds(getBytes(ref(env.authenticatedContext("alice").storage(), path)));
+    await assertFails(getBytes(ref(env.authenticatedContext("bob").storage(), path)));
+    await assertFails(uploadBytes(ref(env.authenticatedContext("alice").storage(), path), new Uint8Array([4])));
+  });
+
   it("allows the owner to read a phrase preview and rejects client writes", async () => {
     const path = "users/alice/phrases/phrase_ab12cd34/preview.wav";
     await env.withSecurityRulesDisabled(async (context) => {

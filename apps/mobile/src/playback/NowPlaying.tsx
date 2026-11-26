@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { interpolate, runOnJS, useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 import { lessonDisplayText, speakerLabel, type Lesson } from "@resolingo/shared";
@@ -7,6 +7,7 @@ import { useSegments } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Card } from "@/components/Card";
+import { LessonArtwork } from "@/components/LessonArtwork";
 import { LessonPlayer } from "@/components/LessonPlayer";
 import { SkipIcon } from "@/components/SkipIcon";
 import { Body, Heading, Title } from "@/components/Typography";
@@ -37,6 +38,8 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
   const [resolved, setResolved] = useState<Lesson | null>(null);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [jumpTo, setJumpTo] = useState<{ id: string; token: number } | null>(null);
+  // Artwork is the default view. Lessons made before artwork existed open on the transcript.
+  const [view, setView] = useState<"artwork" | "transcript">("artwork");
   const [presented, setPresented] = useState<"full" | "mini">(expanded ? "full" : "mini");
   const [interactive, setInteractive] = useState(expanded);
   const closed = Math.max(0, screenHeight - collapsedOffset - MINI_PLAYER_HEIGHT);
@@ -173,9 +176,12 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
               </View>
               <Body muted style={styles.eyebrow}>{lesson?.type.toUpperCase()}{lesson?.manifest?.totalDurationMs ? ` · ${Math.max(1, Math.round(lesson.manifest.totalDurationMs / 60_000))} MIN` : ""}</Body>
               <Title style={styles.sheetTitle} numberOfLines={2}>{lesson?.title ?? "Opening lesson"}</Title>
+              {resolved?.artworkUrl ? <ViewToggle view={view} onChange={setView} /> : null}
             </View>
           </GestureDetector>
-          {resolved ? <Transcript lesson={resolved} activeSegmentId={activeSegmentId} onJump={(id) => setJumpTo({ id, token: Date.now() })} /> : null}
+          {resolved?.artworkUrl && view === "artwork"
+            ? <ArtworkView lesson={resolved} activeSegmentId={activeSegmentId} onShowTranscript={() => setView("transcript")} />
+            : resolved ? <Transcript lesson={resolved} activeSegmentId={activeSegmentId} onJump={(id) => setJumpTo({ id, token: Date.now() })} /> : null}
         </View>
         <View style={styles.dock}>
           <GestureDetector gesture={playerPan}>
@@ -210,6 +216,52 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
           </GestureDetector>
         </View>
       </Animated.View>
+    </View>
+  );
+}
+
+function ViewToggle({ view, onChange }: { view: "artwork" | "transcript"; onChange: (view: "artwork" | "transcript") => void }) {
+  const theme = useTheme();
+  return (
+    <View accessibilityRole="tablist" style={[styles.toggle, { backgroundColor: theme.surfaceMuted }]}>
+      {(["artwork", "transcript"] as const).map((option) => {
+        const selected = option === view;
+        return (
+          <Pressable
+            key={option}
+            accessibilityRole="tab"
+            accessibilityState={{ selected }}
+            onPress={() => onChange(option)}
+            style={[styles.toggleOption, selected ? { backgroundColor: theme.surface } : null]}
+          >
+            <Body style={[styles.toggleLabel, { color: selected ? theme.text : theme.textMuted }]}>{option === "artwork" ? "Artwork" : "Transcript"}</Body>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function ArtworkView({ lesson, activeSegmentId, onShowTranscript }: { lesson: Lesson; activeSegmentId: string | null; onShowTranscript: () => void }) {
+  const theme = useTheme();
+  const [box, setBox] = useState({ width: 0, height: 0 });
+  const [failed, setFailed] = useState(false);
+  const active = lesson.segments.find((segment) => segment.id === activeSegmentId) ?? lesson.segments[0];
+  // Leave room for the current line under the picture.
+  const size = Math.max(0, Math.min(box.width, box.height - 96));
+  return (
+    <View style={styles.artworkView} onLayout={(event) => setBox({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}>
+      {size > 0 ? (
+        failed || !lesson.artworkUrl
+          ? <LessonArtwork lesson={lesson} size={size} radius={24} />
+          : <Image accessibilityIgnoresInvertColors accessibilityLabel={`Artwork for ${lesson.title}`} source={{ uri: lesson.artworkUrl }} onError={() => setFailed(true)} style={[styles.artwork, { width: size, height: size, backgroundColor: theme.surfaceMuted }]} />
+      ) : null}
+      {active ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="Show transcript" onPress={onShowTranscript} style={styles.nowLine}>
+          <Body numberOfLines={2} style={styles.nowLineText}>{lessonDisplayText(active.text)}</Body>
+          {active.translation ? <Body muted numberOfLines={1} style={styles.nowLineText}>{lessonDisplayText(active.translation)}</Body> : null}
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -341,6 +393,13 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 12, lineHeight: 16 },
   sheetTitle: { fontSize: 26, lineHeight: 31 },
   transcript: { flex: 1 },
+  toggle: { flexDirection: "row", alignSelf: "flex-start", borderRadius: 999, padding: 3, marginTop: 8 },
+  toggleOption: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999 },
+  toggleLabel: { fontSize: 14, lineHeight: 18, fontWeight: "700" },
+  artworkView: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingVertical: 16 },
+  artwork: { borderRadius: 24 },
+  nowLine: { alignSelf: "stretch", alignItems: "center", gap: 2, minHeight: 64 },
+  nowLineText: { textAlign: "center" },
   transcriptContent: { gap: 16, paddingTop: 12, paddingBottom: 24 },
   player: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 22, paddingTop: 18, gap: 10 },
   scrubber: { height: 28, justifyContent: "center" },

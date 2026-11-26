@@ -24,10 +24,9 @@ import {
 	segmentAtClipTime,
 	segmentStartInClip,
 } from "@/lesson/timeline";
+import { LessonArtwork } from "./LessonArtwork";
 import { SkipIcon } from "./SkipIcon";
 import { SpeakingPractice } from "./SpeakingPractice";
-import { Body } from "./Typography";
-import { lessonAccent } from "@/theme/colors";
 import { useTheme } from "@/theme/tokens";
 import { usePlayback } from "@/playback/PlaybackProvider";
 
@@ -105,7 +104,9 @@ export function LessonPlayer({
 	const [joined, setJoined] = useState<{ uri: string; durationsMs: number[] } | null>(null);
 	const [joinFailed, setJoinFailed] = useState(false);
 	const [opening, setOpening] = useState(true);
-	const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
+	const [iconUrl, setIconUrl] = useState<string | null>(null);
+	// The lock screen and Control Center show the lesson's topic artwork, or the app icon for older lessons.
+	const artworkUrl = lesson.artworkUrl ?? iconUrl;
 	// One player, not a queue, so the lock screen and background session stay attached
 	// to the audio that is actually playing. Clips advance with replace().
 	const [player] = useState(() =>
@@ -225,7 +226,7 @@ export function LessonPlayer({
 		let cancelled = false;
 		void Asset.fromModule(appIcon).downloadAsync().then((asset) => {
 			const uri = asset.localUri ?? asset.uri;
-			if (!cancelled && uri) setArtworkUrl(uri);
+			if (!cancelled && uri) setIconUrl(uri);
 		}).catch(() => undefined);
 		return () => { cancelled = true; };
 	}, []);
@@ -428,9 +429,7 @@ export function LessonPlayer({
 				<View style={styles.miniRow}>
 					<Pressable accessibilityRole="button" accessibilityLabel={`Open ${lesson.title}`} onPress={onOpen} style={styles.miniOpen}>
 						<Text style={[styles.miniChevron, { color: theme.text }]}>⌃</Text>
-						<View style={[styles.miniBadge, { backgroundColor: lessonAccent(theme, lesson.type) }]}>
-							<Body style={styles.miniBadgeText}>{lesson.type.slice(0, 1).toUpperCase()}</Body>
-						</View>
+						<LessonArtwork lesson={lesson} size={36} radius={10} />
 						<View style={styles.miniCopy}>
 							<Text numberOfLines={1} style={[styles.miniTitle, { color: theme.text }]}>{lineText || lesson.title}</Text>
 							<Text numberOfLines={1} style={[styles.miniSubtitle, { color: theme.textMuted }]}>{lineText ? lesson.title : kindLabel[lesson.type]}</Text>
@@ -568,8 +567,6 @@ const styles = StyleSheet.create({
 	miniFill: { height: 2 },
 	miniRow: { flex: 1, flexDirection: "row", alignItems: "center", paddingRight: 10 },
 	miniOpen: { flex: 1, flexDirection: "row", alignItems: "center", gap: 14, paddingLeft: 16, paddingVertical: 12 },
-	miniBadge: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-	miniBadgeText: { color: "#08152F", fontWeight: "800", fontSize: 14, lineHeight: 18 },
 	miniCopy: { flex: 1, gap: 1 },
 	miniTitle: { fontSize: 15, lineHeight: 18, fontWeight: "700" },
 	miniSubtitle: { fontSize: 12, lineHeight: 15 },

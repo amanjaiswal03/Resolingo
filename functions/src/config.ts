@@ -30,3 +30,14 @@ export const TTS_VOICE_TIER = defineString("TTS_VOICE_TIER", {
 export const DAILY_LIMIT = 3;
 export const MAX_TASK_ATTEMPTS = 3;
 export const DELETE_ACCOUNT_TIMEOUT_SECONDS = 540;
+/** Imagen 4 Fast is Vertex's lowest-cost image model (about $0.02 per image). */
+export const DEFAULT_ARTWORK_MODEL = "imagen-4.0-fast-generate-001";
+export const DEFAULT_ARTWORK_LOCATION = "europe-west1";
+export const ARTWORK_MODEL = defineString("ARTWORK_MODEL", {
+  default: DEFAULT_ARTWORK_MODEL,
+  description: "Vertex image model for lesson artwork. Set to off to stop generating artwork.",
+});
+export const ARTWORK_LOCATION = defineString("ARTWORK_LOCATION", {
+  default: DEFAULT_ARTWORK_LOCATION,
+  description: "Vertex location for the lesson artwork model.",
+});
