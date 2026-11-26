@@ -16,7 +16,7 @@ vi.mock("./config.js", () => ({
   ARTWORK_MODEL: { value: () => model },
   ARTWORK_LOCATION: { value: () => "" },
   DEFAULT_ARTWORK_MODEL: "imagen-4.0-fast-generate-001",
-  DEFAULT_ARTWORK_LOCATION: "europe-west1",
+  DEFAULT_ARTWORK_LOCATION: "us-central1",
 }));
 vi.mock("./gemini.js", () => ({ vertexProjectId: () => "test" }));
 vi.mock("firebase-functions", () => ({ logger: { info: vi.fn(), warn: vi.fn() } }));
