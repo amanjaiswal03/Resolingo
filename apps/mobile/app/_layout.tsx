@@ -45,11 +45,12 @@ function Navigation() {
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar style="auto" />
       <PlaybackProvider>
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background } }}>
+      {/* Pushed screens slide in the iOS way on both platforms, and swipe back from anywhere on the screen. */}
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background }, animation: "ios_from_right", fullScreenGestureEnabled: true, animationMatchesGesture: true }}>
         <Stack.Screen name="index" options={{ animation: "none" }} />
         <Stack.Screen name="(auth)" options={{ animation: "fade" }} />
         <Stack.Screen name="onboarding" options={{ animation: "fade" }} />
-        <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />
+        <Stack.Screen name="(tabs)" options={{ animation: "fade", animationDuration: 220 }} />
         <Stack.Screen name="lesson/[id]" options={{ presentation: "card", gestureEnabled: false, fullScreenGestureEnabled: false }} />
         <Stack.Screen name="say/index" options={{ presentation: "card" }} />
         <Stack.Screen name="say/[id]" options={{ presentation: "card" }} />

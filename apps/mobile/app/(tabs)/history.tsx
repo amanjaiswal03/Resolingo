@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "@/components/Button";
+import { FadeIn } from "@/components/FadeIn";
 import { LessonRow } from "@/components/LessonRow";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { Screen } from "@/components/Screen";
@@ -44,11 +45,11 @@ export default function HistoryScreen() {
           <Body muted style={styles.centered}>Every lesson you make lands here, ready for another listen.</Body>
           <Button label="Make your first lesson" onPress={() => router.navigate("/(tabs)")} />
         </View>
-      ) : groups.map((group) => (
-        <View key={group.date} style={styles.group}>
+      ) : groups.map((group, groupIndex) => (
+        <FadeIn key={group.date} index={groupIndex} style={styles.group}>
           <Text accessibilityRole="header" style={[styles.date, { color: theme.textMuted }]}>{group.label.toUpperCase()}</Text>
           {group.lessons.map((lesson) => <LessonRow key={lesson.id} lesson={lesson} />)}
-        </View>
+        </FadeIn>
       ))}
     </Screen>
   );

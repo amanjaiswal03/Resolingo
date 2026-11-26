@@ -11,6 +11,7 @@ import { lessonAccent } from "@/theme/colors";
 import { useTheme } from "@/theme/tokens";
 import { LessonArtwork } from "./LessonArtwork";
 import { PlayGlyph } from "./PlayGlyph";
+import { PressableScale } from "./PressableScale";
 import { Body, Heading } from "./Typography";
 
 const kindLabel = { conversation: "Conversation", grammar: "Grammar", phrase: "Phrase" } as const;
@@ -94,7 +95,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
       }}
       containerStyle={[styles.swipe, styles.aboveDismiss]}
     >
-      <Pressable
+      <PressableScale haptic="none" scaleTo={0.98}
         accessibilityRole="button"
         accessibilityLabel={`${lesson.title}, ${playing ? "Playing" : metaLine(lesson)}${lesson.status === "ready" && lesson.completed ? ", done" : ""}`}
         accessibilityHint={deletable ? "Swipe left to delete, or long press for a delete menu." : "This lesson is still being created."}
@@ -128,7 +129,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
             </View>
           ) : <Body muted>›</Body>}
         </View>
-      </Pressable>
+      </PressableScale>
     </ReanimatedSwipeable>
   );
 }

@@ -8,6 +8,7 @@ import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { MicGlyph } from "@/components/MicGlyph";
+import { PressableScale } from "@/components/PressableScale";
 import { ProgressRing } from "@/components/ProgressRing";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
@@ -167,11 +168,11 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
 
       <View accessibilityRole="tablist" style={[styles.viewPicker, { backgroundColor: theme.surfaceMuted }]}>
         {shownViews.map(({ id, label }) => (
-          <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: view === id }}
+          <PressableScale haptic="selection" scaleTo={0.96} key={id} accessibilityRole="tab" accessibilityState={{ selected: view === id }}
             onPress={() => { stopAudio(); setSelected(id); }}
             style={[styles.viewButton, view === id && [styles.viewSelected, { backgroundColor: theme.surface }]]}>
             <Body muted={view !== id} style={styles.viewLabel}>{label}</Body>
-          </Pressable>
+          </PressableScale>
         ))}
       </View>
 
@@ -249,13 +250,13 @@ function WeekCard({ week, due, hasCards, synced, onStart, onToday }: {
         })}
       </View>
       {hasCards ? (
-        <Pressable accessibilityRole="button" onPress={onStart}
-          style={({ pressed }) => [styles.speakButton, { backgroundColor: pressed ? theme.primaryFill : theme.brand }]}>
+        <PressableScale accessibilityRole="button" onPress={onStart}
+          style={[styles.speakButton, { backgroundColor: theme.brand }]}>
           <MicGlyph color="#FFFFFF" size={20} />
           <Body style={styles.speakLabel}>
             {due && synced ? `Speak ${due} due ${due === 1 ? "phrase" : "phrases"} · ${minutes} min` : synced ? "Practice again" : "Start practicing"}
           </Body>
-        </Pressable>
+        </PressableScale>
       ) : (
         <View style={styles.weekEmpty}>
           <Body style={{ color: "#AEBBD0" }}>Finish a lesson to start your skill map.</Body>
@@ -305,10 +306,10 @@ function SkillTile({ group, progress, now, onOpen }: {
   const due = now === null ? 0 : pool.filter((card) => reviewIsDue(progress[card.id], now)).length;
   const ring = mastery.level === 0 ? theme.textMuted : levelColor(theme, mastery.level);
   return (
-    <Pressable accessibilityRole="button"
+    <PressableScale accessibilityRole="button"
       accessibilityLabel={`${group.title}. ${mastery.percent} percent, ${levelName(mastery.level)}. ${pool.length} phrases${due ? `, ${due} due` : ""}.`}
       onPress={onOpen}
-      style={({ pressed }) => [styles.tile, { backgroundColor: theme.surface, borderColor: theme.border, opacity: pressed ? 0.8 : 1 }]}>
+      style={[styles.tile, { backgroundColor: theme.surface, borderColor: theme.border }]}>
       <View style={styles.tileTop}>
         <ProgressRing size={52} stroke={6} progress={mastery.percent / 100} color={ring} track={theme.surfaceMuted}>
           <Body style={styles.ringLabel}>{mastery.percent}%</Body>
@@ -326,7 +327,7 @@ function SkillTile({ group, progress, now, onOpen }: {
         ))}
       </View>
       <Body muted style={styles.tiny}>{levelName(mastery.level)} · {pool.length} {pool.length === 1 ? "phrase" : "phrases"}</Body>
-    </Pressable>
+    </PressableScale>
   );
 }
 
