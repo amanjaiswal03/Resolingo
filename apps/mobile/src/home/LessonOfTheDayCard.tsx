@@ -2,6 +2,8 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { languageById, type DailyPick, type LanguageId } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
+import { progressRatio, remainingLabel } from "@/playback/lesson-progress";
+import { useLessonProgress } from "@/playback/LessonProgressProvider";
 import { useTheme } from "@/theme/tokens";
 import { LessonArtwork } from "@/components/LessonArtwork";
 import { PressableScale } from "@/components/PressableScale";
@@ -39,6 +41,9 @@ function Cta({ label, icon, disabled }: { label: string; icon?: string; disabled
 }
 
 function Footer({ state, welcome }: { state: PickCardState; welcome: boolean }) {
+  const { progress } = useLessonProgress();
+  const saved = state.kind === "ready" ? progress[state.lesson.id] : undefined;
+  const resumable = progressRatio(saved) != null ? saved : undefined;
   if (state.kind === "preparing") {
     return (
       <View style={styles.preparing}>
@@ -52,13 +57,14 @@ function Footer({ state, welcome }: { state: PickCardState; welcome: boolean }) 
   }
   const meta = state.kind === "done" ? "Done for today · new pick tomorrow"
     : state.kind === "blocked" ? "Today's 3 lessons are used"
+    : state.kind === "ready" && resumable ? `${remainingLabel(resumable)} · picks up where you stopped`
     : state.kind === "ready" ? "Ready · about 6 minutes"
     : welcome ? "Free · ready in about a minute"
     : "5–8 min · Made fresh when you tap";
   return (
     <View style={styles.footer}>
       <Text style={[styles.meta, styles.footerMeta]} maxFontSizeMultiplier={1.5}>{meta}</Text>
-      {state.kind === "ready" ? <Cta label="Play" icon="▶" />
+      {state.kind === "ready" ? <Cta label={resumable ? "Resume" : "Play"} icon="▶" />
         : state.kind === "done" ? <Cta label="Play again" icon="↻" />
         : state.kind === "blocked" ? <Cta label="Tomorrow" disabled />
         : state.kind === "planned" && state.retry ? <Cta label="Try again" icon="↻" />

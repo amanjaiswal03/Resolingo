@@ -6,7 +6,10 @@ import ReanimatedSwipeable, { type SwipeableMethods } from "react-native-gesture
 import { runOnJS, useAnimatedReaction, type SharedValue } from "react-native-reanimated";
 import { lessonCanBeDeleted, type Lesson } from "@resolingo/shared";
 import { useLessonDelete } from "@/lessons/delete-lesson";
+import { progressRatio, remainingLabel, type LessonProgress } from "@/playback/lesson-progress";
+import { useLessonProgress } from "@/playback/LessonProgressProvider";
 import { usePlayback } from "@/playback/PlaybackProvider";
+import { percentWidth } from "@/lesson/navigation";
 import { lessonAccent } from "@/theme/colors";
 import { useTheme } from "@/theme/tokens";
 import { LessonArtwork } from "./LessonArtwork";
@@ -41,9 +44,10 @@ function DeleteAction({ translation, onArmed, onPress }: { translation: SharedVa
   );
 }
 
-function metaLine(lesson: Lesson): string {
+function metaLine(lesson: Lesson, saved?: LessonProgress): string {
   const minutes = lesson.manifest?.totalDurationMs ? ` · ${Math.max(1, Math.round(lesson.manifest.totalDurationMs / 60_000))} min` : "";
   if (lesson.status !== "ready") return `${statusLabel[lesson.status]} · ${kindLabel[lesson.type]}`;
+  if (saved) return `${kindLabel[lesson.type]} · ${remainingLabel(saved)}`;
   return `${kindLabel[lesson.type]}${minutes}`;
 }
 
@@ -53,6 +57,10 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
   const { requestDelete, registerOpenRow, releaseOpenRow, closeOpenRow, openRowId } = useLessonDelete();
   const { lessonId, open } = usePlayback();
   const playing = lessonId === lesson.id;
+  const saved = useLessonProgress().progress[lesson.id];
+  // Only a lesson left in the middle shows how far the learner got.
+  const heard = lesson.status === "ready" ? progressRatio(saved) : null;
+  const inProgress = heard != null ? saved : undefined;
   const row = useRef<SwipeableMethods>(null);
   const armed = useRef(false);
   const deletable = lessonCanBeDeleted(lesson.status);
@@ -99,7 +107,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
       <View style={[styles.cover, { backgroundColor: theme.surface }]}>
         <PressableScale haptic="none" scaleTo={0.98}
           accessibilityRole="button"
-          accessibilityLabel={`${lesson.title}, ${playing ? "Playing" : metaLine(lesson)}${lesson.status === "ready" && lesson.completed ? ", done" : ""}`}
+          accessibilityLabel={`${lesson.title}, ${playing ? "Playing" : metaLine(lesson, inProgress)}${lesson.status === "ready" && lesson.completed && !inProgress ? ", done" : ""}`}
           accessibilityHint={deletable ? "Swipe left to delete, or long press for a delete menu." : "This lesson is still being created."}
           accessibilityActions={deletable ? [{ name: "delete", label: "Delete lesson" }] : undefined}
           onAccessibilityAction={(event) => {
@@ -121,9 +129,14 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
             <Heading numberOfLines={2} style={styles.title}>{lesson.title}</Heading>
             <View style={styles.metaRow}>
               <View style={[styles.typeDot, { backgroundColor: lessonAccent(theme, lesson.type) }]} />
-              <Body muted numberOfLines={1} style={styles.meta}>{metaLine(lesson)}</Body>
-              {lesson.status === "ready" && lesson.completed && !playing ? <Text style={[styles.done, { color: theme.success }]}>✓ Done</Text> : null}
+              <Body muted numberOfLines={1} style={styles.meta}>{metaLine(lesson, inProgress)}</Body>
+              {lesson.status === "ready" && lesson.completed && !playing && !inProgress ? <Text style={[styles.done, { color: theme.success }]}>✓ Done</Text> : null}
             </View>
+            {heard != null ? (
+              <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={[styles.heardTrack, { backgroundColor: theme.surfaceMuted }]}>
+                <View style={[styles.heardFill, { backgroundColor: theme.brand, width: percentWidth(heard * 100) }]} />
+              </View>
+            ) : null}
           </View>
           {lesson.status === "ready" ? (
             <View style={[styles.play, { backgroundColor: playing ? theme.primaryFill : theme.primaryTint }]}>
@@ -153,6 +166,8 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   typeDot: { width: 7, height: 7, borderRadius: 4 },
   meta: { flexShrink: 1, fontSize: 13, lineHeight: 18 },
+  heardTrack: { height: 4, borderRadius: 2, overflow: "hidden", marginTop: 4, marginRight: 8 },
+  heardFill: { height: 4, borderRadius: 2 },
   done: { fontSize: 12, lineHeight: 16, fontWeight: "700", marginLeft: 4 },
   play: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   playingText: { fontSize: 16, lineHeight: 20, fontWeight: "800" },

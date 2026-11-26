@@ -31,6 +31,14 @@ service cloud.firestore {
           && request.resource.data.completed == true;
       }
 
+      // Where playback stopped in each lesson, so it resumes there on any device.
+      match /lessonProgress/{lessonId} {
+        allow read, delete: if owns(userId);
+        allow create, update: if owns(userId)
+          && lessonId.size() <= 128
+          && validLessonProgress(request.resource.data);
+      }
+
       match /dailyUsage/{date} {
         allow read: if owns(userId);
         allow write: if false;
@@ -58,6 +66,14 @@ service cloud.firestore {
           && itemId.matches('^[a-f0-9]{16}$')
           && validSkillReview(request.resource.data);
       }
+    }
+
+    function validLessonProgress(data) {
+      return data.keys().hasOnly(['positionMs', 'durationMs', 'updatedAt'])
+        && data.keys().hasAll(['positionMs', 'durationMs', 'updatedAt'])
+        && data.durationMs is int && data.durationMs > 0 && data.durationMs <= 14400000
+        && data.positionMs is int && data.positionMs >= 0 && data.positionMs <= data.durationMs
+        && data.updatedAt is int && data.updatedAt >= 0;
     }
 
     function validSkillReview(data) {
