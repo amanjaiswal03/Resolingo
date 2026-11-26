@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { lessonDisplayText, speechSpans } from "./markup.js";
 import { isGlossedAnswer, targetAnswerText, tidyTargetAnswers } from "./answer-text.js";
 import { phrasesToRemember, reviewAsPhrase, reviewItemId, type ReviewItem } from "./review.js";
 import type { LessonSegment } from "./schemas.js";
@@ -45,6 +46,11 @@ describe("targetAnswerText", () => {
     }
   });
 
+  it("drops an inline gloss marker and the word it glosses", () => {
+    expect(targetAnswerText("Trinkst du einen [[gloss]] coffee Kaffee?", { ...de, translation: "Do you drink a coffee?" })).toBe("Trinkst du einen Kaffee?");
+    expect(targetAnswerText("Trinkst du einen [[gloss]]coffee[[/gloss]] Kaffee?", de)).toBe("Trinkst du einen Kaffee?");
+  });
+
   it("keeps the tagged words when a whole teaching gloss was stored as the line", () => {
     expect(targetAnswerText("[[lang:de-DE]]Das Kind[[/lang]] means \"the child\".", de)).toBe("Das Kind");
   });
@@ -88,5 +94,12 @@ describe("reviews never carry a gloss", () => {
       dueAt: "2026-11-21T00:00:00.000Z",
     };
     expect(reviewAsPhrase(item).text).toBe("Das Kind");
+  });
+});
+
+describe("stray markers", () => {
+  it("are never shown or spoken", () => {
+    expect(lessonDisplayText("Trinkst du einen [[gloss]] Kaffee?")).toBe("Trinkst du einen Kaffee?");
+    expect(speechSpans("Say [[lang:de-DE]]Kaffee[[/lang]] [[/gloss]] now.", "en-US").map((span) => span.text).join("")).not.toContain("gloss");
   });
 });

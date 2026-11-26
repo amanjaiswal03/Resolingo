@@ -131,6 +131,18 @@ export function targetAnswerText(text: string, options: AnswerTextOptions = {}):
   const target = options.language ? baseOf(options.language) : undefined;
   let out = original;
 
+  // An inline gloss marker inside the line: "Trinkst du einen [[gloss]] coffee Kaffee?"
+  // or "[[gloss]]coffee[[/gloss]] Kaffee". The marker and the word it glosses go.
+  if (/\[\[\s*gloss\b/iu.test(out)) {
+    out = out
+      .replace(/\[\[\s*gloss\b[^\]]*\]\][\s\S]*?\[\[\s*\/\s*gloss\s*\]\]/giu, " ")
+      .replace(/\[\[\s*gloss\b[^\]]*\]\]\s*[^\s\[\]]+/giu, " ")
+      .replace(/\[\[\s*\/?\s*gloss\b[^\]]*\]\]/giu, " ")
+      .replace(/\s+([,.!?;:？。])/gu, "$1")
+      .replace(/\s{2,}/gu, " ")
+      .trim();
+  }
+
   // A target span tagged inside a teaching sentence: keep the tagged words.
   const spans = [...original.matchAll(/\[\[lang:[^\]]+\]\]([\s\S]*?)\[\[\/lang\]\]/gu)];
   if (spans.length === 1) {

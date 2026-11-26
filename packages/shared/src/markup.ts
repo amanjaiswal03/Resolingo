@@ -16,8 +16,14 @@ function isLanguageId(value: string): value is LanguageId {
   return (languageIds as readonly string[]).includes(value);
 }
 
+/**
+ * Any other double-bracket marker the model invents, such as [[gloss]] or
+ * [[/gloss]]. It is never spoken or shown.
+ */
+const STRAY_TAG = /\[\[\s*\/?\s*(?!lang\b)[\p{L}_][\p{L}\p{N}_ :-]{0,30}\]\]/giu;
+
 export function stripLanguageTags(text: string): string {
-  return text.replace(LANGUAGE_TAG, "");
+  return text.replace(LANGUAGE_TAG, "").replace(STRAY_TAG, "");
 }
 
 /** Transcript text with pronunciation tags removed, including stray closers. */
