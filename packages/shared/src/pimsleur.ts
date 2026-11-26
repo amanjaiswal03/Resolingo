@@ -1,5 +1,6 @@
 import type { LanguageId } from "./languages.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
+import { targetAnswerText, tidyTargetAnswers } from "./answer-text.js";
 import { ConversationSkillSchema, type ConversationSkill } from "./conversation-skills.js";
 import { MAX_LESSON_SEGMENTS, type CefrLevel, type LessonSegment } from "./schemas.js";
 import { groupBunsetsu, needsWordSegment, segmentWords, splitSentences } from "./segment.js";
@@ -843,10 +844,12 @@ function lineFrom(value: unknown, names: SpeakerNames, fallbackLanguage: Languag
   if (!text) return null;
   const translation = textOf(record.translation ?? record.native);
   const transliteration = textOf(record.transliteration);
+  const language = languageOf(record.language, fallbackLanguage, allowed);
   return {
     speaker: speakerOf(record.speaker, names),
-    text,
-    language: languageOf(record.language, fallbackLanguage, allowed),
+    // A turn is only the target words, never "'Das Kind' means 'The child'".
+    text: language === fallbackLanguage ? targetAnswerText(text, { translation, language }) : text,
+    language,
     ...(translation ? { translation } : {}),
     ...(transliteration ? { transliteration } : {}),
   };
@@ -1093,7 +1096,7 @@ export function shapePimsleurLesson(value: unknown, context: {
     seed: hashSeed(title),
   });
   if (!arranged.some((segment) => segment.phase === "answer")) return null;
-  const segments = applyTargetVoices(arranged, context.nativeLanguage, context.targetLanguage).segments;
+  const segments = applyTargetVoices(tidyTargetAnswers(arranged, context.targetLanguage), context.nativeLanguage, context.targetLanguage).segments;
   const skill = ConversationSkillSchema.safeParse(record.conversationSkill);
   return {
     title: title.slice(0, 90),

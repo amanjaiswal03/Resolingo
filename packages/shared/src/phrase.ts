@@ -1,6 +1,7 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel, LessonSegment } from "./schemas.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
+import { targetAnswerText, tidyTargetAnswers } from "./answer-text.js";
 import { isClitic, needsWordSegment, segmentWords, splitSentences } from "./segment.js";
 import { REVIEW_GAPS } from "./pimsleur.js";
 import { speakingPauseMs } from "./speaking-timing.js";
@@ -368,8 +369,8 @@ function readChunks(value: unknown, core: string): PhraseLine[] {
 function readSwaps(value: unknown, core: string): PhraseSwap[] {
   const swaps: PhraseSwap[] = [];
   for (const record of linesOf(value)) {
-    const answer = textOf(record.answer);
     const translation = textOf(record.translation);
+    const answer = targetAnswerText(textOf(record.answer), { translation });
     const from = textOf(record.from);
     const to = textOf(record.to);
     const focus = textOf(record.focus);
@@ -392,8 +393,8 @@ function readSituations(value: unknown, core: string): PhraseSituation[] {
   const situations: PhraseSituation[] = [];
   for (const record of linesOf(value)) {
     const setup = textOf(record.setup);
-    const answer = textOf(record.answer);
     const translation = textOf(record.translation);
+    const answer = targetAnswerText(textOf(record.answer), { translation });
     const focus = textOf(record.focus);
     const focusTranslation = textOf(record.focusTranslation);
     if (!setup || !answer || !translation || !focus || !focusTranslation) continue;
@@ -582,7 +583,7 @@ export function shapePhraseLesson(
   value: unknown,
   context: PhraseLessonContext,
 ): PhraseShapeResult {
-  const core = context.translation.trim();
+  const core = targetAnswerText(context.translation, { translation: context.nativeText, language: context.targetLanguage });
   const meaning = meaningOf(context.nativeText);
   if (core.length < 1 || meaning.length < 1 || context.phraseId.trim().length === 0 || context.phraseId.length > 40) return reject("missing_core");
   const source = asRecord(value) ?? {};
@@ -879,7 +880,7 @@ export function shapePhraseLesson(
   const topic = clip(textOf(source.topic) || meaning, 160);
   const summary = clip(textOf(source.summary) || `Practice how to say "${meaning}" and a few variations.`, 280);
   if (title.length < 3 || topic.length < 3 || summary.length < 5) return reject("title_short");
-  const voiced = applyTargetVoices(segments, context.nativeLanguage, context.targetLanguage);
+  const voiced = applyTargetVoices(tidyTargetAnswers(segments, context.targetLanguage), context.nativeLanguage, context.targetLanguage);
   return {
     ok: true,
     lesson: {

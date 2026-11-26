@@ -1,6 +1,7 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel } from "./schemas.js";
 import { applyTargetVoices, lessonDisplayText, repairMarkup, speechSpans } from "./markup.js";
+import { targetAnswerText, tidyTargetAnswers } from "./answer-text.js";
 import { conversationPacing, scheduleReviewSlots } from "./pimsleur.js";
 import { MAX_WARMUP_REVIEWS } from "./review.js";
 import { quotesStayTrue } from "./quotes.js";
@@ -414,8 +415,8 @@ function disambiguateNative(translation: string, answer: string, language: strin
 function exampleFrom(value: unknown): Example | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  const text = textOf(record.text ?? record.answer ?? record.target);
   const translation = textOf(record.translation ?? record.meaning ?? record.native);
+  const text = targetAnswerText(textOf(record.text ?? record.answer ?? record.target), { translation });
   if (!text || !translation) return null;
   return { text: text.slice(0, 240), translation: translation.slice(0, 240) };
 }
@@ -1026,7 +1027,7 @@ export function shapeGrammarLesson(value: unknown, context: {
     : parseGrammarSource(value, context.topic, context.level, context.targetLanguage);
   if (!parsed) return null;
   const source = trustedBridge(parsed, context.sceneLines ?? [], context.targetLanguage);
-  const arranged = arrangeGrammarLesson({ ...context, source });
+  const arranged = tidyTargetAnswers(arrangeGrammarLesson({ ...context, source }), context.targetLanguage);
   if (paradigm) return {
     title: source.title,
     topic: source.topic.title,

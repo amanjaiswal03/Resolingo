@@ -47,6 +47,7 @@ const SYSTEM_INSTRUCTION = [
   "Also return speakerNames with teacher, speakerA, and speakerB. speakerA is male and speakerB is female. Each name is one Latin-script word of letters only, and the three names are different.",
   "Use those exact names inside dialogue lines. Do not write Speaker A or Speaker B.",
   "Every target-language word, including a gloss, a swap cue, a recap, and a closing, goes in its own [[lang:BCP-47]]...[[/lang]] span. Never leave a target word in a teaching-language span. Close every tag. Do not nest tags.",
+  "Every text or answer field that the learner says is only the target-language words. Never put a gloss or translation in it, such as \"'Das Kind' means 'The child'\", \"Das Kind (the child)\", or quotation marks around the line. The meaning goes in translation.",
 ].join(" ");
 
 const SAFETY_CATEGORIES = [
@@ -69,6 +70,7 @@ const PHRASE_INSTRUCTION = [
   "Keep personal names and place names as names.",
   "Every target-language word in a teaching-language line, including a gloss, a pattern note, a swap cue, a recap, and a closing, is wrapped as [[lang:BCP-47]]...[[/lang]]. Close every tag. Do not nest tags.",
   "Do not drill a literal idiom gloss.",
+  "Every text or answer field that the learner says is only the target-language words. Never put a gloss or translation in it, such as \"'Das Kind' means 'The child'\", \"Das Kind (the child)\", or quotation marks around the line. The meaning goes in translation.",
 ].join(" ");
 
 const GRAMMAR_INSTRUCTION = [
@@ -83,6 +85,7 @@ const GRAMMAR_INSTRUCTION = [
   "Use varied speaking cues and give the meaning or exact source sentence. Name whether the learner is speaking to a friend, a group, or formally when this changes the answer.",
   "Wrap every target-language span inside a teaching-language line as [[lang:BCP-47]]...[[/lang]], including isolated letters, stems, prefixes, endings, pronouns, and words spelled the same in both languages. Include the hyphen within an affix span. This applies to explanations, questions, answers, and drill cues. Close each tag, and never include teaching-language words inside it.",
   "targetTerms lists the exact target words and fragments used in teaching-language lines. Include stems and endings with their written hyphens.",
+  "Every text or answer field that the learner says is only the target-language words. Never put a gloss or translation in it, such as \"'Das Kind' means 'The child'\", \"Das Kind (the child)\", or quotation marks around the line. The meaning goes in translation.",
 ].join(" ");
 
 export function lessonGenerationConfig(type: LessonType = "conversation"): GenerateContentConfig {

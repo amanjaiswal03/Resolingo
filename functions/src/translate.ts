@@ -10,6 +10,7 @@ import {
   languageById,
   lessonDisplayText,
   phraseIdFor,
+  targetAnswerText,
   type CefrLevel,
   type LanguageId,
   type PhraseAlternative,
@@ -32,7 +33,7 @@ const SYSTEM_INSTRUCTION = [
   "ok is false when the text is empty, nonsense, a list of random words, or not something a person would say.",
   "inputLanguage is native, target, mixed, or unknown.",
   "nativeText is the meaning in the teaching language, without a leading How would you say.",
-  "translation is one natural sentence in the target language. Keep personal names and place names unchanged.",
+  "translation is one natural sentence in the target language. Keep personal names and place names unchanged. It holds only the target words, never a gloss such as \"'Das Kind' means 'The child'\" and never quotation marks around it.",
   "If the input is already in the target language, keep that sentence as translation and put the teaching-language meaning in nativeText.",
   "If the input mixes both languages, nativeText is the intended meaning and translation is the full target sentence.",
   "transliteration is Latin script only when the target writing system is not Latin, otherwise an empty string.",
@@ -131,7 +132,8 @@ function readTranslation(value: unknown, input: {
   if (!record || record.ok !== true) return null;
   const inputLanguage = languageOf(record.inputLanguage) ?? "native";
   const nativeText = clean(record.nativeText).replace(/^\s*how would you say\b[:\s]*/i, "").trim();
-  const translation = clean(record.translation);
+  // The target sentence only, never "'Das Kind' means 'The child'".
+  const translation = targetAnswerText(clean(record.translation), { translation: nativeText, language: input.targetLanguage });
   if (!/[\p{L}]/u.test(nativeText) || !/[\p{L}]/u.test(translation)) return null;
   const words = translation.split(/\s+/u).filter(Boolean);
   if (inputLanguage !== "target" && words.length > 1 && normalize(translation) === normalize(input.text)) return null;
@@ -141,8 +143,8 @@ function readTranslation(value: unknown, input: {
     for (const item of record.alternatives) {
       const alternative = asRecord(item);
       if (!alternative || alternatives.length >= 2) continue;
-      const text = clean(alternative.text);
       const label = clean(alternative.label, 40);
+      const text = targetAnswerText(clean(alternative.text), { language: input.targetLanguage });
       if (!text || !label || normalize(text) === normalize(translation)) continue;
       const altTransliteration = languageById[input.targetLanguage].transliteration ? clean(alternative.transliteration) : "";
       alternatives.push({
@@ -229,7 +231,7 @@ export function spokenTranslationPrompt(input: {
     "Return JSON with ok, inputLanguage, nativeText, translation, transliteration, alternatives, and note.",
     "ok is false when the audio is silent, empty, noise, or not a sentence.",
     "nativeText is the transcript, without a leading How would you say.",
-    "translation is one natural sentence in the target language. Keep personal names and place names unchanged.",
+    "translation is one natural sentence in the target language. Keep personal names and place names unchanged. It holds only the target words, never a gloss such as \"'Das Kind' means 'The child'\" and never quotation marks around it.",
   ].join("\n");
 }
 

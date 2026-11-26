@@ -2,6 +2,7 @@ import type { LanguageId } from "./languages.js";
 import type { LessonSegment } from "./schemas.js";
 import type { SpeakerNames } from "./speakers.js";
 import { isEmptyDrill, type PimsleurPhrase } from "./pimsleur.js";
+import { targetAnswerText } from "./answer-text.js";
 
 /** A phrase the learner has produced, kept so a later lesson can ask for it again. */
 export type ReviewItem = {
@@ -88,10 +89,11 @@ export function selectDueReviews(
     .slice(0, Math.max(0, limit));
 }
 
+/** A stored item asked again later. A gloss saved by an older lesson is cut back to the target words. */
 export function reviewAsPhrase(item: ReviewItem): PimsleurPhrase {
   return {
     speaker: item.speaker,
-    text: item.text,
+    text: targetAnswerText(item.text, { translation: item.translation, language: item.language }),
     translation: item.translation,
     language: item.language,
   };
@@ -109,12 +111,13 @@ export function phrasesToRemember(
     if (!REMEMBERED_SPEAKERS.has(segment.speaker)) continue;
     if (!segment.phase || !REMEMBERED_PHASES.has(segment.phase)) continue;
     if (segment.language !== language || !segment.translation?.trim()) continue;
-    if (isEmptyDrill(segment.text, names)) continue;
-    const key = normalize(segment.text);
+    const text = targetAnswerText(segment.text, { translation: segment.translation, language });
+    if (isEmptyDrill(text, names)) continue;
+    const key = normalize(text);
     if (!key || seen.has(key)) continue;
     seen.add(key);
     phrases.push({
-      text: segment.text,
+      text,
       translation: segment.translation,
       speaker: segment.speaker === "teacher" ? "speakerA" : segment.speaker,
     });
