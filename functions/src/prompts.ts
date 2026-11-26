@@ -12,6 +12,8 @@ export function lessonPrompt(input: {
   learner?: LearnerContext;
   /** A conversation planned as the lesson of the day, or the learner's welcome lesson. */
   plan?: { scenario?: string | undefined; conversationSkill?: string | undefined; welcome?: boolean | undefined };
+  /** The learner has a first name. The model only ever writes the {learner} placeholder; the name is filled in later. */
+  addressLearner?: boolean;
   phrase?: {
     nativeText: string;
     translation: string;
@@ -72,6 +74,9 @@ export function lessonPrompt(input: {
       "Include a recallCue for the most useful lines. Set up a short everyday situation in which the learner needs the line and include its exact teaching-language meaning. The learner has to be able to answer without looking at a screen.",
       "Include one recombination with text, translation, and speaker. Change one detail of a turn, such as the object, place, or time, and reuse the rest. It should help the same practical goal.",
       `Write cues in ${nativeLanguage.label}. welcome sets the practical goal and gives one detail to listen for without giving away the words. afterDialogue gives the gist in one short sentence and says you will learn every line. listen, buildup, and again guide listening. closing is one short, calm, matter-of-fact wrap-up that says where the learner can use the phrases. No hype. speak is 4 to 6 short prompts for recall, with {translation} for the meaning and optional {name} for the other speaker. The notes and listening lines never tell the learner to speak.`,
+      input.addressLearner
+        ? `The teacher knows the learner by first name. Write the name only as the exact placeholder {learner}, which the app fills in. Use it once in cues.welcome and once in cues.closing, the way a friendly teacher would, for example "Hi {learner}, today you'll order a coffee." or "Nice work today, {learner}." Never use {learner} anywhere else: not in lines, phrases, recallCue, recombinations, speak prompts, appIntro, or any ${targetLanguage.label} text. Never invent a name for the learner, and never confuse {learner} with {name}, which is the other speaker.`
+        : "",
       `speakerNames contains teacher, speakerA, and speakerB, all distinct one-word names. Use natural names for these speakers and use their exact names in the dialogue. Wrap target words inside teaching lines as [[lang:${targetLanguage.id}]]word[[/lang]], and wrap teaching-language words within target lines as [[lang:${nativeLanguage.id}]]word[[/lang]]. Close each tag without nesting. Use BCP-47 language ids exactly: teaching=${nativeLanguage.id}, target=${targetLanguage.id}. Return JSON only, with no segments array.`,
     ].filter(Boolean).join(" ");
   }
@@ -98,6 +103,9 @@ export function lessonPrompt(input: {
     `Give ${pacing.drills} drills with cue, answer, translation, and kind (word, phrase, or sentence). Start with the modeled lines, then go from guided to free: a fill-the-gap with ___, a transformation, then complete sentences from the meaning alone, including at least three new sentences that were not examples. If a cue asks for a transformation, include the exact source sentence in both source and cue. Every production cue includes the intended meaning or a complete source sentence. When needed, specify you, to a friend; you all; or you, formally, and distinguish she from they. Vary the wording, and keep each prompt clear without a screen.`,
     `recombinations has ${pacing.recombinations} items with cue, answer, and translation. Each is a real situation where the learner uses the same rule with known vocabulary, and its answer is a new sentence. checks has ${pacing.checks} items with cue and answer, short questions about when or why the rule applies. closing names one real situation where the learner can use the pattern.`,
     "Optionally add a single short usageTip about how the pattern sounds or where you hear it, or a mnemonic. Skip trivia, unsupported generalizations, and new target vocabulary in this note.",
+    input.addressLearner
+      ? `The teacher knows the learner by first name. Write the name only as the exact placeholder {learner}, which the app fills in, and use it once, in closing, for example "Next time you meet a friend, try these out loud, {learner}." Never use {learner} in any other field or in any ${targetLanguage.label} text, and never invent a name for the learner.`
+      : "",
     `Return speakerNames.teacher as a one-word given name. Wrap every ${targetLanguage.label} word, source sentence, pronoun, stem, and ending spoken inside a teaching line in [[lang:${targetLanguage.id}]]...[[/lang]]. Include the written hyphen of an affix within the tag. If a target example quotes a teaching-language word, tag only that word as [[lang:${nativeLanguage.id}]]...[[/lang]]. Close each tag without nesting. targetTerms lists the target terms exactly. Use BCP-47 language ids exactly: teaching=${nativeLanguage.id}, target=${targetLanguage.id}. Return JSON only, with no segments array.`,
   ].filter(Boolean).join(" ");
 }

@@ -12,6 +12,9 @@ import {
   grammarMemory,
   type GeneratedLesson,
   type LessonSegment,
+  learnerFirstName,
+  personalizeSegments,
+  stripLearnerPlaceholder,
 } from "@resolingo/shared";
 import { logger } from "firebase-functions";
 import { DAILY_LIMIT, MAX_TASK_ATTEMPTS, REGION } from "./config.js";
@@ -135,6 +138,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
   const plan = planParse.success ? planParse.data : undefined;
   // The welcome lesson is a gift: it never takes one of the day's lessons.
   const welcome = plan?.kind === "welcome";
+  const learnerName = learnerFirstName(user);
 
   try {
     let phrase: {
@@ -193,7 +197,13 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       ...(learner ? { learner } : {}),
       ...(plan && builds ? { plan } : {}),
       ...(phrase ? { phrase } : {}),
+      ...(learnerName ? { addressLearner: true } : {}),
     });
+    // The name never goes to the model. It fills the {learner} placeholder here, or a short greeting opens the lesson.
+    content.segments = personalizeSegments(content.segments, learnerName, nativeLanguage);
+    content.title = stripLearnerPlaceholder(content.title);
+    content.topic = stripLearnerPlaceholder(content.topic);
+    content.summary = stripLearnerPlaceholder(content.summary);
     if (type !== "grammar") {
       const voiced = applyTargetVoices(content.segments, nativeLanguage, targetLanguage);
       if (voiced.leftover.length > 0) {
