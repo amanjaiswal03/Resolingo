@@ -1,3 +1,4 @@
+import { Image } from "react-native";
 import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, where, type FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
 import { getDownloadURL, ref } from "@react-native-firebase/storage";
 import { displayLessonSegment, LessonSchema, visibleLessonText, type Lesson, type UserProfile } from "@resolingo/shared";
@@ -113,7 +114,10 @@ export function resolveArtworkUrl(artworkPath: string | undefined): Promise<stri
   if (!artworkPath) return Promise.resolve(undefined);
   let pending = artworkUrls.get(artworkPath);
   if (!pending) {
-    pending = getDownloadURL(ref(storage, artworkPath)).catch(() => {
+    pending = getDownloadURL(ref(storage, artworkPath)).then((url) => {
+      void Image.prefetch(url);
+      return url;
+    }).catch(() => {
       artworkUrls.delete(artworkPath);
       return undefined;
     });

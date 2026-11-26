@@ -246,20 +246,29 @@ function ViewToggle({ view, onChange }: { view: "artwork" | "transcript"; onChan
   );
 }
 
+function openArtworkSize(screenWidth: number, screenHeight: number, top: number, bottom: number): number {
+  // Header, caption, and the player controls. Kept smaller than that gap so the
+  // picture fits when the sheet is open, and fixed so iOS does not decode it
+  // at the short size the sheet passes through while it opens.
+  const available = screenHeight - (top + 210) - (bottom + 210) - 120;
+  return Math.max(120, Math.floor(Math.min(screenWidth - 64, available)));
+}
+
 function ArtworkView({ lesson, activeSegmentId, onShowTranscript }: { lesson: Lesson; activeSegmentId: string | null; onShowTranscript: () => void }) {
   const theme = useTheme();
-  const [box, setBox] = useState({ width: 0, height: 0 });
+  const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const [failed, setFailed] = useState(false);
   const active = lesson.segments.find((segment) => segment.id === activeSegmentId) ?? lesson.segments[0];
-  // Leave room for the current line under the picture.
-  const size = Math.max(0, Math.min(box.width, box.height - 96));
+  const size = openArtworkSize(screenWidth, screenHeight, insets.top, insets.bottom);
+  useEffect(() => {
+    if (lesson.artworkUrl) void Image.prefetch(lesson.artworkUrl);
+  }, [lesson.artworkUrl]);
   return (
-    <View style={styles.artworkView} onLayout={(event) => setBox({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}>
-      {size > 0 ? (
-        failed || !lesson.artworkUrl
-          ? <LessonArtwork lesson={lesson} size={size} radius={24} />
-          : <Image accessibilityIgnoresInvertColors accessibilityLabel={`Artwork for ${lesson.title}`} source={{ uri: lesson.artworkUrl }} onError={() => setFailed(true)} style={[styles.artwork, { width: size, height: size, backgroundColor: theme.surfaceMuted }]} />
-      ) : null}
+    <View style={styles.artworkView}>
+      {failed || !lesson.artworkUrl
+        ? <LessonArtwork lesson={lesson} size={size} radius={24} />
+        : <Image accessibilityIgnoresInvertColors accessibilityLabel={`Artwork for ${lesson.title}`} resizeMode="cover" source={{ uri: lesson.artworkUrl }} onError={() => setFailed(true)} style={[styles.artwork, { width: size, height: size, backgroundColor: theme.background }]} />}
       {active ? (
         <Pressable accessibilityRole="button" accessibilityLabel="Show transcript" onPress={onShowTranscript} style={styles.nowLine}>
           <Body numberOfLines={2} style={styles.nowLineText}>{lessonDisplayText(active.text)}</Body>
@@ -400,7 +409,8 @@ const styles = StyleSheet.create({
   toggle: { flexDirection: "row", alignSelf: "flex-start", borderRadius: 999, padding: 3, marginTop: 8 },
   toggleOption: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 999 },
   toggleLabel: { fontSize: 14, lineHeight: 18, fontWeight: "700" },
-  artworkView: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingVertical: 16 },
+  artworkView: { flex: 1, alignItems: "center", justifyContent: "center", gap: 16, paddingVertical: 16, minHeight: 0, overflow: "hidden" },
+  artworkFrame: { overflow: "hidden", borderRadius: 24, alignItems: "center", justifyContent: "center" },
   artwork: { borderRadius: 24 },
   nowLine: { alignSelf: "stretch", alignItems: "center", gap: 2, minHeight: 64 },
   nowLineText: { textAlign: "center" },
