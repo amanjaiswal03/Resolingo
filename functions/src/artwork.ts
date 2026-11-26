@@ -44,10 +44,23 @@ export function artworkPath(uid: string, lessonId: string): string {
   return `users/${uid}/lessons/${lessonId}/artwork.jpg`;
 }
 
+export type ArtworkPart = {
+  inlineData?: { data?: string; mimeType?: string };
+};
+
+export type ArtworkResponse = {
+  candidates?: {
+    finishReason?: string;
+    content?: { parts?: ArtworkPart[] };
+  }[];
+};
+
 export type ArtworkClient = {
-  generateImages(request: { model: string; prompt: string; config: Record<string, unknown> }): Promise<{
-    generatedImages?: { image?: { imageBytes?: string }; raiFilteredReason?: string }[];
-  }>;
+  generateContent(request: {
+    model: string;
+    contents: string;
+    config: Record<string, unknown>;
+  }): Promise<ArtworkResponse>;
 };
 
 function configured(value: string, fallback: string): string {
@@ -62,14 +75,26 @@ function vertexArtworkClient(): ArtworkClient {
     project: vertexProjectId(),
     location: configured(ARTWORK_LOCATION.value(), DEFAULT_ARTWORK_LOCATION),
   });
-  defaultClient = { generateImages: (request) => ai.models.generateImages(request) };
+  defaultClient = { generateContent: (request) => ai.models.generateContent(request) };
   return defaultClient;
+}
+
+function firstInlineImage(response: ArtworkResponse): { bytes?: string; mimeType?: string; reason?: string } {
+  const candidate = response.candidates?.[0];
+  for (const part of candidate?.content?.parts ?? []) {
+    if (part.inlineData?.data) {
+      const image: { bytes: string; mimeType?: string } = { bytes: part.inlineData.data };
+      if (part.inlineData.mimeType) image.mimeType = part.inlineData.mimeType;
+      return image;
+    }
+  }
+  return candidate?.finishReason ? { reason: candidate.finishReason } : {};
 }
 
 /**
  * Makes the lesson's artwork and returns its Storage path, or undefined.
  * Artwork is decoration: any failure is logged and the lesson ships without it.
- * One image per lesson, 1024px JPEG; identical prompts reuse the cached image for free.
+ * One image per lesson, 512px JPEG; identical prompts reuse the cached image for free.
  */
 export async function createLessonArtwork(
   input: { uid: string; lessonId: string; type: LessonType; topic: string },
@@ -83,27 +108,26 @@ export async function createLessonArtwork(
   try {
     const [cached] = await bucket.file(cachePath).exists();
     if (!cached) {
-      const response = await (client ?? vertexArtworkClient()).generateImages({
+      const response = await (client ?? vertexArtworkClient()).generateContent({
         model,
-        prompt,
+        contents: prompt,
         config: {
-          numberOfImages: 1,
-          aspectRatio: "1:1",
-          outputMimeType: "image/jpeg",
-          outputCompressionQuality: 80,
-          personGeneration: "allow_adult",
-          enhancePrompt: false,
+          responseModalities: ["IMAGE"],
+          imageConfig: {
+            aspectRatio: "1:1",
+            imageSize: "512",
+          },
         },
       });
-      const first = response.generatedImages?.[0];
-      const bytes = first?.image?.imageBytes;
-      if (!bytes) {
-        logger.warn("lesson_artwork_empty", { lessonId: input.lessonId, reason: first?.raiFilteredReason });
+      const image = firstInlineImage(response);
+      if (!image.bytes) {
+        logger.warn("lesson_artwork_empty", { lessonId: input.lessonId, reason: image.reason });
         return undefined;
       }
-      await bucket.file(cachePath).save(Buffer.from(bytes, "base64"), {
+      const contentType = image.mimeType?.startsWith("image/") ? image.mimeType : "image/jpeg";
+      await bucket.file(cachePath).save(Buffer.from(image.bytes, "base64"), {
         resumable: false,
-        contentType: "image/jpeg",
+        contentType,
         metadata: { cacheControl: "private,max-age=31536000,immutable" },
       });
     }
