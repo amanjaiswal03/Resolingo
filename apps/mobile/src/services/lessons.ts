@@ -1,5 +1,5 @@
 import { Image } from "react-native";
-import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, where, type FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where, type FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
 import { getDownloadURL, ref } from "@react-native-firebase/storage";
 import { displayLessonSegment, LessonSchema, visibleLessonText, type Lesson, type UserProfile } from "@resolingo/shared";
 import { firestore, storage } from "./firebase";
@@ -139,4 +139,20 @@ export async function resolveAudioUrls(lesson: Lesson): Promise<Lesson> {
 
 export async function markLessonCompleted(uid: string, lessonId: string): Promise<void> {
   await updateDoc(doc(firestore, "users", uid, "lessons", lessonId), { completed: true, updatedAt: new Date() });
+}
+
+/** Saved playback positions, newest first. Offline writes come back from the local cache. */
+export function subscribeLessonProgress(
+  uid: string,
+  callback: (entries: { lessonId: string; data: unknown }[]) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  const progressQuery = query(collection(firestore, "users", uid, "lessonProgress"), orderBy("updatedAt", "desc"), limit(100));
+  return onSnapshot(progressQuery, (snapshot) => {
+    callback(snapshot.docs.map((document: FirebaseFirestoreTypes.QueryDocumentSnapshot) => ({ lessonId: document.id, data: document.data() })));
+  }, onError);
+}
+
+export async function saveLessonProgress(uid: string, lessonId: string, progress: { positionMs: number; durationMs: number; updatedAt: number }): Promise<void> {
+  await setDoc(doc(firestore, "users", uid, "lessonProgress", lessonId), progress);
 }

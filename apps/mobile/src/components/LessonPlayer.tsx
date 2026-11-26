@@ -15,6 +15,7 @@ import { joinLessonAudio } from "@/lesson/join-lesson-audio";
 import { stopOwnedPlayer } from "@/lesson/player-lifecycle";
 import { useAnswerChecks } from "@/lesson/use-answer-checks";
 import { useLessonCredits } from "@/skills/use-lesson-credits";
+import { hasResumablePosition, resumePositionMs, type LessonProgress } from "@/playback/lesson-progress";
 import {
 	elapsedMs,
 	formatClock,
@@ -61,6 +62,8 @@ export function LessonPlayer({
 	onOpen,
 	placement = "bottom",
 	allowAnswerChecks = true,
+	savedProgress,
+	onProgress,
 }: {
 	lesson: Lesson;
 	onComplete: () => void;
@@ -71,6 +74,10 @@ export function LessonPlayer({
 	onOpen?: () => void;
 	placement?: "top" | "bottom";
 	allowAnswerChecks?: boolean;
+	/** Where the learner stopped last time. Read once, when the audio first loads. */
+	savedProgress?: LessonProgress | undefined;
+	/** Reports the lesson position so it can be saved. "tick" comes often while playing. */
+	onProgress?: (positionMs: number, totalMs: number, reason: "tick" | "pause" | "leave" | "reset") => void;
 }) {
 	const theme = useTheme();
 	const insets = useSafeAreaInsets();
@@ -106,6 +113,18 @@ export function LessonPlayer({
 	const [joinFailed, setJoinFailed] = useState(false);
 	const [opening, setOpening] = useState(true);
 	const [iconUrl, setIconUrl] = useState<string | null>(null);
+	const savedRef = useRef(savedProgress);
+	// eslint-disable-next-line react-hooks/refs -- latest saved position until the audio decides where to start
+	savedRef.current = savedProgress;
+	const reportRef = useRef(onProgress);
+	// eslint-disable-next-line react-hooks/refs -- latest callback for unmount and app-state saves
+	reportRef.current = onProgress;
+	// "deciding" until the audio loads, "seeking"/"applying" while jumping to the saved spot, then "ready".
+	// Positions are only reported once ready, so a half-loaded player never saves 0:00 over a real spot.
+	const resumeState = useRef<"deciding" | "seeking" | "applying" | "ready">("deciding");
+	const positionRef = useRef<{ ms: number; totalMs: number }>({ ms: 0, totalMs: 0 });
+	const [resumedFromMs, setResumedFromMs] = useState<number | null>(null);
+	const [startOverDismissed, setStartOverDismissed] = useState(false);
 	// The lock screen and Control Center show the lesson's topic artwork, or the app icon for older lessons.
 	const artworkUrl = lesson.artworkUrl ?? iconUrl;
 	// One player, not a queue, so the lock screen and background session stay attached
@@ -216,6 +235,12 @@ export function LessonPlayer({
 			if (cancelled || !alive.current) return;
 			player.replace({ uri: sourceUri });
 			player.setPlaybackRate(1);
+			if (resumeState.current === "deciding") {
+				// Decide once, so a position that syncs in later never jumps a lesson already playing.
+				resumeState.current = hasResumablePosition(savedRef.current) ? "seeking" : "ready";
+				// Hold playback until the saved spot is applied below.
+				if (resumeState.current === "seeking") return;
+			}
 			if (!autoPlay.current) return;
 			player.play();
 		})();
@@ -303,6 +328,8 @@ export function LessonPlayer({
 			if (completed.current) return;
 			completed.current = true;
 			flushCredits();
+			// A finished lesson opens at the start next time.
+			reportRef.current?.(0, timeline.totalMs, "reset");
 			onComplete();
 			return;
 		}
@@ -321,8 +348,10 @@ export function LessonPlayer({
 		if (completed.current) return;
 		completed.current = true;
 		flushCredits();
+		// A finished lesson opens at the start next time.
+		reportRef.current?.(0, timeline.totalMs, "reset");
 		onComplete();
-	}, [continuous, flushCredits, onComplete, playable, player, status.currentTime, status.didJustFinish, status.duration]);
+	}, [continuous, flushCredits, onComplete, playable, player, status.currentTime, status.didJustFinish, status.duration, timeline.totalMs]);
 	useEffect(() => {
 		const currentGeneration = ++generation.current;
 		return () => {
@@ -421,6 +450,68 @@ export function LessonPlayer({
 			if (alive.current) player.play();
 		}).catch(() => undefined);
 	};
+	// Jump to where the learner stopped, once the audio is loaded and the lesson length is known.
+	useEffect(() => {
+		if (resumeState.current !== "seeking" || !sourceUri || !status.isLoaded || status.duration <= 0 || timeline.totalMs <= 0) return;
+		const target = resumePositionMs(savedRef.current, timeline.totalMs);
+		const start = () => {
+			resumeState.current = "ready";
+			if (alive.current && autoPlay.current) player.play();
+		};
+		if (target == null) {
+			start();
+			return;
+		}
+		// Mark it now so this effect never seeks twice while the seek is in flight.
+		resumeState.current = "applying";
+		setResumedFromMs(target);
+		if (continuous) {
+			void player.seekTo((target / timeline.totalMs) * status.duration).then(start, start);
+			return;
+		}
+		seekToLessonMs(target);
+		start();
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- seekToLessonMs is rebuilt each render; this runs once
+	}, [continuous, player, sourceUri, status.duration, status.isLoaded, timeline.totalMs]);
+	// Keep the latest position for pause, background and close saves.
+	useEffect(() => {
+		if (resumeState.current !== "ready" || timeline.totalMs <= 0 || !status.isLoaded) return;
+		positionRef.current = { ms: playedElapsed, totalMs: timeline.totalMs };
+		if (playing && !completed.current) reportRef.current?.(playedElapsed, timeline.totalMs, "tick");
+	}, [playedElapsed, playing, status.isLoaded, timeline.totalMs]);
+	const wasPlaying = useRef(false);
+	useEffect(() => {
+		const stopped = wasPlaying.current && !playing;
+		wasPlaying.current = playing;
+		if (!stopped || completed.current || resumeState.current !== "ready") return;
+		const { ms, totalMs } = positionRef.current;
+		if (totalMs > 0) reportRef.current?.(ms, totalMs, "pause");
+	}, [playing]);
+	useEffect(() => {
+		const saveNow = () => {
+			if (completed.current || resumeState.current !== "ready") return;
+			const { ms, totalMs } = positionRef.current;
+			if (totalMs > 0) reportRef.current?.(ms, totalMs, "leave");
+		};
+		const subscription = AppState.addEventListener("change", (next) => {
+			if (next !== "active") saveNow();
+		});
+		return () => {
+			subscription.remove();
+			saveNow();
+		};
+	}, []);
+	const startOver = () => {
+		setStartOverDismissed(true);
+		seekToLessonMs(0);
+		positionRef.current = { ms: 0, totalMs: timeline.totalMs };
+		reportRef.current?.(0, timeline.totalMs, "reset");
+		if (!playing) {
+			autoPlay.current = true;
+			player.play();
+		}
+	};
+	const showStartOver = resumedFromMs != null && !startOverDismissed && shownElapsed < resumedFromMs + 20_000;
 	if (mode === "mini") {
 		return (
 			<View style={[styles.mini, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
@@ -528,6 +619,18 @@ export function LessonPlayer({
 			</View>
 			<View style={styles.times}>
 				<Text ref={elapsedRef} style={[styles.time, { color: theme.textMuted }]}>{elapsedLabel}</Text>
+				{showStartOver ? (
+					<Pressable
+						accessibilityRole="button"
+						accessibilityLabel={`Resumed at ${formatClock(resumedFromMs)}. Start over`}
+						accessibilityHint="Plays the lesson from the beginning"
+						onPress={startOver}
+						hitSlop={8}
+						style={[styles.startOver, { backgroundColor: theme.primaryTint }]}
+					>
+						<Text style={[styles.startOverLabel, { color: theme.primary }]}>↺ Start over</Text>
+					</Pressable>
+				) : null}
 				<Text style={[styles.time, styles.timeEnd, { color: theme.textMuted }]}>{totalLabel}</Text>
 			</View>
 			<View style={styles.transport}>
@@ -623,6 +726,8 @@ const styles = StyleSheet.create({
 	times: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: -4 },
 	time: { fontSize: 12, lineHeight: 16, fontWeight: "600", fontVariant: ["tabular-nums"], minWidth: 64 },
 	timeEnd: { textAlign: "right" },
+	startOver: { minHeight: 28, borderRadius: 14, paddingHorizontal: 12, alignItems: "center", justifyContent: "center" },
+	startOverLabel: { fontSize: 13, lineHeight: 17, fontWeight: "700" },
 	speedChip: { width: 52, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
 	speedChipSpacer: { width: 52 },
 	speed: { fontSize: 14, lineHeight: 18, fontWeight: "800", fontVariant: ["tabular-nums"] },

@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NowPlaying } from "@/playback/NowPlaying";
+import { LessonProgressProvider } from "@/playback/LessonProgressProvider";
 import { PlaybackProvider } from "@/playback/PlaybackProvider";
 import { SessionProvider, useSession } from "@/session/SessionProvider";
 import { track } from "@/services/telemetry";
@@ -44,6 +45,7 @@ function Navigation() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar style="auto" />
+      <LessonProgressProvider>
       <PlaybackProvider>
       {/* Pushed screens slide in the iOS way on both platforms, and swipe back from anywhere on the screen. */}
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.background }, animation: "ios_from_right", fullScreenGestureEnabled: true, animationMatchesGesture: true }}>
@@ -57,6 +59,7 @@ function Navigation() {
       </Stack>
       <NowPlaying />
       </PlaybackProvider>
+      </LessonProgressProvider>
     </View>
   );
 }

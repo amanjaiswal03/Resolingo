@@ -125,6 +125,22 @@ describe("Firestore owner rules", () => {
     await assertSucceeds(updateDoc(lesson, { completed: true, updatedAt: new Date() }));
     await assertFails(updateDoc(lesson, { status: "failed", updatedAt: new Date() }));
   });
+
+  it("keeps a private playback position per lesson and rejects bad positions", async () => {
+    const path = "users/alice/lessonProgress/lesson-1";
+    const good = { positionMs: 120_000, durationMs: 360_000, updatedAt: 1_700_000_000_000 };
+    const alice = env.authenticatedContext("alice").firestore();
+    await assertSucceeds(setDoc(doc(alice, path), good));
+    await assertSucceeds(setDoc(doc(alice, path), { ...good, positionMs: 0, updatedAt: good.updatedAt + 1 }));
+    await assertSucceeds(getDocs(query(collection(alice, "users/alice/lessonProgress"), orderBy("updatedAt", "desc"))));
+    await assertFails(getDoc(doc(env.authenticatedContext("bob").firestore(), path)));
+    await assertFails(setDoc(doc(env.authenticatedContext("bob").firestore(), path), good));
+    await assertFails(setDoc(doc(alice, path), { ...good, positionMs: 400_000 }));
+    await assertFails(setDoc(doc(alice, path), { ...good, positionMs: 1.5 }));
+    await assertFails(setDoc(doc(alice, path), { ...good, durationMs: 0 }));
+    await assertFails(setDoc(doc(alice, path), { ...good, note: "extra" }));
+    await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(), path), good));
+  });
 });
 
 describe("Storage owner rules", () => {

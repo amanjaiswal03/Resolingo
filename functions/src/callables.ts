@@ -719,6 +719,8 @@ export const deleteLesson = onCall(callableOptions, async (request) => {
     throw new HttpsError("unavailable", "Couldn’t delete this lesson. Try again.");
   }
   await lessonRef.delete();
+  // The saved playback position goes with the lesson.
+  await db.doc(`users/${uid}/lessonProgress/${lessonId}`).delete().catch(() => undefined);
   return { ok: true };
 });
 

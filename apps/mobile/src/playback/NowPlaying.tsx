@@ -17,6 +17,7 @@ import { report, track } from "@/services/telemetry";
 import { useSession } from "@/session/SessionProvider";
 import { lessonAccent } from "@/theme/colors";
 import { useTheme, type Theme } from "@/theme/tokens";
+import { useLessonProgress } from "./LessonProgressProvider";
 import { MINI_PLAYER_HEIGHT, TAB_BAR_HEIGHT, usePlayback } from "./PlaybackProvider";
 
 export function NowPlaying() {
@@ -31,6 +32,10 @@ export function NowPlaying() {
 function NowPlayingSession({ lessonId }: { lessonId: string }) {
   const { user, profile } = useSession();
   const { expanded, expand, collapse, close } = usePlayback();
+  const { progress, save } = useLessonProgress();
+  const saveProgress = useCallback((positionMs: number, totalMs: number, reason: "tick" | "pause" | "leave" | "reset") => {
+    save(lessonId, positionMs, totalMs, reason);
+  }, [lessonId, save]);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const segments = useSegments();
@@ -202,7 +207,7 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
           <GestureDetector gesture={playerPan}>
             <View>
               {resolved ? (
-                <LessonPlayer lesson={resolved} mode={presented} onOpen={() => glideTo(true)} onComplete={() => void complete()} onStart={started} onSegmentChange={setActiveSegmentId} jumpTo={jumpTo} allowAnswerChecks={segments[0] !== "say"} />
+                <LessonPlayer lesson={resolved} mode={presented} onOpen={() => glideTo(true)} onComplete={() => void complete()} onStart={started} onSegmentChange={setActiveSegmentId} jumpTo={jumpTo} allowAnswerChecks={segments[0] !== "say"} savedProgress={progress[lessonId]} onProgress={saveProgress} />
               ) : presented === "full" ? (
                 <View pointerEvents="none" style={[styles.player, { backgroundColor: theme.surface, borderColor: theme.border, paddingBottom: Math.max(16, insets.bottom + 8) }]}>
                   <View style={styles.scrubber}><View style={[styles.track, { backgroundColor: theme.surfaceMuted }]} /></View>
