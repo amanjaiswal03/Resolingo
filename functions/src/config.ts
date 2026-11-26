@@ -32,7 +32,8 @@ export const MAX_TASK_ATTEMPTS = 3;
 export const DELETE_ACCOUNT_TIMEOUT_SECONDS = 540;
 /** Imagen 4 Fast is Vertex's lowest-cost image model (about $0.02 per image). */
 export const DEFAULT_ARTWORK_MODEL = "imagen-4.0-fast-generate-001";
-export const DEFAULT_ARTWORK_LOCATION = "europe-west1";
+/** Imagen 4 Fast is not served in europe-west1 (Vertex returns 404). Only the short topic prompt leaves the EU. */
+export const DEFAULT_ARTWORK_LOCATION = "us-central1";
 export const ARTWORK_MODEL = defineString("ARTWORK_MODEL", {
   default: DEFAULT_ARTWORK_MODEL,
   description: "Vertex image model for lesson artwork. Set to off to stop generating artwork.",
