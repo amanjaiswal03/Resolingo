@@ -4,10 +4,12 @@ import { useRouter } from "expo-router";
 import * as Crypto from "expo-crypto";
 import * as Haptics from "expo-haptics";
 import type { LessonType } from "@resolingo/shared";
+import { FadeIn } from "@/components/FadeIn";
 import { LessonArtwork } from "@/components/LessonArtwork";
 import { LessonRow } from "@/components/LessonRow";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { PlayGlyph } from "@/components/PlayGlyph";
+import { PressableScale } from "@/components/PressableScale";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
 import { LessonOfTheDayCard, LessonOfTheDayPlaceholder } from "@/home/LessonOfTheDayCard";
@@ -150,7 +152,7 @@ export default function HomeScreen() {
         />
       ) : daily.loading ? <LessonOfTheDayPlaceholder /> : null}
       {finished ? (
-        <Pressable onPressIn={closeOpenRow} onPress={() => open(finished.id, { expand: true })} accessibilityRole="button" accessibilityLabel={`${finished.title}, ready to play`} style={({ pressed }) => [styles.above, pressed ? styles.pressed : null]}>
+        <PressableScale haptic="none" onPressIn={closeOpenRow} onPress={() => open(finished.id, { expand: true })} accessibilityRole="button" accessibilityLabel={`${finished.title}, ready to play`} style={styles.above}>
           <View style={[styles.statusCard, { borderColor: theme.brand, backgroundColor: theme.primaryTint }]}>
             <LessonArtwork lesson={finished} size={52} radius={14} />
             <View style={styles.statusCopy}>
@@ -160,17 +162,17 @@ export default function HomeScreen() {
             </View>
             <View style={[styles.statusPlay, { backgroundColor: theme.primaryFill }]}><PlayGlyph playing={false} color={theme.onPrimary} size={16} /></View>
           </View>
-        </Pressable>
+        </PressableScale>
       ) : null}
       {active ? (
-        <Pressable onPressIn={closeOpenRow} onPress={() => router.push(`/lesson/${active.id}`)} style={({ pressed }) => [styles.above, pressed ? styles.pressed : null]}>
+        <PressableScale onPressIn={closeOpenRow} onPress={() => router.push(`/lesson/${active.id}`)} style={styles.above}>
           <View style={[styles.statusCard, styles.statusColumn, { borderColor: theme.border, backgroundColor: theme.surface }]}>
             <Text style={[styles.statusEyebrow, { color: theme.textMuted }]}>WRITING YOUR LESSON</Text>
             <Heading numberOfLines={2} style={styles.statusTitle}>{active.title}</Heading>
             <View style={[styles.progressTrack, { backgroundColor: theme.surfaceMuted }]}><View style={[styles.progressFill, { backgroundColor: theme.brand, width: percentWidth(active.progress) }]} /></View>
             <Body muted style={styles.statusMeta}>{Number.isFinite(active.progress) ? active.progress : 0}% · Tap to follow progress</Body>
           </View>
-        </Pressable>
+        </PressableScale>
       ) : null}
       <View style={styles.sectionBlock}>
         <Text accessibilityRole="header" style={[styles.section, { color: theme.textMuted }]} onPress={closeOpenRow}>{showPick ? "OR CHOOSE YOUR OWN" : "START A LESSON"}</Text>
@@ -199,7 +201,7 @@ export default function HomeScreen() {
           />
         </View>
         {HOW_WOULD_YOU_SAY_ENABLED ? (
-          <Pressable onPressIn={closeOpenRow} onPress={() => router.push("/say")} accessibilityRole="button" accessibilityLabel="How would you say" style={({ pressed }) => [styles.above, pressed ? styles.pressed : null]}>
+          <PressableScale onPressIn={closeOpenRow} onPress={() => router.push("/say")} accessibilityRole="button" accessibilityLabel="How would you say" style={styles.above}>
             <View style={[styles.sayCard, { backgroundColor: theme.coral }]}>
               <Text style={styles.choiceMark}>🗣️</Text>
               <View style={styles.statusCopy}>
@@ -207,7 +209,7 @@ export default function HomeScreen() {
                 <Text style={styles.choiceLine}>Ask for a sentence, then practice it.</Text>
               </View>
             </View>
-          </Pressable>
+          </PressableScale>
         ) : null}
       </View>
       {recent.length ? (
@@ -218,7 +220,7 @@ export default function HomeScreen() {
               <Text style={[styles.seeAll, { color: theme.primary }]}>See all</Text>
             </Pressable>
           </View>
-          {recent.map((lesson) => <LessonRow key={lesson.id} lesson={lesson} />)}
+          {recent.map((lesson, index) => <FadeIn key={lesson.id} index={index}><LessonRow lesson={lesson} /></FadeIn>)}
         </View>
       ) : null}
     </Screen>
@@ -254,14 +256,14 @@ function ChoiceTile({ color, mark, label, line, meta, disabled, onPress, onPress
   accessibilityLabel: string;
 }) {
   return (
-    <Pressable
+    <PressableScale haptic="none"
       disabled={disabled}
       onPressIn={onPressIn}
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ disabled }}
-      style={({ pressed }) => [styles.choice, { backgroundColor: color, opacity: disabled ? 0.5 : 1 }, pressed && !disabled ? styles.pressed : null]}
+      style={[styles.choice, { backgroundColor: color, opacity: disabled ? 0.5 : 1 }]}
     >
       <View style={styles.choiceBadge}><Text style={styles.choiceMark}>{mark}</Text></View>
       <View style={styles.choiceCopy}>
@@ -269,7 +271,7 @@ function ChoiceTile({ color, mark, label, line, meta, disabled, onPress, onPress
         <Text style={styles.choiceLine} maxFontSizeMultiplier={1.5}>{line}</Text>
       </View>
       <Text style={styles.choiceMeta} maxFontSizeMultiplier={1.5}>{meta}</Text>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -284,7 +286,6 @@ const styles = StyleSheet.create({
   quotaPill: { width: 18, height: 6, borderRadius: 3, borderWidth: StyleSheet.hairlineWidth },
   quotaText: { fontSize: 14, lineHeight: 19 },
   above: { zIndex: 2 },
-  pressed: { transform: [{ scale: 0.985 }], opacity: 0.94 },
   statusCard: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 22, borderWidth: 1.5, padding: 12 },
   statusColumn: { flexDirection: "column", alignItems: "stretch", gap: 6, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 16, paddingVertical: 14 },
   statusCopy: { flex: 1, gap: 2 },

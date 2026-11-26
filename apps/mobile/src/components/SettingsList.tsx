@@ -1,5 +1,6 @@
 import { Children, Fragment, type PropsWithChildren, type ReactNode } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import * as Haptics from "expo-haptics";
 import { useTheme } from "@/theme/tokens";
 import { Body } from "./Typography";
 
@@ -60,7 +61,7 @@ export function SettingsRow({ icon, iconTint, label, detail, value, onPress, acc
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={value ? `${label}, ${value}` : label}
-      onPress={onPress}
+      onPress={() => { void Haptics.selectionAsync().catch(() => undefined); onPress(); }}
       style={({ pressed }) => [styles.row, pressed ? { backgroundColor: theme.surfaceMuted } : null]}
     >
       {content}
@@ -84,7 +85,7 @@ export function SettingsSwitchRow({ icon, iconTint, label, detail, value, onValu
         <Body style={styles.label}>{label}</Body>
         {detail ? <Body muted style={styles.detail}>{detail}</Body> : null}
       </View>
-      <Switch accessibilityLabel={label} value={value} onValueChange={onValueChange} trackColor={{ true: theme.primary }} />
+      <Switch accessibilityLabel={label} value={value} onValueChange={(next) => { void Haptics.selectionAsync().catch(() => undefined); onValueChange(next); }} trackColor={{ true: theme.primary }} />
     </View>
   );
 }

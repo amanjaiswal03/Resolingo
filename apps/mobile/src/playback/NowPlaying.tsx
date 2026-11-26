@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LessonArtwork } from "@/components/LessonArtwork";
 import { LessonPlayer } from "@/components/LessonPlayer";
 import { MicGlyph } from "@/components/MicGlyph";
+import { PressableScale } from "@/components/PressableScale";
 import { SkipIcon } from "@/components/SkipIcon";
 import { Body, Title } from "@/components/Typography";
 import { markLessonCompleted, resolveAudioUrls, subscribeLesson } from "@/services/lessons";
@@ -246,7 +247,7 @@ function ViewToggle({ view, onChange }: { view: "artwork" | "transcript"; onChan
       {(["artwork", "transcript"] as const).map((option) => {
         const selected = option === view;
         return (
-          <Pressable
+          <PressableScale haptic="selection" scaleTo={0.96}
             key={option}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
@@ -254,7 +255,7 @@ function ViewToggle({ view, onChange }: { view: "artwork" | "transcript"; onChan
             style={[styles.toggleOption, selected ? [styles.toggleSelected, { backgroundColor: theme.surface }] : null]}
           >
             <Body style={[styles.toggleLabel, { color: selected ? theme.text : theme.textMuted }]}>{option === "artwork" ? "Artwork" : "Transcript"}</Body>
-          </Pressable>
+          </PressableScale>
         );
       })}
     </View>

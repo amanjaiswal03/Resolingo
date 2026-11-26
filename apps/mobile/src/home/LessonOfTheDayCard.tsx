@@ -1,9 +1,10 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { languageById, type DailyPick, type LanguageId } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
 import { useTheme } from "@/theme/tokens";
 import { LessonArtwork } from "@/components/LessonArtwork";
+import { PressableScale } from "@/components/PressableScale";
 import { pickDateLabel, typeLabel, type PickCardState } from "./lesson-of-the-day";
 
 const INK = "#08152F";
@@ -88,14 +89,14 @@ export function LessonOfTheDayCard({ pick, state, nativeLanguage, targetLanguage
     ? `Welcome lesson, ${pick.title}. ${state.kind === "ready" ? "Ready to play." : state.kind === "preparing" ? "Preparing." : "Tap to start."}`
     : `Lesson of the day, ${typeLabel[pick.type]}: ${pick.title}. ${pick.why}.`;
   return (
-    <Pressable
+    <PressableScale haptic="none" scaleTo={0.98}
       onPressIn={onPressIn}
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled, busy: state.kind === "preparing" }}
-      style={({ pressed }) => [styles.press, pressed && !disabled ? styles.pressed : null]}
+      style={styles.press}
     >
       <LinearGradient colors={colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.card}>
         <View style={[styles.glow, { backgroundColor: welcome ? theme.mint : accent }]} pointerEvents="none" />
@@ -140,7 +141,7 @@ export function LessonOfTheDayCard({ pick, state, nativeLanguage, targetLanguage
 
         <Footer state={state} welcome={welcome} />
       </LinearGradient>
-    </Pressable>
+    </PressableScale>
   );
 }
 
@@ -158,7 +159,6 @@ export function LessonOfTheDayPlaceholder() {
 
 const styles = StyleSheet.create({
   press: { borderRadius: 26, zIndex: 2 },
-  pressed: { transform: [{ scale: 0.985 }], opacity: 0.96 },
   card: { borderRadius: 26, padding: 20, gap: 14, overflow: "hidden", minHeight: 220 },
   glow: { position: "absolute", width: 220, height: 220, borderRadius: 110, right: -80, top: -90, opacity: 0.22 },
   topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },

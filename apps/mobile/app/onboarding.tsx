@@ -3,6 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { languages, type CefrLevel, type LanguageId } from "@resolingo/shared";
 import { Button } from "@/components/Button";
+import { PressableScale } from "@/components/PressableScale";
 import { Screen } from "@/components/Screen";
 import { SelectModal } from "@/components/SelectModal";
 import { SettingsGroup, SettingsSwitchRow } from "@/components/SettingsList";
@@ -105,7 +106,7 @@ export default function OnboardingScreen() {
           {levels.map((option) => {
             const selected = option.value === level;
             return (
-              <Pressable
+              <PressableScale haptic="selection" scaleTo={0.92}
                 key={option.value}
                 accessibilityRole="radio"
                 accessibilityLabel={`${option.value}, ${option.name}`}
@@ -114,7 +115,7 @@ export default function OnboardingScreen() {
                 style={[styles.level, { backgroundColor: selected ? theme.primaryFill : theme.surface, borderColor: selected ? theme.primaryFill : theme.border }]}
               >
                 <Text style={[styles.levelCode, { color: selected ? theme.onPrimary : theme.text }]}>{option.value}</Text>
-              </Pressable>
+              </PressableScale>
             );
           })}
         </View>

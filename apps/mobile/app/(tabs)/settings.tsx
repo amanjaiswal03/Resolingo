@@ -2,6 +2,7 @@ import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native"
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
 import { LoadingScreen } from "@/components/LoadingScreen";
+import { PressableScale } from "@/components/PressableScale";
 import { Screen } from "@/components/Screen";
 import { SettingsGroup, SettingsRow, SettingsSwitchRow } from "@/components/SettingsList";
 import { Body, Heading, Title } from "@/components/Typography";
@@ -50,11 +51,11 @@ export default function SettingsScreen() {
     <Screen style={styles.content}>
       <Title>Settings</Title>
 
-      <Pressable
+      <PressableScale scaleTo={0.98}
         accessibilityRole="button"
         accessibilityLabel={`${profile.nickname}. Learning ${languageLabel(profile.targetLanguage)} from ${languageLabel(profile.nativeLanguage)}, level ${profile.level}. Edit learning preferences`}
         onPress={editPreferences}
-        style={({ pressed }) => [styles.profile, { backgroundColor: theme.surface, borderColor: theme.border, opacity: pressed ? 0.85 : 1 }]}
+        style={[styles.profile, { backgroundColor: theme.surface, borderColor: theme.border }]}
       >
         <View style={styles.profileTop}>
           <View style={[styles.avatar, { backgroundColor: theme.primaryFill }]}>
@@ -83,7 +84,7 @@ export default function SettingsScreen() {
             </View>
           </View>
         </View>
-      </Pressable>
+      </PressableScale>
 
       <SettingsGroup title="Learning">
         <SettingsRow icon="✏️" label="Learning preferences" detail="Languages, level and name" onPress={editPreferences} />
