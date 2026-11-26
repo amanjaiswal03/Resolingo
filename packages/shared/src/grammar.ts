@@ -1,6 +1,6 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel } from "./schemas.js";
-import { applyTargetVoices, lessonDisplayText, repairMarkup, speechSpans } from "./markup.js";
+import { applyTargetVoices, lessonDisplayText, repairMarkup, speechSpans, visibleLessonText } from "./markup.js";
 import { conversationPacing, scheduleReviewSlots } from "./pimsleur.js";
 import { MAX_WARMUP_REVIEWS } from "./review.js";
 import { quotesStayTrue } from "./quotes.js";
@@ -518,9 +518,9 @@ export function parseGrammarSource(
     : [];
   const names = normalizeSpeakerNames(record.speakerNames);
   return {
-    title: (textOf(record.title) || topic.title).slice(0, 90),
+    title: (visibleLessonText(textOf(record.title)) || topic.title).slice(0, 90),
     topic,
-    summary: (textOf(record.summary) || topic.focus).slice(0, 280),
+    summary: (visibleLessonText(textOf(record.summary)) || topic.focus).slice(0, 280),
     teacherName: names.teacher,
     hook,
     examples: examples.slice(1),

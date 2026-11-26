@@ -1,5 +1,5 @@
 import type { LanguageId } from "./languages.js";
-import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
+import { applyTargetVoices, lessonDisplayText, repairMarkup, visibleLessonText } from "./markup.js";
 import { ConversationSkillSchema, type ConversationSkill } from "./conversation-skills.js";
 import { MAX_LESSON_SEGMENTS, type CefrLevel, type LessonSegment } from "./schemas.js";
 import { groupBunsetsu, needsWordSegment, segmentWords, splitSentences } from "./segment.js";
@@ -1018,7 +1018,7 @@ export function shapePimsleurLesson(value: unknown, context: {
 }): { title: string; topic: string; summary: string; conversationSkill?: ConversationSkill; speakerNames: SpeakerNames; segments: LessonSegment[] } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const title = textOf(record.title);
+  const title = visibleLessonText(textOf(record.title));
   if (title.length < 3) return null;
   const names = normalizeSpeakerNames(record.speakerNames);
   const cues = cuesFrom(record.cues, context.nativeLanguage);
@@ -1097,8 +1097,8 @@ export function shapePimsleurLesson(value: unknown, context: {
   const skill = ConversationSkillSchema.safeParse(record.conversationSkill);
   return {
     title: title.slice(0, 90),
-    topic: (textOf(record.topic) || title).slice(0, 160),
-    summary: (textOf(record.summary) || title).slice(0, 280),
+    topic: visibleLessonText(textOf(record.topic) || title).slice(0, 160),
+    summary: visibleLessonText(textOf(record.summary) || title).slice(0, 280),
     ...(skill.success ? { conversationSkill: skill.data } : {}),
     speakerNames: names,
     segments,
