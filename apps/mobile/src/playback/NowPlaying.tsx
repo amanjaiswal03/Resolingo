@@ -49,8 +49,10 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
   const dragStart = useSharedValue(closed);
   const floor = useSharedValue(expanded ? 300 : MINI_PLAYER_HEIGHT);
   useEffect(() => {
+    const docked = y.value >= closedY.value - 1;
     closedY.value = closed;
-  }, [closed, closedY]);
+    if (docked) y.value = closed;
+  }, [closed, closedY, y]);
   const settle = useCallback((open: boolean) => {
     setPresented(open ? "full" : "mini");
     setInteractive(open);
