@@ -130,6 +130,10 @@ export const LessonSchema = z.object({
   speakerNames: SpeakerNamesField,
   segments: z.array(LessonSegmentSchema).default([]),
   manifest: AudioManifestSchema.optional(),
+  /** Storage path of the lesson's topic artwork. Lessons made before artwork existed have none. */
+  artworkPath: z.string().min(1).max(200).optional(),
+  /** Download URL resolved on the device. Never stored. */
+  artworkUrl: z.string().url().optional(),
   failureCode: z.string().optional(),
   completed: z.boolean().default(false),
   createdAt: z.string().datetime(),

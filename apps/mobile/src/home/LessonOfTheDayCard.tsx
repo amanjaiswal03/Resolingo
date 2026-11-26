@@ -3,6 +3,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { languageById, type DailyPick, type LanguageId } from "@resolingo/shared";
 import { percentWidth } from "@/lesson/navigation";
 import { useTheme } from "@/theme/tokens";
+import { LessonArtwork } from "@/components/LessonArtwork";
 import { pickDateLabel, typeLabel, type PickCardState } from "./lesson-of-the-day";
 
 const INK = "#08152F";
@@ -118,9 +119,12 @@ export function LessonOfTheDayCard({ pick, state, nativeLanguage, targetLanguage
           </View>
         )}
 
-        <View style={styles.copy}>
-          <Text style={styles.title} maxFontSizeMultiplier={1.4} numberOfLines={3}>{state.kind === "ready" || state.kind === "done" ? state.lesson.title : pick.title}</Text>
-          <Text style={styles.why} maxFontSizeMultiplier={1.5}>{pick.why}</Text>
+        <View style={styles.copyRow}>
+          <View style={[styles.copy, styles.copyText]}>
+            <Text style={styles.title} maxFontSizeMultiplier={1.4} numberOfLines={3}>{state.kind === "ready" || state.kind === "done" ? state.lesson.title : pick.title}</Text>
+            <Text style={styles.why} maxFontSizeMultiplier={1.5}>{pick.why}</Text>
+          </View>
+          {(state.kind === "ready" || state.kind === "done") && state.lesson.artworkPath ? <LessonArtwork lesson={state.lesson} size={84} radius={18} /> : null}
         </View>
 
         {welcome && state.kind !== "done" ? (
@@ -169,6 +173,8 @@ const styles = StyleSheet.create({
   langText: { color: WHITE, fontSize: 14, lineHeight: 18, fontWeight: "800" },
   arrow: { color: SOFT, fontSize: 16, fontWeight: "800" },
   copy: { gap: 6 },
+  copyRow: { flexDirection: "row", alignItems: "center", gap: 14 },
+  copyText: { flex: 1 },
   title: { color: WHITE, fontSize: 27, lineHeight: 32, fontWeight: "800", letterSpacing: -0.4 },
   why: { color: SOFT, fontSize: 15, lineHeight: 21 },
   points: { gap: 7 },
