@@ -25,6 +25,7 @@ import {
 	segmentStartInClip,
 } from "@/lesson/timeline";
 import { LessonArtwork } from "./LessonArtwork";
+import { PlayGlyph } from "./PlayGlyph";
 import { SkipIcon } from "./SkipIcon";
 import { SpeakingPractice } from "./SpeakingPractice";
 import { useTheme } from "@/theme/tokens";
@@ -427,27 +428,29 @@ export function LessonPlayer({
 					<View style={[styles.miniFill, { backgroundColor: theme.brand, width: percentWidth(progress * 100) }]} />
 				</View>
 				<View style={styles.miniRow}>
-					<Pressable accessibilityRole="button" accessibilityLabel={`Open ${lesson.title}`} onPress={onOpen} style={styles.miniOpen}>
-						<Text style={[styles.miniChevron, { color: theme.text }]}>⌃</Text>
-						<LessonArtwork lesson={lesson} size={36} radius={10} />
+					<Pressable accessibilityRole="button" accessibilityLabel={`Open ${lesson.title}`} accessibilityHint="Opens the full player" onPress={onOpen} style={styles.miniOpen}>
+						<LessonArtwork lesson={lesson} size={44} radius={12} />
 						<View style={styles.miniCopy}>
-							<Text numberOfLines={1} style={[styles.miniTitle, { color: theme.text }]}>{lineText || lesson.title}</Text>
-							<Text numberOfLines={1} style={[styles.miniSubtitle, { color: theme.textMuted }]}>{lineText ? lesson.title : kindLabel[lesson.type]}</Text>
+							<Text numberOfLines={1} style={[styles.miniTitle, { color: theme.text }]}>{lesson.title}</Text>
+							<Text numberOfLines={1} style={[styles.miniSubtitle, { color: theme.textMuted }]}>{lineText || kindLabel[lesson.type]}</Text>
 						</View>
 					</Pressable>
-					<Pressable accessibilityRole="button" accessibilityLabel={playLabel} accessibilityState={{ busy: loadingAudio }} disabled={loadingAudio} onPress={toggle} style={styles.play}>
-						{loadingAudio ? <ActivityIndicator color={theme.primary} /> : <Text style={[styles.playIcon, { color: theme.primary }]}>{playing ? "Ⅱ" : "▶"}</Text>}
+					<Pressable accessibilityRole="button" accessibilityLabel={playLabel} accessibilityState={{ busy: loadingAudio }} disabled={loadingAudio} onPress={toggle} hitSlop={6} style={[styles.miniPlay, { backgroundColor: theme.primaryTint }]}>
+						{loadingAudio ? <ActivityIndicator color={theme.primary} /> : <PlayGlyph playing={playing} color={theme.primary} size={18} />}
 					</Pressable>
 				</View>
 			</View>
 		);
 	}
+	const elapsedLabel = formatClock(shownElapsed);
+	const totalLabel = formatClock(timeline.totalMs);
 	return (
 		<View
 			style={[
 				styles.player,
 				{
 					backgroundColor: theme.surface,
+					borderColor: theme.border,
 					paddingBottom: placement === "top" ? 14 : Math.max(16, insets.bottom + 8),
 				},
 			]}
@@ -457,7 +460,7 @@ export function LessonPlayer({
 				accessibilityRole="adjustable"
 				accessibilityLabel="Lesson position"
 				accessibilityValue={{
-					text: `${formatClock(shownElapsed)} of ${formatClock(timeline.totalMs)}`,
+					text: `${elapsedLabel} of ${totalLabel}`,
 				}}
 				accessibilityActions={[{ name: "increment" }, { name: "decrement" }]}
 				onAccessibilityAction={(event) =>
@@ -497,7 +500,7 @@ export function LessonPlayer({
 				}}
 				style={styles.scrubber}
 			>
-				<View style={[styles.track, { backgroundColor: theme.border }]}>
+				<View style={[styles.track, { backgroundColor: theme.surfaceMuted }]}>
 					<View
 						ref={fillRef}
 						collapsable={false}
@@ -524,22 +527,38 @@ export function LessonPlayer({
 				/>
 			</View>
 			<View style={styles.times}>
-				<Text ref={elapsedRef} style={[styles.time, { color: theme.textMuted }]}>{formatClock(shownElapsed)}</Text>
-				<Pressable accessibilityRole="button" accessibilityLabel="Playback speed" onPress={changeSpeed} hitSlop={8}>
-					<Text style={[styles.speed, { color: theme.text }]}>{speeds[speedIndex]}×</Text>
-				</Pressable>
-				<Text style={[styles.time, styles.timeEnd, { color: theme.textMuted }]}>{formatClock(timeline.totalMs)}</Text>
+				<Text ref={elapsedRef} style={[styles.time, { color: theme.textMuted }]}>{elapsedLabel}</Text>
+				<Text style={[styles.time, styles.timeEnd, { color: theme.textMuted }]}>{totalLabel}</Text>
 			</View>
 			<View style={styles.transport}>
+				<Pressable
+					accessibilityRole="button"
+					accessibilityLabel={`Playback speed ${speeds[speedIndex]} times`}
+					accessibilityHint="Changes how fast the lesson plays"
+					onPress={changeSpeed}
+					hitSlop={8}
+					style={[styles.speedChip, { backgroundColor: speedIndex === 1 ? theme.surfaceMuted : theme.primaryTint }]}
+				>
+					<Text style={[styles.speed, { color: speedIndex === 1 ? theme.text : theme.primary }]}>{speeds[speedIndex]}×</Text>
+				</Pressable>
 				<Pressable accessibilityRole="button" accessibilityLabel="Back ten seconds" onPress={() => seekBy(-10)} style={styles.skip}>
 					<SkipIcon direction="back" color={theme.text} />
 				</Pressable>
-				<Pressable accessibilityRole="button" accessibilityLabel={playLabel} accessibilityState={{ busy: loadingAudio }} disabled={loadingAudio} onPress={toggle} style={[styles.bigPlay, { backgroundColor: theme.primaryFill }]}>
-					{loadingAudio ? <ActivityIndicator size="large" color={theme.onPrimary} /> : <Text style={[styles.bigPlayIcon, { color: theme.onPrimary }, !playing && styles.playNudge]}>{playing ? "Ⅱ" : "▶"}</Text>}
+				<Pressable
+					accessibilityRole="button"
+					accessibilityLabel={playLabel}
+					accessibilityState={{ busy: loadingAudio }}
+					disabled={loadingAudio}
+					onPress={toggle}
+					style={({ pressed }) => [styles.bigPlay, { backgroundColor: pressed ? theme.primaryPressed : theme.primaryFill, transform: [{ scale: pressed ? 0.96 : 1 }] }]}
+				>
+					{loadingAudio ? <ActivityIndicator size="large" color={theme.onPrimary} /> : <PlayGlyph playing={playing} color={theme.onPrimary} size={30} />}
 				</Pressable>
 				<Pressable accessibilityRole="button" accessibilityLabel="Forward ten seconds" onPress={() => seekBy(10)} style={styles.skip}>
 					<SkipIcon direction="forward" color={theme.text} />
 				</Pressable>
+				{/* Balances the speed chip so the play button stays centered. */}
+				<View style={styles.speedChipSpacer} />
 			</View>
 			{checks && (canCheckAnswers || Object.keys(results).length > 0) ? (
 				<SpeakingPractice
@@ -561,38 +580,64 @@ export function LessonPlayer({
 }
 
 const styles = StyleSheet.create({
-	player: { borderTopLeftRadius: 22, borderTopRightRadius: 22, paddingHorizontal: 22, paddingTop: 18, gap: 10 },
+	player: {
+		borderTopLeftRadius: 28,
+		borderTopRightRadius: 28,
+		borderTopWidth: StyleSheet.hairlineWidth,
+		paddingHorizontal: 24,
+		paddingTop: 14,
+		gap: 6,
+		shadowColor: "#08152F",
+		shadowOpacity: 0.08,
+		shadowRadius: 16,
+		shadowOffset: { width: 0, height: -4 },
+		elevation: 8,
+	},
 	mini: { minHeight: 76, borderTopWidth: StyleSheet.hairlineWidth },
 	miniTrack: { height: 2 },
 	miniFill: { height: 2 },
-	miniRow: { flex: 1, flexDirection: "row", alignItems: "center", paddingRight: 10 },
-	miniOpen: { flex: 1, flexDirection: "row", alignItems: "center", gap: 14, paddingLeft: 16, paddingVertical: 12 },
-	miniCopy: { flex: 1, gap: 1 },
-	miniTitle: { fontSize: 15, lineHeight: 18, fontWeight: "700" },
-	miniSubtitle: { fontSize: 12, lineHeight: 15 },
-	miniChevron: { fontSize: 20, lineHeight: 22, fontWeight: "700", width: 22 },
-	scrubber: { height: 28, justifyContent: "center" },
-	track: { height: 5, borderRadius: 3, overflow: "hidden" },
-	fill: { height: 5, borderRadius: 3 },
+	miniRow: { flex: 1, flexDirection: "row", alignItems: "center", paddingRight: 14 },
+	miniOpen: { flex: 1, flexDirection: "row", alignItems: "center", gap: 12, paddingLeft: 14, paddingVertical: 10 },
+	miniCopy: { flex: 1, gap: 2 },
+	miniTitle: { fontSize: 15, lineHeight: 19, fontWeight: "700" },
+	miniSubtitle: { fontSize: 13, lineHeight: 17 },
+	miniPlay: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+	scrubber: { height: 32, justifyContent: "center" },
+	track: { height: 6, borderRadius: 3, overflow: "hidden" },
+	fill: { height: 6, borderRadius: 3 },
 	thumb: {
 		position: "absolute",
-		top: 6,
-		width: 16,
-		height: 16,
-		borderRadius: 8,
-		marginLeft: -8,
-		borderWidth: 2,
+		top: 7,
+		width: 18,
+		height: 18,
+		borderRadius: 9,
+		marginLeft: -9,
+		borderWidth: 3,
 		borderColor: "#FFFFFF",
+		shadowColor: "#08152F",
+		shadowOpacity: 0.18,
+		shadowRadius: 3,
+		shadowOffset: { width: 0, height: 1 },
+		elevation: 2,
 	},
-	times: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-	time: { fontSize: 13, fontVariant: ["tabular-nums"], minWidth: 64 },
+	times: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: -4 },
+	time: { fontSize: 12, lineHeight: 16, fontWeight: "600", fontVariant: ["tabular-nums"], minWidth: 64 },
 	timeEnd: { textAlign: "right" },
-	speed: { fontSize: 15, fontWeight: "700" },
-	transport: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 28, paddingTop: 6 },
-	skip: { width: 64, height: 64, alignItems: "center", justifyContent: "center" },
-	bigPlay: { width: 84, height: 84, borderRadius: 42, alignItems: "center", justifyContent: "center" },
-	bigPlayIcon: { fontSize: 36, lineHeight: 42, fontWeight: "800" },
-	playNudge: { marginLeft: 4 },
-	play: { minWidth: 48, minHeight: 44, alignItems: "center", justifyContent: "center", paddingHorizontal: 8 },
-	playIcon: { fontSize: 26, lineHeight: 30, fontWeight: "800" },
+	speedChip: { width: 52, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+	speedChipSpacer: { width: 52 },
+	speed: { fontSize: 14, lineHeight: 18, fontWeight: "800", fontVariant: ["tabular-nums"] },
+	transport: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingTop: 2, paddingBottom: 8 },
+	skip: { width: 56, height: 56, alignItems: "center", justifyContent: "center" },
+	bigPlay: {
+		width: 76,
+		height: 76,
+		borderRadius: 38,
+		alignItems: "center",
+		justifyContent: "center",
+		shadowColor: "#0B7A6B",
+		shadowOpacity: 0.32,
+		shadowRadius: 12,
+		shadowOffset: { width: 0, height: 6 },
+		elevation: 6,
+	},
 });
