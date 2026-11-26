@@ -1,6 +1,6 @@
 import type { LanguageId } from "./languages.js";
 import type { CefrLevel, LessonSegment } from "./schemas.js";
-import { applyTargetVoices, lessonDisplayText, repairMarkup } from "./markup.js";
+import { applyTargetVoices, lessonDisplayText, repairMarkup, visibleLessonText } from "./markup.js";
 import { targetAnswerText, tidyTargetAnswers } from "./answer-text.js";
 import { isClitic, needsWordSegment, segmentWords, splitSentences } from "./segment.js";
 import { REVIEW_GAPS } from "./pimsleur.js";
@@ -876,9 +876,9 @@ export function shapePhraseLesson(
   const sparse = glossesStaySparse(segments, context.targetLanguage);
   if (!sparse.ok) return reject("glosses_bunched", sparse.detail);
   if (segments.filter((segment) => segment.phase === "pattern").length > 1) return reject("pattern_repeated");
-  const title = clip(textOf(source.title) || `Saying: ${meaning}`, 90);
-  const topic = clip(textOf(source.topic) || meaning, 160);
-  const summary = clip(textOf(source.summary) || `Practice how to say "${meaning}" and a few variations.`, 280);
+  const title = clip(visibleLessonText(textOf(source.title)) || `Saying: ${meaning}`, 90);
+  const topic = clip(visibleLessonText(textOf(source.topic)) || meaning, 160);
+  const summary = clip(visibleLessonText(textOf(source.summary)) || `Practice how to say "${meaning}" and a few variations.`, 280);
   if (title.length < 3 || topic.length < 3 || summary.length < 5) return reject("title_short");
   const voiced = applyTargetVoices(tidyTargetAnswers(segments, context.targetLanguage), context.nativeLanguage, context.targetLanguage);
   return {

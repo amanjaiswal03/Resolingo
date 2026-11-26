@@ -31,6 +31,12 @@ export function lessonDisplayText(text: string): string {
   return stripLanguageTags(text).replace(/[ \t]{2,}/g, " ").trim();
 }
 
+/** A title, topic, or summary. Tags are only meaningful inside a spoken line. */
+export function visibleLessonText(text: string): string {
+  const shown = lessonDisplayText(text);
+  return shown || text.trim();
+}
+
 /** What the app stores and renders. Tags stay on the in-memory segment until audio is made. */
 export function displayLessonSegment<T extends { text: string; translation?: string | undefined; transliteration?: string | undefined }>(segment: T): T {
   const text = lessonDisplayText(segment.text);

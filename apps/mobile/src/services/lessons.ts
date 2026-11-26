@@ -1,6 +1,6 @@
 import { collection, doc, limit, onSnapshot, orderBy, query, updateDoc, where, type FirebaseFirestoreTypes } from "@react-native-firebase/firestore";
 import { getDownloadURL, ref } from "@react-native-firebase/storage";
-import { LessonSchema, type Lesson, type UserProfile } from "@resolingo/shared";
+import { displayLessonSegment, LessonSchema, visibleLessonText, type Lesson, type UserProfile } from "@resolingo/shared";
 import { firestore, storage } from "./firebase";
 
 const iso = (value: unknown): string => {
@@ -14,11 +14,27 @@ export function subscribeProfile(uid: string, callback: (profile: UserProfile | 
   });
 }
 
+function shown(value: unknown): unknown {
+  return typeof value === "string" ? visibleLessonText(value) : value;
+}
+
+function shownSegments(value: unknown): unknown {
+  if (!Array.isArray(value)) return value;
+  return value.map((segment) => {
+    if (!segment || typeof segment !== "object" || typeof (segment as { text?: unknown }).text !== "string") return segment;
+    return displayLessonSegment(segment as { text: string; translation?: string; transliteration?: string });
+  });
+}
+
 function mapLesson(document: FirebaseFirestoreTypes.QueryDocumentSnapshot | FirebaseFirestoreTypes.DocumentSnapshot): Lesson {
   const data = document.data();
   if (!data) throw new Error(`Lesson ${document.id} has no data.`);
   return LessonSchema.parse({
     ...data,
+    title: shown(data.title),
+    topic: shown(data.topic),
+    summary: shown(data.summary),
+    segments: shownSegments(data.segments),
     id: document.id,
     createdAt: iso(data.createdAt),
     updatedAt: iso(data.updatedAt),

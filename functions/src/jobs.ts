@@ -8,6 +8,7 @@ import {
   applyTargetVoices,
   conversationMemory,
   displayLessonSegment,
+  visibleLessonText,
   grammarMemory,
   type GeneratedLesson,
   type LessonSegment,
@@ -203,15 +204,21 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       content.segments = voiced.segments;
     }
     validateLessonLanguages(content, nativeLanguage, targetLanguage);
+    const title = visibleLessonText(content.title);
+    const topic = visibleLessonText(content.topic);
+    const summary = visibleLessonText(content.summary);
+    content.title = title;
+    content.topic = topic;
+    content.summary = summary;
     await lessonRef.update({
-      title: content.title,
-      topic: content.topic,
+      title,
+      topic,
       ...(content.conversationSkill ? { conversationSkill: content.conversationSkill } : {}),
       nativeLanguage,
       targetLanguage,
       level,
       ...(content.ruleId ? { ruleId: content.ruleId } : {}),
-      summary: content.summary,
+      summary,
       speakerNames: content.speakerNames,
       segments: content.segments.map((segment) => displayLessonSegment(segment)),
       status: "synthesizing_audio",
@@ -279,9 +286,9 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
       const existingTopics = (topicSnapshot.data()?.topics ?? []) as string[];
       const existingFingerprints = (topicSnapshot.data()?.fingerprints ?? []) as string[];
       transaction.set(topicRef, {
-        topics: [content.topic, ...existingTopics.filter((topic) => topic !== content.topic)].slice(0, 20),
+        topics: [topic, ...existingTopics.filter((existing) => existing !== topic)].slice(0, 20),
         fingerprints: [
-          createHash("sha256").update(content.topic.trim().toLowerCase()).digest("hex"),
+          createHash("sha256").update(topic.trim().toLowerCase()).digest("hex"),
           ...existingFingerprints,
         ].filter((fingerprint, index, values) => values.indexOf(fingerprint) === index).slice(0, 20),
         updatedAt: FieldValue.serverTimestamp(),
@@ -291,7 +298,7 @@ export async function processLessonJob(payload: JobPayload, retryCount: number):
     if (!published) return;
     await sendUserPush(payload.uid, {
       title: "Your Resolingo lesson is ready",
-      body: content.title,
+      body: title,
       data: { path: `/lesson/${payload.lessonId}`, lessonId: payload.lessonId },
       channelId: "lessons",
     });
