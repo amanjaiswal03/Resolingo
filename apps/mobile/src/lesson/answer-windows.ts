@@ -1,4 +1,4 @@
-import { lessonDisplayText, type LanguageId, type LessonSegment } from "@resolingo/shared";
+import { lessonDisplayText, targetAnswerText, type LanguageId, type LessonSegment } from "@resolingo/shared";
 import type { PlaybackClip } from "./timeline";
 
 export type AnswerWindow = {
@@ -44,7 +44,12 @@ export function answerPlan(segments: LessonSegment[], clips: PlaybackClip[], dur
         (answer.kind !== "drill" && answer.kind !== "example") ||
         followingSegment.get(prompt.id) !== answer.id ||
         (language && language !== answer.language)) continue;
-    const expected = lessonDisplayText(answer.text).trim();
+    // Grade against the target words only, so a lesson saved with a gloss as its
+    // answer ("'Das Kind' means 'The Child'") still accepts "Das Kind".
+    const expected = targetAnswerText(lessonDisplayText(answer.text), {
+      language: answer.language,
+      ...(answer.translation ? { translation: lessonDisplayText(answer.translation) } : {}),
+    }).trim();
     if (!expected) continue;
     language = answer.language;
     windows.push({
