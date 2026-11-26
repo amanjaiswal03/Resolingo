@@ -30,10 +30,10 @@ export const TTS_VOICE_TIER = defineString("TTS_VOICE_TIER", {
 export const DAILY_LIMIT = 3;
 export const MAX_TASK_ATTEMPTS = 3;
 export const DELETE_ACCOUNT_TIMEOUT_SECONDS = 540;
-/** Imagen 4 Fast is Vertex's lowest-cost image model (about $0.02 per image). */
-export const DEFAULT_ARTWORK_MODEL = "imagen-4.0-fast-generate-001";
-/** Imagen 4 Fast is not served in europe-west1 (Vertex returns 404). Only the short topic prompt leaves the EU. */
-export const DEFAULT_ARTWORK_LOCATION = "us-central1";
+/** Gemini 3.1 Flash Image. Imagen 4 Fast 404s in europe-west1 and was discontinued. */
+export const DEFAULT_ARTWORK_MODEL = "gemini-3.1-flash-image";
+/** Vertex serves this image model on the global endpoint. */
+export const DEFAULT_ARTWORK_LOCATION = "global";
 export const ARTWORK_MODEL = defineString("ARTWORK_MODEL", {
   default: DEFAULT_ARTWORK_MODEL,
   description: "Vertex image model for lesson artwork. Set to off to stop generating artwork.",
