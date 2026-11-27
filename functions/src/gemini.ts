@@ -45,7 +45,7 @@ const SYSTEM_INSTRUCTION = [
   "speak has 4 to 6 conversational recall cues. Each includes {translation}. Some can include {name}. Vary the situation, instruction, and question styles without giving the target-language answer.",
   "A phrase can also have a recallCue with a natural situation specific to that line and its exact teaching-language meaning. The learner hears the meaning and a clear model before any of these cues.",
   "Also return speakerNames with teacher, speakerA, and speakerB. speakerA is male and speakerB is female. Each name is one Latin-script word of letters only, and the three names are different.",
-  "Use those exact names inside dialogue lines. Do not write Speaker A or Speaker B.",
+  "speakerNames are only labels for the voices. The learner repeats every line out loud, so never put any person's name in a dialogue line, phrase, chunk, or recombination: no greeting or thanks by name, no self-introduction with a name, and no third person named. Do not write Speaker A or Speaker B.",
   "Every target-language word, including a gloss, a swap cue, a recap, and a closing, goes in its own [[lang:BCP-47]]...[[/lang]] span. Never leave a target word in a teaching-language span. Close every tag. Do not nest tags.",
   "Every text or answer field that the learner says is only the target-language words. Never put a gloss or translation in it, such as \"'Das Kind' means 'The child'\", \"Das Kind (the child)\", or quotation marks around the line, and never an inline marker such as [[gloss]] or an English word beside the target word. The meaning goes in translation. The only markup is [[lang:BCP-47]]...[[/lang]].",
 ].join(" ");

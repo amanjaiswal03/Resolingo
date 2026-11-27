@@ -7,7 +7,9 @@ import {
   arrangePimsleur,
   backwardChunks,
   buildupChunks,
+  carriesProperName,
   drillsAreUnique,
+  mentionsName,
   priorReviewsAreIntroduced,
   shapePimsleurLesson,
   recallAnswersFollowPrompts,
@@ -474,6 +476,55 @@ describe("model shaping", () => {
     expect(drillsAreUnique(segments)).toBe(true);
     expect(speakPromptsMatchAnswers(segments)).toBe(true);
     expect(segments.length).toBeLessThanOrEqual(MAX_PIMSLEUR_SEGMENTS);
+  });
+
+  it("never has the learner say a name, wherever it sits in a line", () => {
+    const turns = [
+      { speaker: "speakerA", text: "Hallo Anna, wie geht's?", translation: "Hi Anna, how are you?" },
+      { speaker: "speakerB", text: "Gut, danke. Ich heiße Anna.", translation: "Good, thanks. My name is Anna." },
+      { speaker: "speakerA", text: "Danke, Anna, bis morgen.", translation: "Thanks, Anna, see you tomorrow." },
+      { speaker: "speakerB", text: "Bis morgen, {learner}!", translation: "See you tomorrow, {learner}!" },
+      { speaker: "speakerA", text: "Wo ist der Bahnhof?", translation: "Where is the station?" },
+    ];
+    const shaped = shapePimsleurLesson({
+      title: "Meeting a neighbour",
+      speakerNames: names,
+      lines: turns,
+      phrases: turns.map((turn) => ({
+        ...turn,
+        chunks: turn.text.startsWith("Wo") ? [{ text: "der Bahnhof", translation: "the station" }] : [{ text: "Lukas", translation: "Lukas" }],
+      })),
+      recombinations: [{ speaker: "speakerA", text: "Wo ist Lukas?", translation: "Where is Lukas?" }],
+    }, {
+      nativeLanguage: "en-US",
+      targetLanguage: "de-DE",
+      level: "A2",
+      priorReviews: [
+        { speaker: "speakerA", text: "Hallo Max!", translation: "Hello Max!", language: "de-DE" },
+        { speaker: "speakerA", text: "Einen Kaffee, bitte.", translation: "A coffee, please.", language: "de-DE" },
+      ],
+    });
+    const segments = shaped?.segments ?? [];
+    // Everything the learner hears to copy or answer: every target-language line outside the two dialogue run-throughs.
+    const spoken = segments.filter((segment) => segment.speaker !== "teacher" && segment.phase !== "dialogue" && segment.phase !== "closing"
+      && !(segment.phase === "roleplay" && segment.kind === "dialogue"));
+    expect(spoken.length).toBeGreaterThan(0);
+    for (const segment of spoken) expect(segment.text).not.toMatch(/Anna|Lukas|Mira|Max|\{learner\}/u);
+    expect(segments.some((segment) => segment.phase === "answer" && segment.text === "Danke, bis morgen.")).toBe(true);
+    expect(segments.some((segment) => segment.phase === "answer" && segment.text === "Bis morgen!")).toBe(true);
+    expect(segments.some((segment) => segment.phase === "answer" && segment.text === "Wo ist der Bahnhof?")).toBe(true);
+    expect(segments.some((segment) => segment.phase === "warmup" && segment.text === "Einen Kaffee, bitte.")).toBe(true);
+    // The lines are still heard in the conversation.
+    expect(segments.some((segment) => segment.phase === "dialogue" && segment.text === "Hallo Anna, wie geht's?")).toBe(true);
+  });
+
+  it("spots a name carried over unchanged into a translation", () => {
+    expect(carriesProperName({ text: "Ist Max da?", translation: "Is Max there?" })).toBe(true);
+    expect(carriesProperName({ text: "Wo ist das Hotel?", translation: "Where is the hotel?" })).toBe(false);
+    expect(carriesProperName({ text: "Danke schön.", translation: "Thank you." })).toBe(false);
+    expect(mentionsName("Ich will gehen.", { teacher: "Mira", speakerA: "Will", speakerB: "Anna" })).toBe(false);
+    expect(mentionsName("Annabelle kommt.", names)).toBe(false);
+    expect(mentionsName("Anna-san, ohayou", names, true)).toBe(true);
   });
 
   it("builds up every new line and then uses that line's own situation cue", () => {
