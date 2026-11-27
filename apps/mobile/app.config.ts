@@ -37,6 +37,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         UIBackgroundModes: ["audio", "remote-notification"],
         NSMicrophoneUsageDescription: microphonePermission,
         NSSpeechRecognitionUsageDescription: "Resolingo uses speech recognition on this iPhone to check your spoken lesson answers.",
+        // expo-file-system links the Photos API for copying a chosen asset. The app never opens the library.
+        NSPhotoLibraryUsageDescription: "Resolingo doesn't access your photos unless you choose to share or save an image.",
+        ITSAppUsesNonExemptEncryption: false,
       },
     },
     android: {
