@@ -3,16 +3,17 @@ import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, updateDoc, 
 import { getDownloadURL, ref } from "@react-native-firebase/storage";
 import { displayLessonSegment, LessonSchema, visibleLessonText, type Lesson, type UserProfile } from "@resolingo/shared";
 import { firestore, storage } from "./firebase";
+import { onServerDocSnapshot, onServerQuerySnapshot } from "./server-snapshot";
 
 const iso = (value: unknown): string => {
   if (value && typeof value === "object" && "toDate" in value) return (value as FirebaseFirestoreTypes.Timestamp).toDate().toISOString();
   return typeof value === "string" ? value : new Date(0).toISOString();
 };
 
-export function subscribeProfile(uid: string, callback: (profile: UserProfile | null) => void): () => void {
-  return onSnapshot(doc(firestore, "users", uid), (snapshot) => {
+export function subscribeProfile(uid: string, callback: (profile: UserProfile | null) => void, onError?: (error: Error) => void): () => void {
+  return onServerDocSnapshot(doc(firestore, "users", uid), (snapshot) => {
     callback(snapshot.exists() ? ({ uid, ...snapshot.data() } as UserProfile) : null);
-  });
+  }, onError);
 }
 
 function shown(value: unknown): unknown {
@@ -52,7 +53,7 @@ export function subscribeReadyCount(uid: string, quotaDate: string, callback: (c
 export function subscribeLessons(uid: string, callback: (lessons: Lesson[]) => void, onError?: (error: Error) => void): () => void {
   const lessonsQuery = query(collection(firestore, "users", uid, "lessons"), orderBy("createdAt", "desc"), limit(50));
   const cached = new Map<string, { updatedAt: string; lesson: Lesson }>();
-  return onSnapshot(lessonsQuery, (snapshot) => {
+  return onServerQuerySnapshot(lessonsQuery, (snapshot) => {
     const lessons: Lesson[] = [];
     const live = new Set<string>();
     let firstError: Error | undefined;
@@ -97,7 +98,7 @@ export function subscribeCompletedLessons(
 ): () => void {
   const completed = query(collection(firestore, "users", uid, "lessons"),
     where("completed", "==", true), orderBy("updatedAt", "desc"), limit(count + 1));
-  return onSnapshot(completed, (snapshot) => {
+  return onServerQuerySnapshot(completed, (snapshot) => {
     const lessons: Lesson[] = [];
     for (const document of snapshot.docs.slice(0, count)) {
       try { lessons.push(mapLesson(document)); }

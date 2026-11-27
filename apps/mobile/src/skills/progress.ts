@@ -1,5 +1,6 @@
-import { collection, doc, onSnapshot, runTransaction } from "@react-native-firebase/firestore";
+import { collection, doc, runTransaction } from "@react-native-firebase/firestore";
 import { firestore } from "@/services/firebase";
+import { onServerQuerySnapshot } from "@/services/server-snapshot";
 import type { LessonCredit } from "./lesson-credits";
 import { languagePairKey, progressForCard, scheduleLessonCredit, scheduleReview, type LanguagePair, type ProgressByCard, type ReviewMode, type ReviewProgress, type ReviewRating, type SkillCard } from "./model";
 
@@ -30,7 +31,7 @@ function parseProgress(value: unknown): ReviewProgress | undefined {
 
 export function subscribeSkillProgress(uid: string, pair: LanguagePair, receive: (state: ProgressByCard) => void, onError: (error: Error) => void): () => void {
   const reviews = collection(firestore, "users", uid, "skillReviews", languagePairKey(pair), "items");
-  return onSnapshot(reviews, (snapshot) => {
+  return onServerQuerySnapshot(reviews, (snapshot) => {
     const reviews: ProgressByCard = {};
     for (const entry of snapshot.docs) {
       const item = parseProgress(entry.data());

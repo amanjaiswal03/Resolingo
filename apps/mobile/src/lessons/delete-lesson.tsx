@@ -18,6 +18,7 @@ type DeleteContextValue = {
   lessons: Lesson[];
   loading: boolean;
   error: Error | null;
+  retry: () => void;
   hiddenIds: ReadonlySet<string>;
   heldReadyDates: readonly string[];
   openRowId: string | null;
@@ -33,7 +34,7 @@ const DeleteContext = createContext<DeleteContextValue | null>(null);
 export function LessonDeleteProvider({ children }: PropsWithChildren) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { lessons: source, loading, error } = useLessons();
+  const { lessons: source, loading, error, retry } = useLessons();
   const [hiddenIds, setHiddenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [holds, setHolds] = useState<readonly Hold[]>([]);
   const [undoId, setUndoId] = useState<string | null>(null);
@@ -120,6 +121,7 @@ export function LessonDeleteProvider({ children }: PropsWithChildren) {
     lessons: source,
     loading,
     error,
+    retry,
     hiddenIds,
     heldReadyDates: holds.map((hold) => hold.quotaDate),
     openRowId,
@@ -128,7 +130,7 @@ export function LessonDeleteProvider({ children }: PropsWithChildren) {
     releaseOpenRow,
     requestDelete,
     canDelete: (lesson) => lessonCanBeDeleted(lesson.status),
-  }), [closeOpenRow, error, hiddenIds, holds, loading, openRowId, registerOpenRow, releaseOpenRow, requestDelete, source]);
+  }), [closeOpenRow, error, hiddenIds, holds, loading, openRowId, registerOpenRow, releaseOpenRow, requestDelete, retry, source]);
 
   return (
     <DeleteContext.Provider value={value}>
@@ -154,9 +156,9 @@ function useDeleteContext(): DeleteContextValue {
 }
 
 export function useLessonList() {
-  const { lessons: source, loading, error, hiddenIds, heldReadyDates, closeOpenRow } = useDeleteContext();
+  const { lessons: source, loading, error, retry, hiddenIds, heldReadyDates, closeOpenRow } = useDeleteContext();
   const lessons = source.filter((lesson) => !hiddenIds.has(lesson.id));
-  return { lessons, loading, error, heldReadyDates, closeOpenRow };
+  return { lessons, loading, error, retry, heldReadyDates, closeOpenRow };
 }
 
 export function useLessonDelete() {

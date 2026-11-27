@@ -7,7 +7,10 @@ import type { LessonType } from "@resolingo/shared";
 import { FadeIn } from "@/components/FadeIn";
 import { LessonArtwork } from "@/components/LessonArtwork";
 import { LessonRow } from "@/components/LessonRow";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
+import { ErrorState } from "@/components/ErrorState";
+import { TodaySkeleton } from "@/components/Skeleton";
 import { PlayGlyph } from "@/components/PlayGlyph";
 import { PressableScale } from "@/components/PressableScale";
 import { Screen } from "@/components/Screen";
@@ -39,8 +42,8 @@ function dateInZone(zone: string): string {
 }
 
 export default function HomeScreen() {
-  const { user, profile } = useSession();
-  const { lessons, loading, heldReadyDates, closeOpenRow } = useLessonList();
+  const { user, profile, error: profileError, retry: retryProfile } = useSession();
+  const { lessons, loading, error: lessonsError, retry: retryLessons, heldReadyDates, closeOpenRow } = useLessonList();
   const router = useRouter();
   const theme = useTheme();
   const { open, openedLessonIds, openedLessonsReady } = usePlayback();
@@ -131,7 +134,8 @@ export default function HomeScreen() {
       } finally { setStarting(null); }
     })();
   };
-  if (loading || !profile) return <LoadingScreen />;
+  if (!profile && profileError) return <Screen><ErrorState onRetry={retryProfile} /></Screen>;
+  if (loading || !profile) return <TodaySkeleton />;
   const greeting = greetingFor(hourInZone(profile.timezone));
   return (
     <Screen onScrollBeginDrag={closeOpenRow} style={styles.content}>
@@ -141,6 +145,12 @@ export default function HomeScreen() {
         <Title>What will you practice?</Title>
         <QuotaMeter used={used} unlimited={unlimited} />
       </View>
+      {lessonsError ? (
+        <Card style={styles.above}>
+          <Body muted>Your lessons couldn’t load. Check your connection and try again.</Body>
+          <Button label="Try again" variant="secondary" onPress={retryLessons} />
+        </Card>
+      ) : null}
       {showPick && pick && pickState ? (
         <LessonOfTheDayCard
           pick={pick}

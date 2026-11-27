@@ -19,9 +19,12 @@ function Navigation() {
   const router = useRouter();
   const segments = useSegments();
   const theme = useTheme();
-  const { loading, user, profile } = useSession();
+  const { loading, user, profile, error } = useSession();
+  const profileFailed = Boolean(user && !profile && error);
   useEffect(() => {
     if (loading) return;
+    // A profile that failed to load is not a missing profile: stay put and let the screen offer a retry.
+    if (profileFailed) return;
     const route = segments.join("/");
     if (!user) {
       if (!route.includes("sign-in")) router.replace("/(auth)/sign-in");
@@ -32,7 +35,7 @@ function Navigation() {
       return;
     }
     if (route.length === 0 || route.includes("sign-in")) router.replace("/(tabs)");
-  }, [loading, user, profile?.onboardingComplete, segments, router]);
+  }, [loading, user, profile?.onboardingComplete, profileFailed, segments, router]);
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const path = response.notification.request.content.data?.path;
