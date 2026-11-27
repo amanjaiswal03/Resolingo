@@ -12,6 +12,7 @@ import {
   pcmDurationMs,
   pcmPayload,
   pcmWithTrailingSilence,
+  maxSpokenMs,
   renderLessonAudio,
   roleVoices,
   sceneSpeechRequest,
@@ -304,6 +305,31 @@ describe("cached synthesis", () => {
     expect(fallback.engine).toBe("cloud-tts");
     expect(fallback.extension).toBe("mp3");
     expect(fallback.cachePath).toBe("tts-cache/cloud.mp3");
+  });
+
+  it("does not keep Gemini audio far longer than its text, since it has speech the script does not", async () => {
+    const stored: string[] = [];
+    const errors: unknown[] = [];
+    // Ten seconds of audio for one word: the model added words or read its instruction aloud.
+    const pcm = Buffer.alloc(24_000 * 2 * 10);
+    const rendered = await renderLessonAudio({
+      request,
+      maxDurationMs: maxSpokenMs("heute", "de-DE"),
+      load: async () => null,
+      store: async (path) => { stored.push(path); },
+      synthesizeGemini: async () => ({ data: pcm.toString("base64"), mimeType: "audio/pcm" }),
+      cloud: async () => ({ cachePath: "tts-cache/cloud.mp3", durationMs: 900 }),
+      onGeminiError: (error) => errors.push(error),
+    });
+    expect(rendered.engine).toBe("cloud-tts");
+    expect(stored).toEqual([]);
+    expect((errors[0] as Error).message).toBe("TTS_AUDIO_TOO_LONG");
+  });
+
+  it("allows slow, natural speech", () => {
+    expect(maxSpokenMs("heute", "de-DE")).toBe(3_400);
+    expect(maxSpokenMs("[[lang:de-DE]]Kann ich deine Bohrmaschine ausleihen?[[/lang]]", "de-DE")).toBe(7_000);
+    expect(maxSpokenMs("駅はどこですか。", "ja-JP")).toBeGreaterThan(5_000);
   });
 });
 

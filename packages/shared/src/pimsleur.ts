@@ -9,6 +9,7 @@ import { line, template, type TeachingKey } from "./teaching.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 import { findKnownPhrase, phraseSimilarity, MAX_WARMUP_REVIEWS } from "./review.js";
 import { quotesStayTrue } from "./quotes.js";
+import { pieceOfLine, quotesOnScript, targetVocabulary, type TargetVocabulary } from "./on-script.js";
 import { LEARNER_PLACEHOLDER } from "./learner-name.js";
 
 /**
@@ -958,7 +959,9 @@ function drillPlan(phrase: PimsleurPhrase, names: SpeakerNames): { phrase: Pimsl
       ...note,
       text: presentChunk(stripVocatives(note.text, names), text),
     }))
-    .filter((note) => note.text && !isEmptyDrill(note.text, names) && !mentionsName(note.text, names) && normalizeChunk(note.text) !== full);
+    .filter((note) => note.text && !isEmptyDrill(note.text, names) && !mentionsName(note.text, names) && normalizeChunk(note.text) !== full
+      // A piece the model made up, rather than cut from this line, would be drilled out of nowhere.
+      && pieceOfLine(note.text, text, phrase.language));
   const chunks = provided.length > 0 || !needsBuildup(text) || spokenWords(drilled).length < 5
     ? provided
     : buildupChunks(text, phrase.language)
@@ -1045,6 +1048,40 @@ function reusesFocus(item: PimsleurLine, phrases: PimsleurPhrase[]): boolean {
   });
 }
 
+/** A phrase without any note, recall cue, or gloss that quotes target words the lesson never uses. */
+function keepOnScript(phrase: PimsleurPhrase, vocabulary: TargetVocabulary): PimsleurPhrase {
+  const { note, recallCue, chunks, ...rest } = phrase;
+  return {
+    ...rest,
+    ...(note && quotesOnScript(note, vocabulary) ? { note } : {}),
+    ...(recallCue && quotesOnScript(recallCue, vocabulary) ? { recallCue } : {}),
+    ...(chunks ? {
+      chunks: chunks.map(({ gloss, ...chunk }) => ({
+        ...chunk,
+        ...(gloss && quotesOnScript(gloss, vocabulary) ? { gloss } : {}),
+      })),
+    } : {}),
+  };
+}
+
+/** The model's cues, with any cue that quotes words outside the lesson replaced by the standard one. */
+function cuesOnScript(cues: LessonCues, vocabulary: TargetVocabulary, teaching: LanguageId): LessonCues {
+  const standard = cuesFrom(undefined, teaching);
+  const pick = (key: Exclude<keyof LessonCues, "echo">): string => quotesOnScript(cues[key], vocabulary) ? cues[key] : standard[key];
+  return {
+    welcome: pick("welcome"),
+    listen: pick("listen"),
+    afterDialogue: pick("afterDialogue"),
+    buildup: pick("buildup"),
+    howWouldYouSay: pick("howWouldYouSay"),
+    sayIt: pick("sayIt"),
+    yourTurn: pick("yourTurn"),
+    ...(cues.echo ? { echo: cues.echo.filter((cue) => quotesOnScript(cue, vocabulary)) } : {}),
+    again: pick("again"),
+    closing: pick("closing"),
+  };
+}
+
 export const MAX_WELCOME_INTRO_LINES = 4;
 
 /**
@@ -1126,20 +1163,30 @@ export function shapePimsleurLesson(value: unknown, context: {
       .filter((line): line is PimsleurLine => Boolean(line?.translation))
       .slice(0, 2)
     : [];
+  // Teaching notes may only quote target words this lesson really uses.
+  const vocabulary = targetVocabulary([
+    ...keptLines.map((item) => item.text),
+    ...recombinations.map((item) => item.text),
+    ...(context.priorReviews ?? []).map((item) => item.text),
+  ], context.targetLanguage);
+  const onScriptPhrases = phrases.map((phrase) => keepOnScript(phrase, vocabulary));
+  const onScriptCues = cuesOnScript(cues, vocabulary, context.nativeLanguage);
+  const onScriptPrompts = speakPrompts.filter((prompt) => quotesOnScript(prompt, vocabulary));
   const known = [...(context.known ?? []), ...flaggedKnown(explicitLines, keptLines, context.known ?? [], context.targetLanguage)];
   const grammarLink = grammarLinkFrom(record.grammarLink, keptLines, names);
-  const usageTip = splitSentences(clean(textOf(record.usageTip), names))[0];
+  const tip = splitSentences(clean(textOf(record.usageTip), names))[0];
+  const usageTip = tip && quotesOnScript(tip, vocabulary) ? tip : undefined;
   const intro = context.welcome ? welcomeIntro(record.appIntro, names) : [];
   const arranged = arrangePimsleur({
     lines: keptLines,
-    phrases,
-    cues,
+    phrases: onScriptPhrases,
+    cues: onScriptCues,
     names,
     nativeLanguage: context.nativeLanguage,
     targetLanguage: context.targetLanguage,
     level: context.level,
     ...(usageTip && usageTip.length <= 220 ? { usageTip } : {}),
-    ...(speakPrompts.length > 0 ? { speakPrompts } : {}),
+    ...(onScriptPrompts.length > 0 ? { speakPrompts: onScriptPrompts } : {}),
     ...(context.priorReviews && context.priorReviews.length > 0 ? { priorReviews: context.priorReviews } : {}),
     ...(recombinations.length > 0 ? { recombinations } : {}),
     ...(known.length > 0 ? { known } : {}),

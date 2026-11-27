@@ -337,8 +337,24 @@ export function toPlayableAudio(inline: { data: string; mimeType?: string }): {
   };
 }
 
+/**
+ * The longest a clip of this text should take, even spoken slowly. Gemini TTS
+ * is a generative model and can now and then add words of its own or read the
+ * speaking instruction aloud. Audio far longer than the text is treated as a
+ * failed clip, so it is not cached and Cloud TTS reads the exact text instead.
+ */
+export function maxSpokenMs(text: string, language: LanguageId): number {
+  const content = text.replace(/\[\[\/?lang(?::[^\]]+)?\]\]/gu, "");
+  const words = content.match(/[\p{L}\p{M}\p{N}]+(?:['’][\p{L}\p{M}\p{N}]+)*/gu) ?? [];
+  const letters = Array.from(words.join("")).length;
+  const units = /^(ja|zh|th|lo|km|my)\b/u.test(language) ? Math.ceil(letters / 2) : words.length;
+  return 2_500 + Math.max(1, units) * 900;
+}
+
 export async function renderLessonAudio(input: {
   request: { cachePath: string };
+  /** Audio longer than this has speech the text does not, so Cloud TTS is used instead. */
+  maxDurationMs?: number;
   load: (path: string) => Promise<{ durationMs: number } | null>;
   store: (path: string, bytes: Buffer, contentType: string, durationMs: number) => Promise<void>;
   synthesizeGemini: () => Promise<{ data: string; mimeType?: string }>;
@@ -352,6 +368,9 @@ export async function renderLessonAudio(input: {
     const audio = inline.mimeType
       ? toPlayableAudio({ data: inline.data, mimeType: inline.mimeType })
       : toPlayableAudio({ data: inline.data });
+    if (input.maxDurationMs && audio.durationMs > input.maxDurationMs) {
+      throw Object.assign(new Error("TTS_AUDIO_TOO_LONG"), { durationMs: audio.durationMs, maxDurationMs: input.maxDurationMs });
+    }
     const cachePath = audio.extension === "wav" ? input.request.cachePath : input.request.cachePath.replace(/\.wav$/, ".mp3");
     await input.store(cachePath, audio.bytes, audio.contentType, audio.durationMs);
     return { cachePath, durationMs: audio.durationMs, extension: audio.extension, engine: "gemini" };
