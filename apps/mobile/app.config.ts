@@ -29,6 +29,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     icon: "./assets/resolingo-icon.png",
     ios: {
       bundleIdentifier: identifier,
+      appleTeamId: "786323MRBH",
       supportsTablet: true,
       usesAppleSignIn: true,
       ...(googleInfoPlist ? { googleServicesFile: googleInfoPlist } : {}),

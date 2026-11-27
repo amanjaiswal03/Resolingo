@@ -5,7 +5,6 @@
       "developmentClient": true,
       "distribution": "internal",
       "channel": "development",
-      "ios": { "appleTeamId": "786323MRBH" },
       "env": {
         "APP_VARIANT": "development",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "168640425089-9rt7kh4f1sil6p7cphd8jojvhr8da0p3.apps.googleusercontent.com",
@@ -15,7 +14,6 @@
     "preview": {
       "distribution": "internal",
       "channel": "preview",
-      "ios": { "appleTeamId": "786323MRBH" },
       "env": {
         "APP_VARIANT": "development",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "168640425089-9rt7kh4f1sil6p7cphd8jojvhr8da0p3.apps.googleusercontent.com",
@@ -25,7 +23,6 @@
     "production": {
       "autoIncrement": true,
       "channel": "production",
-      "ios": { "appleTeamId": "786323MRBH" },
       "env": {
         "APP_VARIANT": "production",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "168640425089-9rt7kh4f1sil6p7cphd8jojvhr8da0p3.apps.googleusercontent.com",
