@@ -78,7 +78,8 @@ Both registered Firebase apps use bundle id `com.resolingo.app`. `APP_IDENTIFIER
 
 Callable functions already set `enforceAppCheck: true`. A build with no token cannot call them.
 
-- [ ] Register App Attest (DeviceCheck fallback) for iOS and Play Integrity for Android.
+- [ ] Register App Attest (DeviceCheck fallback) for iOS and Play Integrity for Android. In the Firebase console, open App Check, then Apps, then the iOS app, and add App Attest with the Apple Team ID. Add DeviceCheck with a DeviceCheck `.p8` key from the Apple Developer portal. Until this is done, TestFlight and App Store builds get no App Check token and every callable fails with "unauthenticated".
+- [x] `app.config.ts` sets the `com.apple.developer.devicecheck.appattest-environment` entitlement to `production`. EAS turns on the App Attest capability for the App ID when it builds.
 - [ ] Create an App Check debug token and register it for each development device before the first lesson request.
 - [ ] Watch valid and invalid metrics before you rely on a production build.
 
