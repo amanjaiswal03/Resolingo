@@ -10,6 +10,7 @@ import { LessonArtwork } from "@/components/LessonArtwork";
 import { LessonPlayer } from "@/components/LessonPlayer";
 import { MicGlyph } from "@/components/MicGlyph";
 import { PressableScale } from "@/components/PressableScale";
+import { SkeletonBlock, SkeletonPulse } from "@/components/Skeleton";
 import { SkipIcon } from "@/components/SkipIcon";
 import { Body, Title } from "@/components/Typography";
 import { markLessonCompleted, resolveAudioUrls, subscribeLesson } from "@/services/lessons";
@@ -49,6 +50,8 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
   const [view, setView] = useState<"artwork" | "transcript">("artwork");
   const [presented, setPresented] = useState<"full" | "mini">(expanded ? "full" : "mini");
   const [interactive, setInteractive] = useState(expanded);
+  // True while a finger drags the sheet up from the docked bar, so the story shows as it rises.
+  const [dragging, setDragging] = useState(false);
   const closed = Math.max(0, screenHeight - collapsedOffset - MINI_PLAYER_HEIGHT);
   const y = useSharedValue(expanded ? 0 : closed);
   const closedY = useSharedValue(closed);
@@ -62,6 +65,7 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
   const settle = useCallback((open: boolean) => {
     setPresented(open ? "full" : "mini");
     setInteractive(open);
+    setDragging(false);
     if (open) expand();
     else collapse();
   }, [collapse, expand]);
@@ -102,6 +106,7 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
     .activeOffsetY([-8, 8])
     .onStart(() => {
       dragStart.value = y.value;
+      runOnJS(setDragging)(true);
     })
     .onUpdate((event) => {
       const next = dragStart.value + event.translationY;
@@ -153,7 +158,12 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
         return;
       }
       setLesson(next);
-    }, (error) => report(error));
+    }, (error) => {
+      // Without this the player would sit on its skeleton forever.
+      report(error);
+      Alert.alert("Couldn’t open this lesson", "Please check your connection and try again.");
+      close();
+    });
   }, [close, lessonId, user]);
   useEffect(() => {
     if (lesson?.status !== "ready") return;
@@ -176,10 +186,14 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
   const started = useCallback(() => {
     if (profile?.telemetryConsent && lesson) void track("playback_started", { type: lesson.type });
   }, [lesson, profile?.telemetryConsent]);
+  // Docked, the sheet is only the mini bar. Its page-coloured background and the
+  // story above the bar are hidden and let touches through, so even if the
+  // sheet's animated size is stale for a frame it can never blank the page under it.
+  const revealed = interactive || dragging;
   return (
     <View pointerEvents="box-none" style={styles.overlay}>
-      <Animated.View style={[styles.sheet, { backgroundColor: theme.background }, sheetStyle]}>
-        <View pointerEvents={interactive ? "auto" : "none"} style={styles.story}>
+      <Animated.View pointerEvents={revealed ? "auto" : "box-none"} style={[styles.sheet, { backgroundColor: revealed ? theme.background : "transparent" }, sheetStyle]}>
+        <View pointerEvents={interactive ? "auto" : "none"} style={[styles.story, revealed ? null : styles.hidden]}>
           <GestureDetector gesture={headerPan}>
             <View style={[styles.sheetHeader, { paddingTop: insets.top + 6 }]}>
               <View style={[styles.grabber, { backgroundColor: theme.border }]} />
@@ -195,13 +209,16 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
                   <Body style={[styles.closeIcon, { color: theme.text }]}>✕</Body>
                 </Pressable>
               </View>
-              <Title style={styles.sheetTitle} numberOfLines={2}>{lesson?.title ?? "Opening lesson"}</Title>
+              {lesson
+                ? <Title style={styles.sheetTitle} numberOfLines={2}>{lesson.title}</Title>
+                : <SkeletonPulse><View style={styles.titleSkeleton}><SkeletonBlock width="70%" height={26} radius={8} /></View></SkeletonPulse>}
               {resolved?.artworkUrl ? <ViewToggle view={view} onChange={setView} /> : null}
             </View>
           </GestureDetector>
           {resolved?.artworkUrl && view === "artwork"
             ? <ArtworkView lesson={resolved} activeSegmentId={activeSegmentId} onShowTranscript={() => setView("transcript")} />
-            : resolved ? <Transcript lesson={resolved} activeSegmentId={activeSegmentId} onJump={(id) => setJumpTo({ id, token: Date.now() })} /> : null}
+            : resolved ? <Transcript lesson={resolved} activeSegmentId={activeSegmentId} onJump={(id) => setJumpTo({ id, token: Date.now() })} />
+            : <StorySkeleton withArtwork={!lesson || Boolean(lesson.artworkPath)} />}
         </View>
         <View style={styles.dock}>
           <GestureDetector gesture={playerPan}>
@@ -211,10 +228,12 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
               ) : presented === "full" ? (
                 <View pointerEvents="none" style={[styles.player, { backgroundColor: theme.surface, borderColor: theme.border, paddingBottom: Math.max(16, insets.bottom + 8) }]}>
                   <View style={styles.scrubber}><View style={[styles.track, { backgroundColor: theme.surfaceMuted }]} /></View>
-                  <View style={styles.times}>
-                    <Body muted style={styles.clock}>0:00</Body>
-                    <Body muted style={[styles.clock, styles.clockEnd]}>0:00</Body>
-                  </View>
+                  <SkeletonPulse>
+                    <View style={styles.times}>
+                      <SkeletonBlock width={36} height={12} radius={6} />
+                      <SkeletonBlock width={36} height={12} radius={6} />
+                    </View>
+                  </SkeletonPulse>
                   <View style={styles.transport}>
                     <View style={[styles.speedChip, { backgroundColor: theme.surfaceMuted }]}><Body style={styles.speed}>1×</Body></View>
                     <View style={styles.skip}><SkipIcon direction="back" color={theme.text} /></View>
@@ -238,6 +257,36 @@ function NowPlayingSession({ lessonId }: { lessonId: string }) {
         </View>
       </Animated.View>
     </View>
+  );
+}
+
+/** Stands in for the artwork (or transcript) while the lesson and its audio load. */
+function StorySkeleton({ withArtwork }: { withArtwork: boolean }) {
+  const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const size = openArtworkSize(screenWidth, screenHeight, insets.top, insets.bottom);
+  return (
+    <SkeletonPulse>
+      {withArtwork ? (
+        <View accessible accessibilityRole="progressbar" accessibilityLabel="Loading lesson" style={styles.artworkView}>
+          <SkeletonBlock width={size} height={size} radius={28} />
+          <View style={styles.nowLineSkeleton}>
+            <SkeletonBlock width={72} height={10} radius={5} />
+            <SkeletonBlock width="80%" height={20} />
+            <SkeletonBlock width="55%" height={14} />
+          </View>
+        </View>
+      ) : (
+        <View accessible accessibilityRole="progressbar" accessibilityLabel="Loading transcript" style={styles.transcriptSkeleton}>
+          {[0.9, 0.7, 0.85, 0.6, 0.8, 0.65].map((width, index) => (
+            <View key={index} style={styles.lineSkeleton}>
+              <SkeletonBlock width={`${Math.round(width * 100)}%`} height={18} />
+              <SkeletonBlock width={`${Math.round(width * 60)}%`} height={12} />
+            </View>
+          ))}
+        </View>
+      )}
+    </SkeletonPulse>
   );
 }
 
@@ -467,6 +516,11 @@ const styles = StyleSheet.create({
   overlay: { ...StyleSheet.absoluteFill },
   sheet: { position: "absolute", left: 0, right: 0, overflow: "hidden" },
   story: { flex: 1, minHeight: 0, paddingHorizontal: 20 },
+  hidden: { opacity: 0 },
+  titleSkeleton: { alignItems: "center", paddingVertical: 6, marginTop: 4 },
+  nowLineSkeleton: { alignSelf: "stretch", alignItems: "center", gap: 8, minHeight: 84 },
+  transcriptSkeleton: { flex: 1, paddingTop: 20, gap: 22 },
+  lineSkeleton: { gap: 8 },
   sheetHeader: { gap: 6, paddingBottom: 4 },
   grabber: { alignSelf: "center", width: 36, height: 4, borderRadius: 2, marginBottom: 4 },
   dock: { flexShrink: 0 },
