@@ -6,7 +6,7 @@ import { useTheme } from "@/theme/tokens";
 const Pulse = createContext<Animated.Value | null>(null);
 
 /** One shared, gentle pulse for every block on a skeleton page. Holds still when Reduce Motion is on. */
-function SkeletonPulse({ children }: PropsWithChildren) {
+export function SkeletonPulse({ children }: PropsWithChildren) {
   const [value] = useState(() => new Animated.Value(0.55));
   useEffect(() => {
     let loop: Animated.CompositeAnimation | null = null;
