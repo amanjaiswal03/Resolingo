@@ -32,6 +32,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       supportsTablet: true,
       usesAppleSignIn: true,
       ...(googleInfoPlist ? { googleServicesFile: googleInfoPlist } : {}),
+      // App Check uses App Attest in release builds. Without this entitlement iOS refuses to attest,
+      // the app gets no App Check token, and every callable answers "unauthenticated".
+      // TestFlight and the App Store need the production environment.
+      entitlements: {
+        "com.apple.developer.devicecheck.appattest-environment": "production",
+      },
       infoPlist: {
         // audio keeps lesson playback and the answer microphone alive with the screen locked.
         UIBackgroundModes: ["audio", "remote-notification"],
