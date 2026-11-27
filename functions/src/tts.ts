@@ -15,6 +15,7 @@ import {
   pcmDurationMs,
   pcmPayload,
   pcmWithTrailingSilence,
+  maxSpokenMs,
   renderLessonAudio,
   sceneChunks,
   sceneSpeechRequest,
@@ -170,6 +171,7 @@ async function synthesizeWithGemini(input: {
   });
   const rendered = await renderLessonAudio({
     request,
+    maxDurationMs: maxSpokenMs(input.text, input.language),
     load: findCached,
     store: saveCached,
     cloud: input.cloud,
@@ -461,6 +463,8 @@ async function renderChunk(input: {
   });
   return renderLessonAudio({
     request,
+    // Each turn gets its own allowance, plus a second for the change of speaker.
+    maxDurationMs: input.turns.reduce((total, turn) => total + maxSpokenMs(turn.text, turn.language) + 1_000, 0),
     load: findCached,
     store: saveCached,
     onGeminiError: (error) => fallbackLog({ segment: input.segment, language: input.turns[0]!.language, error }),

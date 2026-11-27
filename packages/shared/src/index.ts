@@ -17,3 +17,4 @@ export * from "./learner-context.js";
 export * from "./learner-name.js";
 export * from "./quotes.js";
 export * from "./lesson-of-the-day.js";
+export * from "./on-script.js";

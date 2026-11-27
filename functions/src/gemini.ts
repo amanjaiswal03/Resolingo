@@ -13,12 +13,14 @@ import {
   languageById,
   markupIssues,
   normalizeSpeakerNames,
+  offScriptLines,
   repairMarkup,
   grammarTopicById,
   selectGrammarTopic,
   shapeGrammarLesson,
   shapePhraseLesson,
   shapePimsleurLesson,
+  withoutOffScriptLines,
   type CefrLevel,
   type GeneratedLesson,
   type LanguageId,
@@ -30,6 +32,9 @@ import {
 import { logger } from "firebase-functions";
 import { DEFAULT_GEMINI_LESSON_MODEL, DEFAULT_GEMINI_LOCATION, GEMINI_LESSON_MODEL, GEMINI_LOCATION } from "./config.js";
 import { lessonPrompt } from "./prompts.js";
+
+/** Shared by every lesson type: teaching lines never bring in target words the lesson does not teach. */
+const ON_SCRIPT = "Stay on this lesson's script. A note, gloss, cue, tip, or chunk only quotes target-language words that appear in this lesson's own lines, and a chunk is cut word for word from its line. Never add an extra example, word, or phrase from another topic.";
 
 const SYSTEM_INSTRUCTION = [
   "You are Resolingo's expert multilingual lesson designer. You teach with the Pimsleur method: graduated recall, anticipation (the learner answers before hearing the model), backward buildup of long lines, and lots of speaking.",
@@ -48,6 +53,7 @@ const SYSTEM_INSTRUCTION = [
   "speakerNames are only labels for the voices. The learner repeats every line out loud, so never put any person's name in a dialogue line, phrase, chunk, or recombination: no greeting or thanks by name, no self-introduction with a name, and no third person named. Do not write Speaker A or Speaker B.",
   "Every target-language word, including a gloss, a swap cue, a recap, and a closing, goes in its own [[lang:BCP-47]]...[[/lang]] span. Never leave a target word in a teaching-language span. Close every tag. Do not nest tags.",
   "Every text or answer field that the learner says is only the target-language words. Never put a gloss or translation in it, such as \"'Das Kind' means 'The child'\", \"Das Kind (the child)\", or quotation marks around the line, and never an inline marker such as [[gloss]] or an English word beside the target word. The meaning goes in translation. The only markup is [[lang:BCP-47]]...[[/lang]].",
+  ON_SCRIPT,
 ].join(" ");
 
 const SAFETY_CATEGORIES = [
@@ -71,6 +77,7 @@ const PHRASE_INSTRUCTION = [
   "Every target-language word in a teaching-language line, including a gloss, a pattern note, a swap cue, a recap, and a closing, is wrapped as [[lang:BCP-47]]...[[/lang]]. Close every tag. Do not nest tags.",
   "Do not drill a literal idiom gloss.",
   "Every text or answer field that the learner says is only the target-language words. Never put a gloss or translation in it, such as \"'Das Kind' means 'The child'\", \"Das Kind (the child)\", or quotation marks around the line, and never an inline marker such as [[gloss]] or an English word beside the target word. The meaning goes in translation. The only markup is [[lang:BCP-47]]...[[/lang]].",
+  ON_SCRIPT,
 ].join(" ");
 
 const GRAMMAR_INSTRUCTION = [
@@ -86,6 +93,7 @@ const GRAMMAR_INSTRUCTION = [
   "Wrap every target-language span inside a teaching-language line as [[lang:BCP-47]]...[[/lang]], including isolated letters, stems, prefixes, endings, pronouns, and words spelled the same in both languages. Include the hyphen within an affix span. This applies to explanations, questions, answers, and drill cues. Close each tag, and never include teaching-language words inside it.",
   "targetTerms lists the exact target words and fragments used in teaching-language lines. Include stems and endings with their written hyphens.",
   "Every text or answer field that the learner says is only the target-language words. Never put a gloss or translation in it, such as \"'Das Kind' means 'The child'\", \"Das Kind (the child)\", or quotation marks around the line, and never an inline marker such as [[gloss]] or an English word beside the target word. The meaning goes in translation. The only markup is [[lang:BCP-47]]...[[/lang]].",
+  ON_SCRIPT,
 ].join(" ");
 
 export function lessonGenerationConfig(type: LessonType = "conversation"): GenerateContentConfig {
@@ -246,10 +254,37 @@ export async function generateLessonContent(
     ? "Return a complete dialogue of four or five turns on a fresh topic, with an opening and a natural close. Check the level's word limit for every turn. Give phrases for every turn, with chunks for every turn of four or more words."
     : "The previous response was refused, malformed, or repeated a recent topic. Produce a completely valid lesson with a different topic.";
 
+  let offScriptRepair = "";
+  // The grammar topic names its forms (sein, können), and a phrase lesson is built on the learner's own sentence.
+  const scriptSources = [
+    ...(grammarTopic ? [grammarTopic.title, grammarTopic.focus, grammarTopic.forms ?? "", grammarTopic.insight ?? "", grammarTopic.pitfall ?? ""] : []),
+    ...(input.phrase ? [input.phrase.nativeText, input.phrase.translation, ...(input.phrase.alternatives ?? []).map((item) => item.text)] : []),
+  ].filter(Boolean);
+  /**
+   * The last check before a lesson is saved: a teaching line that quotes
+   * target words found nowhere in the lesson is made up. A note or cue like
+   * that is dropped at no cost. A drill prompt cannot be dropped without its
+   * answer, so that response is generated once more.
+   */
+  const keepOnScript = (lesson: GeneratedLesson, attempt: number): GeneratedLesson | null => {
+    const issues = offScriptLines(lesson.segments, input.targetLanguage, scriptSources);
+    if (issues.length === 0) return lesson;
+    logger.warn("lesson_off_script", {
+      type: input.type,
+      attempt,
+      issues: issues.slice(0, 6).map((issue) => ({ id: issue.id, kind: issue.kind, words: issue.words.slice(0, 4) })),
+    });
+    const segments = withoutOffScriptLines(lesson.segments, issues);
+    if (segments) return { ...lesson, segments };
+    const words = [...new Set(issues.flatMap((issue) => issue.words))].slice(0, 8);
+    offScriptRepair = `A teaching line quoted target-language words that are not in the lesson (${words.join(", ")}). Only quote words from this lesson's own lines.`;
+    return null;
+  };
+
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const user = attempt === 0
       ? prompt
-      : `${prompt}\n\nREPAIR: ${phraseRepair || repair}`;
+      : `${prompt}\n\nREPAIR: ${[phraseRepair || repair, offScriptRepair].filter(Boolean).join(" ")}`;
     const response = await generator.generateContent({ model, contents: user, config });
     if (blocked(response)) continue;
     let json: unknown;
@@ -297,7 +332,12 @@ export async function generateLessonContent(
         });
         continue;
       }
-      return parsed.data;
+      const kept = keepOnScript(parsed.data, attempt);
+      if (!kept) {
+        sawInvalid = true;
+        continue;
+      }
+      return kept;
     }
     const shaped = input.type === "grammar"
       ? shapeGrammarLesson(json, {
@@ -342,7 +382,12 @@ export async function generateLessonContent(
       sawInvalid = true;
       continue;
     }
-    return parsed.data;
+    const kept = keepOnScript(parsed.data, attempt);
+    if (!kept) {
+      sawInvalid = true;
+      continue;
+    }
+    return kept;
   }
   throw new Error(sawInvalid ? "MODEL_OUTPUT_INVALID" : "MODEL_OUTPUT_BLOCKED");
 }

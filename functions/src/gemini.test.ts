@@ -46,6 +46,9 @@ describe("Gemini lesson generation", () => {
     const config = lessonGenerationConfig();
     expect(config.responseMimeType).toBe("application/json");
     expect(config.systemInstruction).toContain("speak has 4 to 6 conversational recall cues");
+    for (const type of ["conversation", "grammar", "phrase"] as const) {
+      expect(lessonGenerationConfig(type).systemInstruction).toContain("Stay on this lesson's script.");
+    }
     expect(config.systemInstruction).toContain("four or five turns");
     expect(config.systemInstruction).toContain("Never refer to earlier lessons inside the dialogue");
     expect(config.systemInstruction).toContain("The learner practises every turn");
