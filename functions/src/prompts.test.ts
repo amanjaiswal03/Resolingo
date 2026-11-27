@@ -174,6 +174,12 @@ describe("lesson prompts", () => {
     expect(lessonPrompt({ ...base, type: "grammar" })).not.toContain("{learner}");
   });
 
+  it("keeps every name out of the conversation the learner repeats", () => {
+    const conversation = lessonPrompt({ nativeLanguage: languageById["en-US"], targetLanguage: languageById["de-DE"], level: "A2", recentTopics: [], type: "conversation" });
+    expect(conversation).toContain("no turn may contain a person's name");
+    expect(conversation).not.toContain("use their exact names in the dialogue");
+  });
+
   it("requires transliteration for configured writing systems", () => {
     const prompt = lessonPrompt({
       type: "conversation",

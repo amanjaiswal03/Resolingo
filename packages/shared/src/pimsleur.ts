@@ -9,6 +9,7 @@ import { line, template, type TeachingKey } from "./teaching.js";
 import { speakingPauseMs } from "./speaking-timing.js";
 import { findKnownPhrase, phraseSimilarity, MAX_WARMUP_REVIEWS } from "./review.js";
 import { quotesStayTrue } from "./quotes.js";
+import { LEARNER_PLACEHOLDER } from "./learner-name.js";
 
 /**
  * Pimsleur's 5s / 25s / 2min steps, counted in other items rather than in a
@@ -185,6 +186,46 @@ function nameList(names: SpeakerNames): string[] {
   return [names.teacher, names.speakerA, names.speakerB].map((name) => name.trim()).filter(Boolean);
 }
 
+function escapeName(name: string): string {
+  return name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * The learner never says a name out loud: not a speaker's, not the teacher's,
+ * and not their own (the {learner} placeholder). Names are capitalised in the
+ * target text, so a lowercase word such as "will" is not mistaken for Will.
+ * A transliteration ("Anna-san") is matched without case.
+ */
+export function mentionsName(text: string | undefined, names: SpeakerNames, ignoreCase = false): boolean {
+  if (!text) return false;
+  if (text.includes(LEARNER_PLACEHOLDER)) return true;
+  return nameList(names).some((name) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeName(name)}(?![\\p{L}\\p{N}])`, ignoreCase ? "iu" : "u").test(text));
+}
+
+/**
+ * A capitalised word, other than a sentence's first word, that appears exactly
+ * the same in a line and in its translation, as "Max" does in "Ist Max da?" and
+ * "Is Max there?". Names are not translated; ordinary nouns are. Used for
+ * phrases saved from earlier lessons, whose speaker names are not known here.
+ */
+export function carriesProperName(item: { text: string; translation?: string | undefined }): boolean {
+  if (!item.translation) return false;
+  const capitalised = (value: string): Set<string> => {
+    const found = new Set<string>();
+    for (const match of value.matchAll(/(^|[^\p{L}\p{N}'’])(\p{Lu}[\p{Ll}\p{M}'’-]+)/gu)) {
+      const before = value.slice(0, match.index + match[1]!.length).trimEnd();
+      // The first word of a sentence is capitalised anyway.
+      if (!before || /[.!?¡¿:;"“„«(]$/u.test(before)) continue;
+      found.add(match[2]!);
+    }
+    return found;
+  };
+  const inText = capitalised(lessonDisplayText(item.text));
+  if (inText.size === 0) return false;
+  const inTranslation = capitalised(item.translation);
+  return [...inText].some((word) => inTranslation.has(word));
+}
+
 function bareWord(text: string): string {
   return text.replace(/[^\p{L}\p{N}'’-]+/gu, "").toLocaleLowerCase();
 }
@@ -200,10 +241,13 @@ export function isEmptyDrill(text: string, names: SpeakerNames): boolean {
 /** Drop a leading or trailing "Anna," so the drill is the phrase, not the vocative. */
 export function stripVocatives(text: string, names: SpeakerNames): string {
   let result = text.trim();
-  for (const name of nameList(names)) {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const name of [...nameList(names), LEARNER_PLACEHOLDER]) {
+    const escaped = escapeName(name);
     result = result.replace(new RegExp(`^${escaped}\\s*[,!:;.\\-—]+\\s*`, "iu"), "").trim();
-    result = result.replace(new RegExp(`\\s*[,!:;.\\-—]+\\s*${escaped}\\s*[!?.…]*$`, "iu"), "").trim();
+    // "Bis morgen, Anna!" keeps its closing mark: "Bis morgen!"
+    result = result.replace(new RegExp(`\\s*[,!:;.\\-—]+\\s*${escaped}\\s*([!?.…]*)$`, "iu"), "$1").trim();
+    // "Danke, Anna, bis morgen." keeps its words and loses the name.
+    result = result.replace(new RegExp(`\\s*,\\s*${escaped}\\s*(?=[,!?.;:…])`, "giu"), "").trim();
   }
   return result || text.trim();
 }
@@ -638,15 +682,18 @@ export function arrangePimsleur(input: {
   const lines = input.lines.slice(0, pacing.turns);
   const scene = new Set(lines.map((item) => normalizeChunk(item.text)));
   const knownList = input.known ?? [];
+  // The learner never repeats a name, including one from an earlier lesson's cast.
+  const speaksName = (item: PimsleurLine): boolean => mentionsName(item.text, names) || mentionsName(item.translation, names)
+    || mentionsName(item.transliteration, names, true) || carriesProperName(item);
   const isKnown = (text: string): boolean => knownList.length > 0 && Boolean(findKnownPhrase(text, knownList, targetLanguage));
   // Every turn is practised, in the order of the conversation, unless the learner already knows it.
   const plans = focusPhrases(lines.filter((item) => item.language === targetLanguage), input.phrases, names, pacing.phrases, true);
   const fresh = plans.filter((plan) => !isKnown(plan.phrase.text));
   const priors = (input.priorReviews ?? []).filter((item) =>
     item.language === targetLanguage && item.translation && !scene.has(normalizeChunk(item.text))
-    && !isEmptyDrill(item.text, names) && fitsTurn(item, pacing.wordsPerTurn)).slice(0, MAX_WARMUP_REVIEWS);
+    && !isEmptyDrill(item.text, names) && !speaksName(item) && fitsTurn(item, pacing.wordsPerTurn)).slice(0, MAX_WARMUP_REVIEWS);
   const variation = pacing.variation ? input.recombinations?.find((item) =>
-    item.language === targetLanguage && item.translation && !scene.has(normalizeChunk(item.text))
+    item.language === targetLanguage && item.translation && !scene.has(normalizeChunk(item.text)) && !speaksName(item)
     && fitsTurn(item, pacing.wordsPerTurn) && reusesFocus(item, fresh.map((plan) => plan.phrase))) : undefined;
   const seed = input.seed ?? hashSeed(lines.map((item) => item.text).join("|"));
   const nextPrompt = promptPicker(speakPromptPool(input.speakPrompts, cues, nativeLanguage), seed, nativeLanguage);
@@ -895,10 +942,15 @@ function drillPlan(phrase: PimsleurPhrase, names: SpeakerNames): { phrase: Pimsl
   const text = stripVocatives(phrase.text, names);
   if (isEmptyDrill(text, names)) return null;
   const translation = phrase.translation ? stripVocatives(phrase.translation, names) : undefined;
+  // A name left inside the line ("Hallo Anna!", "Ich heiße Lukas.") would have the learner repeat it.
+  // The line still plays in the dialogue; it is just not drilled.
+  const transliteration = phrase.transliteration ? stripVocatives(phrase.transliteration, names) : undefined;
+  if (mentionsName(text, names) || mentionsName(translation, names) || mentionsName(transliteration, names, true)) return null;
   const drilled: PimsleurPhrase = {
     ...phrase,
     text,
     ...(translation ? { translation } : {}),
+    ...(transliteration ? { transliteration } : {}),
   };
   const full = normalizeChunk(text);
   const provided = (phrase.chunks ?? [])
@@ -906,7 +958,7 @@ function drillPlan(phrase: PimsleurPhrase, names: SpeakerNames): { phrase: Pimsl
       ...note,
       text: presentChunk(stripVocatives(note.text, names), text),
     }))
-    .filter((note) => note.text && !isEmptyDrill(note.text, names) && normalizeChunk(note.text) !== full);
+    .filter((note) => note.text && !isEmptyDrill(note.text, names) && !mentionsName(note.text, names) && normalizeChunk(note.text) !== full);
   const chunks = provided.length > 0 || !needsBuildup(text) || spokenWords(drilled).length < 5
     ? provided
     : buildupChunks(text, phrase.language)
