@@ -1,6 +1,7 @@
 import { Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import Constants from "expo-constants";
+import { ErrorState } from "@/components/ErrorState";
 import { LoadingScreen } from "@/components/LoadingScreen";
 import { PressableScale } from "@/components/PressableScale";
 import { Screen } from "@/components/Screen";
@@ -16,10 +17,11 @@ import { useTheme } from "@/theme/tokens";
 const levelName = { A1: "Starting out", A2: "Elementary", B1: "Intermediate", B2: "Upper intermediate", C1: "Advanced" } as const;
 
 export default function SettingsScreen() {
-  const { user, profile } = useSession();
+  const { user, profile, error, retry } = useSession();
   const router = useRouter();
   const theme = useTheme();
   if (!user) return null;
+  if (!profile && error) return <Screen><ErrorState onRetry={retry} /></Screen>;
   if (!profile) return <LoadingScreen />;
   const toggleTelemetry = async (enabled: boolean) => {
     await api.setTelemetryConsent(enabled);

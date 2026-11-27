@@ -2,9 +2,11 @@ import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Button } from "@/components/Button";
+import { Card } from "@/components/Card";
 import { FadeIn } from "@/components/FadeIn";
 import { LessonRow } from "@/components/LessonRow";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { ErrorState } from "@/components/ErrorState";
+import { LessonsSkeleton } from "@/components/Skeleton";
 import { Screen } from "@/components/Screen";
 import { Body, Heading, Title } from "@/components/Typography";
 import { LessonRowDismiss, useLessonList } from "@/lessons/delete-lesson";
@@ -15,7 +17,7 @@ import { useTheme } from "@/theme/tokens";
 
 export default function HistoryScreen() {
   const { profile } = useSession();
-  const { lessons, loading, error, closeOpenRow } = useLessonList();
+  const { lessons, loading, error, retry, closeOpenRow } = useLessonList();
   const router = useRouter();
   const theme = useTheme();
   const today = calendarDateInZone(profile?.timezone ?? "UTC");
@@ -25,7 +27,7 @@ export default function HistoryScreen() {
   );
   const groups = useMemo(() => groupLessonsByDate(ready, today), [ready, today]);
   const done = ready.filter((lesson) => lesson.completed).length;
-  if (loading) return <LoadingScreen />;
+  if (loading) return <LessonsSkeleton />;
   return (
     <Screen onScrollBeginDrag={closeOpenRow} style={styles.content}>
       <LessonRowDismiss />
@@ -37,20 +39,31 @@ export default function HistoryScreen() {
           </Body>
         ) : null}
       </View>
-      {error ? <Body>We couldn’t load your lessons. Check your connection and try again.</Body> : null}
-      {!ready.length ? (
+      {error && !ready.length ? (
+        <ErrorState title="Couldn’t load your lessons" message="Check your connection and try again." onRetry={retry} style={styles.above} />
+      ) : !ready.length ? (
         <View style={styles.empty}>
           <View style={[styles.emptyMark, { backgroundColor: theme.primaryTint }]}><Text style={styles.emptyEmoji}>🎧</Text></View>
           <Heading style={styles.centered}>No lessons yet</Heading>
           <Body muted style={styles.centered}>Every lesson you make lands here, ready for another listen.</Body>
           <Button label="Make your first lesson" onPress={() => router.navigate("/(tabs)")} />
         </View>
-      ) : groups.map((group, groupIndex) => (
-        <FadeIn key={group.date} index={groupIndex} style={styles.group}>
-          <Text accessibilityRole="header" style={[styles.date, { color: theme.textMuted }]}>{group.label.toUpperCase()}</Text>
-          {group.lessons.map((lesson) => <LessonRow key={lesson.id} lesson={lesson} />)}
-        </FadeIn>
-      ))}
+      ) : (
+        <>
+          {error ? (
+            <Card style={styles.above}>
+              <Body muted>Some lessons couldn’t load.</Body>
+              <Button label="Try again" variant="secondary" onPress={retry} />
+            </Card>
+          ) : null}
+          {groups.map((group, groupIndex) => (
+            <FadeIn key={group.date} index={groupIndex} style={styles.group}>
+              <Text accessibilityRole="header" style={[styles.date, { color: theme.textMuted }]}>{group.label.toUpperCase()}</Text>
+              {group.lessons.map((lesson) => <LessonRow key={lesson.id} lesson={lesson} />)}
+            </FadeIn>
+          ))}
+        </>
+      )}
     </Screen>
   );
 }
@@ -64,5 +77,6 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 32, lineHeight: 40 },
   centered: { textAlign: "center" },
   group: { gap: 10, zIndex: 2 },
+  above: { zIndex: 2 },
   date: { fontSize: 12, lineHeight: 16, fontWeight: "800", letterSpacing: 1.2 },
 });

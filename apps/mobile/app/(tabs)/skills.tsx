@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { languageById, type Lesson, type Phrase } from "@resolingo/shared";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
-import { LoadingScreen } from "@/components/LoadingScreen";
+import { ErrorState } from "@/components/ErrorState";
+import { SkillsSkeleton } from "@/components/Skeleton";
 import { MicGlyph } from "@/components/MicGlyph";
 import { PressableScale } from "@/components/PressableScale";
 import { ProgressRing } from "@/components/ProgressRing";
@@ -43,8 +44,9 @@ type OpenSkill = { group: SkillGroup; kind: "grammar" | "conversation" | "phrase
 const shownViews = views.filter((item) => HOW_WOULD_YOU_SAY_ENABLED || item.id !== "phrases");
 
 export default function SkillsRoute() {
-  const { profile, user } = useSession();
-  if (!profile || !user) return <LoadingScreen />;
+  const { profile, user, error, retry } = useSession();
+  if (!profile && error) return <Screen><ErrorState onRetry={retry} /></Screen>;
+  if (!profile || !user) return <SkillsSkeleton />;
   return <SkillsScreen key={`${user.uid}:${languagePairKey(profile)}`} uid={user.uid} nativeLanguage={profile.nativeLanguage} targetLanguage={profile.targetLanguage} />;
 }
 
@@ -130,7 +132,11 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
     setNow(Date.now());
   };
 
-  if ((!lessons && !error.history) || (HOW_WOULD_YOU_SAY_ENABLED && !phrases && !error.phrases)) return <LoadingScreen />;
+  const retryAll = () => { setError({}); setRefresh((value) => value + 1); };
+  if ((!lessons && !error.history) || (HOW_WOULD_YOU_SAY_ENABLED && !phrases && !error.phrases)) return <SkillsSkeleton />;
+  if (!lessons && (!HOW_WOULD_YOU_SAY_ENABLED || !phrases)) {
+    return <Screen><ErrorState title="Couldn’t load your skills" message="Check your connection and try again." onRetry={retryAll} /></Screen>;
+  }
 
   const groups = view === "conversation" ? skills.conversations : view === "grammar" ? skills.grammar
     : skills.phrases.length ? [{ id: "say", title: "Saved in Say", cards: skills.phrases }] : [];
@@ -160,7 +166,7 @@ function SkillsScreen({ uid, nativeLanguage, targetLanguage }: LanguagePair & { 
       {error.history || (HOW_WOULD_YOU_SAY_ENABLED && error.phrases) || error.reviews ? (
         <Card>
           <Body muted>{error.reviews ? "Review progress couldn’t sync. You can still practice." : "Some learning history couldn’t load."}</Body>
-          <Button label="Try again" variant="secondary" onPress={() => { setError({}); setRefresh((value) => value + 1); }} />
+          <Button label="Try again" variant="secondary" onPress={retryAll} />
         </Card>
       ) : null}
 

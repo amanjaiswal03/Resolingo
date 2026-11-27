@@ -2,6 +2,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, type FirebaseFirest
 import { getDownloadURL, ref } from "@react-native-firebase/storage";
 import { PhraseSchema, type Phrase } from "@resolingo/shared";
 import { firestore, storage } from "./firebase";
+import { onServerQuerySnapshot } from "./server-snapshot";
 
 const iso = (value: unknown): string => {
   if (value && typeof value === "object" && "toDate" in value) return (value as FirebaseFirestoreTypes.Timestamp).toDate().toISOString();
@@ -10,7 +11,7 @@ const iso = (value: unknown): string => {
 
 export function subscribePhrases(uid: string, callback: (phrases: Phrase[]) => void, onError?: (error: Error) => void): () => void {
   const phrasesQuery = query(collection(firestore, "users", uid, "phrases"), orderBy("createdAt", "desc"), limit(100));
-  return onSnapshot(phrasesQuery, (snapshot) => {
+  return onServerQuerySnapshot(phrasesQuery, (snapshot) => {
     const phrases: Phrase[] = [];
     for (const document of snapshot.docs) {
       const data = document.data();
