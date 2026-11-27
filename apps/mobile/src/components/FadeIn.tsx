@@ -9,14 +9,15 @@ const STAGGER_MS = 45;
  *
  * This used a Reanimated `entering` animation, which can be dropped when the
  * view mounts while its tab is off screen, leaving the content invisible. Here
- * the fade is a plain animation, and a timer forces it fully visible
- * afterwards, so content can never stay hidden.
+ * the fade runs on the JS side (not the native driver), so a re-render always
+ * sees the real opacity, and a timer forces it fully visible afterwards, so
+ * content can never stay hidden.
  */
 export function FadeIn({ index = 0, style, children }: PropsWithChildren<{ index?: number; style?: StyleProp<ViewStyle> }>) {
   const [progress] = useState(() => new Animated.Value(0));
   useEffect(() => {
     const delay = Math.min(index, 8) * STAGGER_MS;
-    const animation = Animated.timing(progress, { toValue: 1, delay, duration: DURATION_MS, easing: Easing.out(Easing.cubic), useNativeDriver: true });
+    const animation = Animated.timing(progress, { toValue: 1, delay, duration: DURATION_MS, easing: Easing.out(Easing.cubic), useNativeDriver: false });
     animation.start();
     const settle = setTimeout(() => progress.setValue(1), delay + DURATION_MS + 150);
     return () => {

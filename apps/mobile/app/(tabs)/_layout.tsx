@@ -17,8 +17,12 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        // Screens slide a little and cross-fade when switching tabs.
-        animation: "shift",
+        // No tab transition. The "shift" and "fade" transitions drive each tab's
+        // opacity with a native-driver Animated value whose JS copy only catches up
+        // when the animation ends. A re-render before that (data arriving, the
+        // player updating) can put a tab back at opacity 0, which shows as a blank
+        // page. Switching instantly can never leave a tab invisible.
+        animation: "none",
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.textMuted,
         tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.border, height: TAB_BAR_HEIGHT, paddingTop: 4 },
